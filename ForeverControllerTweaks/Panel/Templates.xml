@@ -1,0 +1,7 @@
+<Ui xmlns="http://www.blizzard.com/wow/ui/" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://www.blizzard.com/wow/ui/
+..\..\FrameXML\UI.xsd">
+	<!-- The Game Settings chrome: metal NineSlice, flat background, title and close button. Their code is pure (NineSlice
+	layout, anchors); the close button's OnClick is replaced in Lua. The focus glow is added in Lua (UI.Glow), since
+	FocusFramesInterfaceTemplate registers with CVarCallbackRegistry and creates InputIcon jump hints. -->
+	<Frame name="ForeverControllerTweaksWindowTemplate" inherits="SettingsFrameTemplate" enableMouse="true" clampedToScreen="true" hidden="true" virtual="true"/>
+</Ui>

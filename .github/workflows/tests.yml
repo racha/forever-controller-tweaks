@@ -1,0 +1,34 @@
+name: Tests
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  specs:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        lua: ["5.1.5", "5.4"]
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: leafo/gh-actions-lua@v13
+        with:
+          luaVersion: ${{ matrix.lua }}
+
+      - name: Syntax
+        run: find ForeverControllerTweaks -name '*.lua' -exec luac -p {} +
+
+      - name: Specs
+        run: |
+          status=0
+          for spec in ForeverControllerTweaks/tests/*_spec.lua; do
+            echo "::group::$spec"
+            lua "$spec" || { echo "::error file=$spec::spec failed"; status=1; }
+            echo "::endgroup::"
+          done
+          exit $status

@@ -1,0 +1,41 @@
+# On a v* tag (v1.0.0, v1.0.0-beta.2): build ForeverControllerTweaks-<version>.zip with the BigWigs packager,
+# create the GitHub release with it, and upload it to CurseForge when the CF_API_KEY secret is set.
+# The packager reads '## Interface: 16001' as WoW Forever (game version 1.60.1) and the CurseForge
+# project from '## X-Curse-Project-ID'. A tag containing "beta" or "alpha" is uploaded as that type (packager v2.7.0: case-insensitive substring, alpha wins).
+# CHANGELOG.md needs a '## <tag without v> — <date>' heading: not "unreleased", no YYYY-MM-DD placeholder.
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    env:
+      CF_API_KEY: ${{ secrets.CF_API_KEY }}
+      GITHUB_OAUTH: ${{ secrets.GITHUB_TOKEN }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Check placeholders and changelog
+        run: |
+          toc=ForeverControllerTweaks/ForeverControllerTweaks.toc
+          if grep -nE 'GITHUB_OWNE[R]|CURSEFORGE_PROJECT_I[D]' "$toc"; then
+            echo "::error file=$toc::replace the placeholders above before releasing"
+            exit 1
+          fi
+          version="${GITHUB_REF_NAME#v}"
+          heading=$(grep -m1 -E "^## ${version//./\\.}( |$)" CHANGELOG.md) || { echo "::error file=CHANGELOG.md::no '## $version' heading"; exit 1; }
+          case "$heading" in *nreleased*|*YYYY*) echo "::error file=CHANGELOG.md::'$heading' needs the release date"; exit 1 ;; esac
+
+      # >>> GAME VERSION: the packager takes it from the TOC. To force one, set the repository
+      # >>> variable CF_GAME_VERSION (Settings > Secrets and variables > Actions > Variables), e.g. 1.60.1.
+      - uses: BigWigsMods/packager@v2.7.0
+        with:
+          args: ${{ vars.CF_GAME_VERSION && format('-g {0}', vars.CF_GAME_VERSION) || '' }}

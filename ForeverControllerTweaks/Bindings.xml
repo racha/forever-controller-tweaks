@@ -1,0 +1,5 @@
+<Bindings>
+	<Binding name="FOREVERCONTROLLERTWEAKS_TOGGLE" header="FOREVERCONTROLLERTWEAKS" category="ADDONS">
+		ForeverControllerTweaks_TogglePanel()
+	</Binding>
+</Bindings>

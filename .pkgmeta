@@ -1,0 +1,19 @@
+package-as: ForeverControllerTweaks
+
+# The addon lives in ForeverControllerTweaks/ inside the repo; it becomes the top of the zip.
+move-folders:
+  ForeverControllerTweaks/ForeverControllerTweaks: ForeverControllerTweaks
+
+manual-changelog:
+  filename: CHANGELOG.md
+  markup-type: markdown
+
+ignore:
+  - ForeverControllerTweaks/tests
+  - docs
+  - site
+  - .github
+  - .gitignore
+  - .pkgmeta
+  - README.md
+  - CONTRIBUTING.md

@@ -1,0 +1,34 @@
+## Interface: 16001
+## Title: Forever Controller Tweaks
+## Notes: Remap bumpers and triggers, put any action on any controller button, and add touch bars. Type /fct.
+## Author: HouseLegend
+## Version: @project-version@
+## SavedVariables: ForeverControllerTweaksDB
+## IconTexture: Interface\AddOns\ForeverControllerTweaks\Art\icon
+## Category: User Interface
+## X-License: MIT
+## X-Website: https://racha.github.io/forever-controller-tweaks/
+## X-Curse-Project-ID: 1800450
+## AddonCompartmentFunc: ForeverControllerTweaks_OnCompartmentClick
+## AddonCompartmentFuncOnEnter: ForeverControllerTweaks_OnCompartmentEnter
+## AddonCompartmentFuncOnLeave: ForeverControllerTweaks_OnCompartmentLeave
+
+Core.lua
+Device.lua
+Layout.lua
+Remap.lua
+SlotView.lua
+Face.lua
+Glyphs.lua
+Actions.lua
+Touch.lua
+Panel/Templates.xml
+Panel/Shared.lua
+Panel/Window.lua
+Panel/Modifiers.lua
+Panel/TouchTab.lua
+Panel/Bindings.lua
+Panel/ActionPicker.lua
+Panel/Detect.lua
+Panel/Onboarding.lua
+Panel/Panel.lua
