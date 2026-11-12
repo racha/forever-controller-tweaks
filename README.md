@@ -4,7 +4,7 @@
 
 **Play WoW Forever on a controller your way.** Choose which bumper or trigger opens each crossbar bar and targeting mode, put any spell, item or action on any face or D-pad button, and tap spells on screen when you play through Steam Link. The glyphs always match the buttons you press, and you set everything up with the controller.
 
-[Website][site] · [CurseForge][curseforge] · [Download][releases] · [User guide](docs/user-guide.md) · [Controllers](docs/controllers.md) · [Changelog](CHANGELOG.md)
+[Website][site] · [Wago][wago] · [CurseForge][curseforge] · [Download][releases] · [User guide](docs/user-guide.md) · [Controllers](docs/controllers.md) · [Changelog](CHANGELOG.md)
 
 ## What it does
 
@@ -34,7 +34,9 @@ Forever Controller Tweaks builds on WoW Forever's own Gamepad UI instead of repl
 
 ## Install
 
-**CurseForge app:** search for **Forever Controller Tweaks** and choose the WoW Forever install.
+**Wago app:** search for **Forever Controller Tweaks** on [Wago][wago].
+
+**CurseForge app:** search for **Forever Controller Tweaks** and choose the WoW Forever install (once CurseForge approves it).
 
 **GitHub Releases:** download `ForeverControllerTweaks-<version>.zip` from [Releases][releases] and unzip it into WoW Forever's AddOns folder.
 
@@ -150,3 +152,4 @@ Bug reports, controller reports and ideas are welcome in [Issues][issues]. Pleas
 [releases]: https://github.com/racha/forever-controller-tweaks/releases
 [issues]: https://github.com/racha/forever-controller-tweaks/issues
 [curseforge]: https://www.curseforge.com/wow/addons/forever-controller-tweaks
+[wago]: https://addons.wago.io/addons/forever-controller-tweaks
