@@ -144,8 +144,10 @@ end
 
 -- A job's timeout counts only the time the pad is busy; combat pauses it. User jobs (with a timeout) say why they wait.
 -- Returns true when it removed the job (ran it or gave up), which changes the order.
+local function debugTell(msg) ns.debug("%s", msg) end
+
 local function runJob(job, now, free)
-	local tell = job.timeout and ns.log or function(msg) ns.debug("%s", msg) end
+	local tell = job.timeout and ns.log or debugTell
 	if not job.combatOk and InCombatLockdown() then
 		job.started = now
 		if job.told ~= "combat" then tell(job.what .. ": waits for combat to end") end

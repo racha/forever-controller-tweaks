@@ -20,7 +20,7 @@ local function new(name, parent, template)
 end
 local function snippet(self, body)
 	local env = setmetatable({ self = self, newtable = function(...) return { ... } end }, { __index = _G })
-	local fn = assert(load("local self = ...\n" .. body, "snippet", "t", env))
+	local fn = setfenv and setfenv(assert(loadstring("local self = ...\n" .. body)), env) or assert(load("local self = ...\n" .. body, "snippet", "t", env))
 	local was = W.secure
 	W.secure = true
 	pcall(fn, self)

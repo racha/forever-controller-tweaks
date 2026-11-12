@@ -113,15 +113,22 @@ ns.Remap.ApplyNow = applyNow
 
 -- Waiting jobs don't allocate a table per tick: the queue walks its order in place.
 W.padFree = false
+-- Measured against the same number of idle ticks, so the test harness's own per-tick garbage cancels out.
+local function growth(ticks)
+	collectgarbage("collect")
+	collectgarbage("stop")
+	local before = collectgarbage("count")
+	W.run(ticks)
+	local grew = collectgarbage("count") - before
+	collectgarbage("restart")
+	return grew
+end
+local idle = growth(30)
 ns.whenPadFree("w1", job("w1"))
 ns.whenPadFree("w2", job("w2"))
-collectgarbage("stop")
-local before = collectgarbage("count")
-W.run(3)
-local grew = collectgarbage("count") - before
-collectgarbage("restart")
+local waiting = growth(30)
 W.padFree = true
 W.run()
-assert(grew < 8, "about 0 KB while waiting, was " .. grew)
+assert(waiting - idle < 2, "about 0 KB more than idle while waiting, was " .. (waiting - idle))
 
 io.stdout:write("queue_spec: all checks passed\n")
