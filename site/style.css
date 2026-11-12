@@ -1,16 +1,34 @@
+/* The addon's design language, which is WoW Forever's own UI: charcoal panels in steel-grey metal frames, the game's
+   gold for labels and white for values, a thin gold gamepad-focus glow, red-and-gold buttons, navy tooltips and the
+   addon's role colours. Values are the client's named colours (NORMAL_FONT_COLOR, PANEL_BACKGROUND_COLOR …);
+   no Blizzard art files are used, the frames are drawn in CSS. */
 :root {
-	--bg: #0e0b08;
-	--bg-raised: #17120d;
-	--panel: #1d1711;
-	--line: #4a3822;
-	--bronze: #b98a4c;
-	--gold: #f0c674;
-	--text: #ece2cf;
-	--muted: #b6a68b;
-	--blue: #00bff3;
-	--green: #4fc04f;
-	--radius: 10px;
-	--serif: "Iowan Old Style", "Palatino Linotype", Palatino, Georgia, serif;
+	--bg: #0c0c0e;
+	--panel: #1f1e21;
+	--inset: #141316;
+	--metal-hi: #7c7c82;
+	--metal: #4c4c52;
+	--metal-lo: #2a2a2f;
+	--line: #2c2c31;
+	--gold: #ffd200;
+	--gold-soft: #e8c45c;
+	--focus: 255, 230, 102;
+	--text: #ffffff;
+	--body: #e4e4e6;
+	/* Native grey is #808080; a step lighter here so small text keeps WCAG AA contrast on the charcoal. */
+	--muted: #a4a4aa;
+	--green: #19ff19;
+	--red-hi: #a3170d;
+	--red-lo: #4d0603;
+	--tooltip: #171730;
+	--bronze-hi: #c9a464;
+	--bronze-lo: #6e5130;
+	--role-left: #00bff3;
+	--role-right: #bf4500;
+	--role-friendly: #40c040;
+	--role-hostile: #ff2020;
+	--radius: 4px;
+	--serif: "Friz Quadrata TT", "Friz Quadrata Std", "Friz Quadrata", "Iowan Old Style", "Palatino Linotype", Palatino, Georgia, serif;
 	--sans: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
 	color-scheme: dark;
 }
@@ -25,32 +43,36 @@ html { scroll-behavior: smooth; }
 
 body {
 	margin: 0;
-	background: radial-gradient(1200px 600px at 70% -10%, #2b2015 0%, transparent 60%), var(--bg);
-	color: var(--text);
+	background: radial-gradient(1100px 560px at 72% -12%, rgba(255, 210, 0, 0.07) 0%, transparent 60%), radial-gradient(900px 700px at 10% 10%, #18171b 0%, transparent 70%), var(--bg);
+	color: var(--body);
 	font: 17px/1.6 var(--sans);
 }
 
 img { max-width: 100%; height: auto; }
 
 a { color: var(--gold); text-underline-offset: 3px; }
-a:hover { color: #ffe0a0; }
+a:hover { color: var(--text); }
 
-:focus-visible { outline: 3px solid var(--gold); outline-offset: 3px; border-radius: 4px; }
+/* The gamepad focus glow: a thin gold line with a soft halo. */
+:focus-visible { outline: none; box-shadow: 0 0 0 2px rgba(var(--focus), 0.95), 0 0 12px 2px rgba(var(--focus), 0.45); border-radius: var(--radius); }
 
 code {
 	font: 0.9em ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-	background: #2a2118;
-	border: 1px solid var(--line);
-	border-radius: 4px;
+	color: var(--text);
+	background: var(--inset);
+	border: 1px solid var(--metal-lo);
+	border-radius: 3px;
 	padding: 0.05em 0.35em;
 	/* Long paths (AddOns/ForeverControllerTweaks/) wrap instead of widening the page on a phone. */
 	overflow-wrap: anywhere;
 }
 
-h1, h2, h3 { font-family: var(--serif); color: var(--gold); line-height: 1.15; margin: 0 0 0.5em; }
+h1, h2, h3 { font-family: var(--serif); color: var(--gold); line-height: 1.15; margin: 0 0 0.5em; text-shadow: 0 1px 0 #000; }
 h1 { font-size: clamp(2.4rem, 6vw, 4rem); letter-spacing: -0.01em; }
 h2 { font-size: clamp(1.7rem, 3.5vw, 2.3rem); }
-h3 { font-size: 1.25rem; }
+/* Under each section title, the Settings page divider: a gold line fading out to the right. */
+.band > h2::after { content: ""; display: block; width: min(260px, 60%); height: 1px; margin-top: 14px; background: linear-gradient(90deg, rgba(255, 210, 0, 0.75), rgba(255, 210, 0, 0)); }
+h3 { font-size: 1.2rem; }
 
 .small { font-size: 0.9rem; color: var(--muted); }
 
@@ -59,9 +81,9 @@ h3 { font-size: 1.25rem; }
 	left: 16px;
 	top: -60px;
 	background: var(--gold);
-	color: #1a1208;
+	color: #000;
 	padding: 8px 14px;
-	border-radius: 6px;
+	border-radius: var(--radius);
 	z-index: 60;
 }
 .skip:focus { position: fixed; top: 12px; }
@@ -77,19 +99,20 @@ h3 { font-size: 1.25rem; }
 	justify-content: space-between;
 	gap: 10px 24px;
 	padding: 14px max(16px, calc((100% - 1088px) / 2));
-	background: rgba(14, 11, 8, 0.72);
-	-webkit-backdrop-filter: blur(12px) saturate(140%);
-	backdrop-filter: blur(12px) saturate(140%);
+	background: rgba(20, 19, 22, 0.74);
+	-webkit-backdrop-filter: blur(12px) saturate(130%);
+	backdrop-filter: blur(12px) saturate(130%);
 	border-bottom: 1px solid transparent;
 	transition: border-color 0.25s ease, box-shadow 0.25s ease, background-color 0.25s ease;
 }
+/* Scrolled: the bar's lower edge becomes a metal rim with the gold hairline of the native window glow. */
 .top.is-scrolled {
-	background: rgba(14, 11, 8, 0.82);
-	border-bottom-color: rgba(185, 138, 76, 0.45);
-	box-shadow: 0 1px 0 rgba(240, 198, 116, 0.08), 0 10px 26px rgba(0, 0, 0, 0.45);
+	background: rgba(24, 23, 27, 0.86);
+	border-bottom-color: var(--metal);
+	box-shadow: 0 1px 0 rgba(var(--focus), 0.35), 0 10px 26px rgba(0, 0, 0, 0.55);
 }
 @supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
-	.top { background: rgba(14, 11, 8, 0.96); }
+	.top { background: rgba(24, 23, 27, 0.97); }
 }
 
 /* Anchor jumps stop below the bar; nav.js keeps --bar-h at the bar's real height. */
@@ -100,16 +123,18 @@ section[id] { scroll-margin-top: calc(var(--bar-h, 64px) + 16px); }
 	align-items: center;
 	gap: 10px;
 	font: 700 1.15rem var(--serif);
-	color: var(--text);
+	color: var(--gold);
 	text-decoration: none;
+	text-shadow: 0 1px 0 #000;
 }
 .brand img { border-radius: 6px; }
 
 .top nav { display: flex; gap: 4px 6px; }
-.top nav a { position: relative; padding: 6px 10px; border-radius: 6px; color: var(--muted); text-decoration: none; font-weight: 600; white-space: nowrap; transition: color 0.18s ease, background-color 0.18s ease; }
-.top nav a:hover { color: var(--gold); }
-.top nav a[aria-current="true"] { color: var(--gold); background: rgba(240, 198, 116, 0.08); }
-.top nav a[aria-current="true"]::after { content: ""; position: absolute; left: 10px; right: 10px; bottom: 1px; height: 2px; border-radius: 2px; background: var(--gold); }
+.top nav a { position: relative; padding: 6px 10px; border-radius: var(--radius); color: var(--body); text-decoration: none; font-weight: 600; white-space: nowrap; transition: color 0.18s ease, background-color 0.18s ease; }
+.top nav a:hover { color: var(--gold); background: rgba(255, 255, 255, 0.06); }
+/* Current section = the native focused row: white 0.1 wash, gold text, a gold line. */
+.top nav a[aria-current="true"] { color: var(--gold); background: rgba(255, 255, 255, 0.1); }
+.top nav a[aria-current="true"]::after { content: ""; position: absolute; left: 10px; right: 10px; bottom: 1px; height: 2px; border-radius: 2px; background: var(--gold); box-shadow: 0 0 8px rgba(var(--focus), 0.6); }
 
 main { max-width: 1120px; margin: 0 auto; padding: 0 16px; }
 
@@ -121,35 +146,55 @@ main { max-width: 1120px; margin: 0 auto; padding: 0 16px; }
 	padding: 48px 0 64px;
 }
 
-.eyebrow { color: var(--bronze); font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; font-size: 0.85rem; margin: 0 0 12px; }
+.eyebrow { color: var(--muted); font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; font-size: 0.85rem; margin: 0 0 12px; }
 
 .lead { font-size: 1.15rem; color: var(--text); max-width: 34em; }
 
+/* The addon marks roles by colour band + word: the example layout, as in the Modifiers tab. */
+.roles { display: flex; flex-wrap: wrap; gap: 8px 10px; list-style: none; padding: 0; margin: 22px 0 0; }
+.roles li {
+	display: inline-flex;
+	align-items: center;
+	gap: 8px;
+	padding: 5px 12px 5px 10px;
+	background: var(--inset);
+	border: 1px solid var(--metal-lo);
+	border-left: 3px solid var(--role);
+	border-radius: var(--radius);
+	font-size: 0.8rem;
+	font-weight: 700;
+	letter-spacing: 0.05em;
+	color: var(--body);
+}
+.roles b { color: var(--text); font-size: 0.85rem; letter-spacing: 0; }
+
 .actions { display: flex; flex-wrap: wrap; gap: 12px; margin: 28px 0 14px; }
 
+/* Buttons: the game's red panel button with gold text; the primary one has the gold-red trim. */
 .button {
 	display: inline-block;
-	padding: 12px 22px;
-	border-radius: 8px;
-	border: 1px solid var(--bronze);
-	background: linear-gradient(#2c2217, #1a140e);
-	color: var(--text);
-	font-weight: 700;
+	padding: 11px 22px;
+	border-radius: var(--radius);
+	border: 1px solid #000;
+	background: linear-gradient(#36353b, #1d1c20);
+	box-shadow: inset 0 0 0 1px var(--metal), inset 0 1px 0 rgba(255, 255, 255, 0.12);
+	color: var(--gold);
+	font: 700 1rem var(--serif);
 	text-decoration: none;
-	box-shadow: inset 0 1px 0 rgba(255, 220, 160, 0.15);
+	text-shadow: 0 1px 0 #000;
+	transition: transform 0.18s ease, box-shadow 0.18s ease, color 0.18s ease, background-color 0.18s ease;
 }
-.button { transition: transform 0.18s ease, box-shadow 0.18s ease, color 0.18s ease, border-color 0.18s ease; }
-.button:hover { color: var(--gold); border-color: var(--gold); transform: translateY(-2px); box-shadow: inset 0 1px 0 rgba(255, 220, 160, 0.15), 0 8px 22px rgba(240, 198, 116, 0.18); }
+.button:hover { color: var(--text); transform: translateY(-2px); box-shadow: inset 0 0 0 1px var(--metal-hi), inset 0 1px 0 rgba(255, 255, 255, 0.16), 0 0 0 1px rgba(var(--focus), 0.85), 0 6px 20px rgba(var(--focus), 0.22); }
 .button.primary {
-	background: linear-gradient(#f3cf86, #c08f45);
-	border-color: #f7dca0;
-	color: #1d1408;
+	background: linear-gradient(var(--red-hi), var(--red-lo));
+	box-shadow: inset 0 0 0 1px #c9a33e, inset 0 2px 0 rgba(255, 180, 140, 0.25), 0 2px 6px rgba(0, 0, 0, 0.5);
+	color: var(--gold);
 }
-.button.primary:hover { background: linear-gradient(#ffdc96, #cf9c50); color: #1d1408; box-shadow: 0 8px 26px rgba(240, 198, 116, 0.35); }
+.button.primary:hover { background: linear-gradient(#c21e12, #620a05); color: var(--text); box-shadow: inset 0 0 0 1px #ecc65a, inset 0 2px 0 rgba(255, 190, 150, 0.3), 0 0 0 1px rgba(var(--focus), 0.9), 0 8px 24px rgba(var(--focus), 0.3); }
 
 .hero-logo { position: relative; margin: 0; display: grid; place-items: center; }
-.hero-logo img { grid-area: 1 / 1; position: relative; width: min(100%, 360px); height: auto; filter: drop-shadow(0 18px 30px rgba(0, 0, 0, 0.6)); animation: logo-in 0.9s cubic-bezier(0.2, 0.8, 0.2, 1) both; }
-/* The glow pulses on its own layer (opacity only), behind the logo. */
+.hero-logo img { grid-area: 1 / 1; position: relative; width: min(100%, 360px); height: auto; filter: drop-shadow(0 18px 30px rgba(0, 0, 0, 0.65)); animation: logo-in 0.9s cubic-bezier(0.2, 0.8, 0.2, 1) both; }
+/* The glow pulses on its own layer (opacity only), behind the logo, in the gamepad focus gold. */
 .hero-logo::before {
 	grid-area: 1 / 1;
 	content: "";
@@ -157,7 +202,7 @@ main { max-width: 1120px; margin: 0 auto; padding: 0 16px; }
 	width: min(80%, 300px);
 	aspect-ratio: 1;
 	border-radius: 50%;
-	background: radial-gradient(circle, rgba(240, 198, 116, 0.45) 0%, rgba(240, 198, 116, 0) 70%);
+	background: radial-gradient(circle, rgba(var(--focus), 0.4) 0%, rgba(var(--focus), 0) 70%);
 	opacity: 0.35;
 	animation: glow-pulse 4.5s ease-in-out 0.9s infinite;
 }
@@ -174,7 +219,7 @@ main { max-width: 1120px; margin: 0 auto; padding: 0 16px; }
 
 .band { padding: 56px 0; border-top: 1px solid var(--line); }
 
-.intro { max-width: 46em; color: var(--muted); font-size: 1.05rem; }
+.intro { max-width: 46em; color: var(--body); font-size: 1.05rem; }
 
 .grid {
 	display: grid;
@@ -183,14 +228,17 @@ main { max-width: 1120px; margin: 0 auto; padding: 0 16px; }
 	margin-top: 28px;
 }
 
-.card {
-	background: linear-gradient(180deg, var(--panel), var(--bg-raised));
-	border: 1px solid var(--line);
-	border-top: 2px solid var(--bronze);
+/* A metal-framed window: steel rim, black edges, the charcoal panel. */
+.card, .table-wrap, .steps li, details {
+	background: rgba(31, 30, 33, 0.92);
+	border: 1px solid #000;
 	border-radius: var(--radius);
-	padding: 22px 22px 18px;
+	box-shadow: inset 0 0 0 1px var(--metal), inset 0 0 0 2px var(--metal-lo), inset 0 1px 0 1px rgba(255, 255, 255, 0.08), 0 6px 20px rgba(0, 0, 0, 0.45);
 }
-.card p { margin: 0; color: var(--muted); }
+
+.card { padding: 22px 22px 20px; transition: box-shadow 0.2s ease, background-color 0.2s ease; }
+.card p { margin: 0; color: var(--body); }
+.card:hover { background: rgba(39, 38, 42, 0.95); box-shadow: inset 0 0 0 1px var(--metal-hi), inset 0 0 0 2px var(--metal-lo), inset 0 1px 0 1px rgba(255, 255, 255, 0.1), 0 0 0 1px rgba(var(--focus), 0.8), 0 0 16px rgba(var(--focus), 0.25), 0 10px 28px rgba(0, 0, 0, 0.5); }
 
 .gallery {
 	display: grid;
@@ -198,27 +246,27 @@ main { max-width: 1120px; margin: 0 auto; padding: 0 16px; }
 	gap: 22px 18px;
 }
 .gallery figure { margin: 0; }
-/* Every thumb is a 16:9 crop of its shot; the lightbox shows the whole image. */
+/* Every thumb is a 16:9 crop of its shot in a metal frame; the lightbox shows the whole image. */
 .shot {
 	display: block;
 	aspect-ratio: 16 / 9;
 	overflow: hidden;
 	border-radius: var(--radius);
-	border: 1px solid var(--line);
-	background: var(--bg-raised);
+	border: 1px solid #000;
+	background: var(--inset);
+	box-shadow: 0 0 0 1px var(--metal), 0 6px 20px rgba(0, 0, 0, 0.45);
 	cursor: zoom-in;
-	transition: border-color 0.2s ease, box-shadow 0.2s ease;
+	transition: box-shadow 0.2s ease;
 }
 .shot img { display: block; width: 100%; height: 100%; object-fit: cover; object-position: center top; transition: transform 0.35s ease; }
-.shot:hover, .shot:focus-visible { border-color: var(--gold); box-shadow: 0 0 0 1px rgba(240, 198, 116, 0.35), 0 10px 28px rgba(240, 198, 116, 0.16); }
+.shot:hover, .shot:focus-visible { box-shadow: 0 0 0 1px rgba(var(--focus), 0.95), 0 0 16px 2px rgba(var(--focus), 0.35), 0 10px 28px rgba(0, 0, 0, 0.5); }
 .shot:hover img, .shot:focus-visible img { transform: scale(1.05); }
-.gallery figcaption { margin-top: 8px; color: var(--muted); font-size: 0.95rem; }
+.gallery figcaption { margin-top: 10px; color: var(--body); font-size: 0.95rem; }
 
 /* Scroll reveal: hidden only when JS runs (the .js class), shown by reveal.js. Transform and opacity only. */
 .js .reveal { opacity: 0; transform: translateY(22px); transition: opacity 0.6s ease var(--delay, 0ms), transform 0.6s cubic-bezier(0.2, 0.8, 0.2, 1) var(--delay, 0ms); }
 .js .reveal.is-visible { opacity: 1; transform: none; }
-.card { transition: border-color 0.2s ease, box-shadow 0.2s ease; }
-.card:hover { border-color: rgba(240, 198, 116, 0.45); box-shadow: 0 10px 28px rgba(0, 0, 0, 0.35); }
+.js .card.reveal { transition: opacity 0.6s ease var(--delay, 0ms), transform 0.6s cubic-bezier(0.2, 0.8, 0.2, 1) var(--delay, 0ms), box-shadow 0.2s ease, background-color 0.2s ease; }
 
 /* Lightbox */
 .lb-open { overflow: hidden; }
@@ -229,7 +277,7 @@ main { max-width: 1120px; margin: 0 auto; padding: 0 16px; }
 	display: grid;
 	place-items: center;
 	padding: 56px 72px;
-	background: rgba(8, 6, 4, 0.92);
+	background: rgba(6, 6, 8, 0.92);
 	opacity: 0;
 	transition: opacity 0.2s ease;
 }
@@ -238,20 +286,30 @@ main { max-width: 1120px; margin: 0 auto; padding: 0 16px; }
 .lb-stage { margin: 0; display: grid; justify-items: center; gap: 12px; max-width: 100%; max-height: 100%; min-height: 0; }
 .lb-image {
 	max-width: 100%;
-	max-height: calc(100vh - 160px);
-	max-height: calc(100dvh - 160px);
+	max-height: calc(100vh - 170px);
+	max-height: calc(100dvh - 170px);
 	width: auto;
 	height: auto;
 	border-radius: var(--radius);
-	border: 1px solid var(--bronze);
-	box-shadow: 0 20px 60px rgba(0, 0, 0, 0.7);
+	border: 1px solid #000;
+	box-shadow: 0 0 0 1px var(--metal-hi), 0 0 0 3px var(--metal-lo), 0 20px 60px rgba(0, 0, 0, 0.75);
 	opacity: 0;
 	transform: scale(0.98);
 	transition: opacity 0.25s ease, transform 0.25s ease;
 }
 .lb-image.is-loaded { opacity: 1; transform: none; }
-.lb-stage figcaption { color: var(--text); text-align: center; }
-.lb-count { color: var(--muted); font-variant-numeric: tabular-nums; margin-left: 8px; }
+/* The caption is a native tooltip: navy box, grey rim, gold title. */
+.lb-stage figcaption {
+	padding: 7px 14px;
+	background: rgba(23, 23, 48, 0.95);
+	border: 1px solid #000;
+	border-radius: var(--radius);
+	box-shadow: inset 0 0 0 1px #5d5d72;
+	color: var(--gold);
+	font-family: var(--serif);
+	text-align: center;
+}
+.lb-count { color: var(--text); font: 0.85rem var(--sans); font-variant-numeric: tabular-nums; margin-left: 10px; }
 .lb-btn {
 	position: absolute;
 	width: 48px;
@@ -259,48 +317,53 @@ main { max-width: 1120px; margin: 0 auto; padding: 0 16px; }
 	display: grid;
 	place-items: center;
 	border-radius: 50%;
-	border: 1px solid var(--bronze);
-	background: rgba(29, 23, 17, 0.85);
-	color: var(--gold);
-	font: 400 2rem/1 var(--serif);
+	border: 1px solid #000;
+	background: radial-gradient(circle at 50% 35%, #34333a, #121115);
+	box-shadow: inset 0 0 0 2px #c8c8cc, 0 4px 14px rgba(0, 0, 0, 0.6);
+	color: var(--text);
+	font: 700 1.9rem/1 var(--sans);
 	cursor: pointer;
-	transition: transform 0.18s ease, box-shadow 0.18s ease, border-color 0.18s ease;
+	transition: transform 0.18s ease, box-shadow 0.18s ease;
 }
-.lb-btn:hover { border-color: var(--gold); box-shadow: 0 0 18px rgba(240, 198, 116, 0.3); }
+.lb-btn:hover { box-shadow: inset 0 0 0 2px #fff, 0 0 0 1px rgba(var(--focus), 0.95), 0 0 16px rgba(var(--focus), 0.45); }
+/* Close: the game's red exit button. */
+.lb-close { width: 40px; height: 40px; border-radius: 6px; background: linear-gradient(var(--red-hi), var(--red-lo)); box-shadow: inset 0 0 0 1px #c9a33e, 0 4px 14px rgba(0, 0, 0, 0.6); font-size: 1.6rem; }
+.lb-close:hover { box-shadow: inset 0 0 0 1px #ecc65a, 0 0 0 1px rgba(var(--focus), 0.95), 0 0 16px rgba(var(--focus), 0.45); }
 .lb-prev { left: 14px; top: 50%; translate: 0 -50%; }
 .lb-next { right: 14px; top: 50%; translate: 0 -50%; }
 .lb-close { right: 14px; top: 14px; }
 .lb-prev:hover { transform: translateX(-2px); }
 .lb-next:hover { transform: translateX(2px); }
 
-.table-wrap { overflow-x: auto; border: 1px solid var(--line); border-radius: var(--radius); }
+.table-wrap { overflow-x: auto; padding: 2px; }
 table { width: 100%; border-collapse: collapse; min-width: 480px; }
 th, td { text-align: left; padding: 12px 16px; border-bottom: 1px solid var(--line); }
-th { font-family: var(--serif); color: var(--gold); background: var(--bg-raised); }
+th { font-family: var(--serif); font-weight: 400; color: var(--gold); background: var(--inset); text-shadow: 0 1px 0 #000; }
+td { color: var(--text); }
 tbody tr:last-child td { border-bottom: 0; }
-tbody tr:nth-child(even) { background: rgba(255, 255, 255, 0.02); }
+tbody tr:hover { background: rgba(255, 255, 255, 0.1); }
 
 .tag {
 	display: inline-block;
 	padding: 2px 10px;
-	border-radius: 999px;
-	border: 1px solid var(--line);
+	border-radius: var(--radius);
+	border: 1px solid var(--metal);
+	background: var(--inset);
 	color: var(--muted);
 	font-size: 0.85rem;
 	font-weight: 700;
 	white-space: nowrap;
 }
-.tag.ok { color: var(--green); border-color: rgba(79, 192, 79, 0.5); }
+.tag.ok { color: var(--green); border-color: rgba(25, 255, 25, 0.4); }
 
 .steps { counter-reset: step; list-style: none; padding: 0; margin: 0; display: grid; gap: 14px; max-width: 46em; }
 .steps li {
 	counter-increment: step;
 	position: relative;
 	padding: 14px 18px 14px 64px;
-	background: var(--bg-raised);
-	border: 1px solid var(--line);
-	border-radius: var(--radius);
 }
+.steps li strong { color: var(--gold); font-family: var(--serif); font-weight: 400; }
+/* Step numbers look like the footer's button glyphs: a dark disc with a light ring. */
 .steps li::before {
 	content: counter(step);
 	position: absolute;
@@ -311,22 +374,17 @@ tbody tr:nth-child(even) { background: rgba(255, 255, 255, 0.02); }
 	display: grid;
 	place-items: center;
 	border-radius: 50%;
-	background: var(--gold);
-	color: #1d1408;
-	font: 700 1rem var(--serif);
+	background: radial-gradient(circle at 50% 35%, #34333a, #121115);
+	box-shadow: inset 0 0 0 2px #c8c8cc;
+	color: var(--text);
+	font: 700 0.95rem var(--sans);
 }
 
-details {
-	max-width: 46em;
-	background: var(--bg-raised);
-	border: 1px solid var(--line);
-	border-radius: var(--radius);
-	padding: 0 18px;
-	margin-bottom: 12px;
-}
-summary { cursor: pointer; padding: 14px 0; font-weight: 700; color: var(--text); }
-summary:hover { color: var(--gold); }
-details p { margin: 0 0 16px; color: var(--muted); }
+details { max-width: 46em; padding: 0 18px; margin-bottom: 12px; }
+summary { cursor: pointer; padding: 14px 0; font: 400 1.05rem var(--serif); color: var(--gold); text-shadow: 0 1px 0 #000; }
+summary:hover { color: var(--text); }
+details[open] { background: rgba(39, 38, 42, 0.95); }
+details p { margin: 0 0 16px; color: var(--body); }
 
 .foot p { max-width: 60em; }
 
@@ -360,7 +418,7 @@ details p { margin: 0 0 16px; color: var(--muted); }
 	.top nav::-webkit-scrollbar { display: none; }
 	.gallery { grid-template-columns: 1fr; }
 	.lightbox { padding: 64px 12px 84px; }
-	.lb-image { max-height: calc(100vh - 170px); max-height: calc(100dvh - 170px); }
+	.lb-image { max-height: calc(100vh - 180px); max-height: calc(100dvh - 180px); }
 	.lb-prev, .lb-next { top: auto; bottom: 18px; translate: none; }
 	.lb-prev { left: calc(50% - 60px); }
 	.lb-next { right: calc(50% - 60px); }
