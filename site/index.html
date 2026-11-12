@@ -18,6 +18,10 @@
 	<link rel="icon" type="image/png" href="img/icon.png">
 	<link rel="apple-touch-icon" href="img/icon.png">
 	<link rel="stylesheet" href="style.css">
+	<script>document.documentElement.classList.add("js")</script>
+	<script src="nav.js" defer></script>
+	<script src="reveal.js" defer></script>
+	<script src="lightbox.js" defer></script>
 </head>
 <body>
 	<a class="skip" href="#main">Skip to content</a>
@@ -63,69 +67,69 @@
 			<p class="intro">Forever Controller Tweaks builds on WoW Forever's own Gamepad UI instead of replacing it. Every native bar, glyph and targeting mode keeps working. Only the buttons change.</p>
 
 			<div class="grid">
-				<article class="card">
+				<article class="card reveal" style="--delay: 0ms">
 					<h3>Remap the modifiers</h3>
 					<p>Give the left bar, right bar, friendly targeting and hostile targeting to any of L1, R1, L2, R2 or the back paddles. Picking a role another button already has swaps the two. One preset sets "Left = bars, Right = targeting".</p>
 				</article>
 
-				<article class="card">
+				<article class="card reveal" style="--delay: 80ms">
 					<h3>Any action on any button</h3>
 					<p>Every face and D-pad button on every bar can hold a spell, item, toy, mount, equipment set, macro or game action. Jump, Interact, Back and Inspect can go anywhere too, and Interact keeps hold-to-loot.</p>
 				</article>
 
-				<article class="card">
+				<article class="card reveal" style="--delay: 160ms">
 					<h3>Buttons that behave like native ones</h3>
 					<p>Moved actions show cooldowns, range, mana, charges, proc glow and tooltips, and respond to mouse clicks, exactly like the game's own slots.</p>
 				</article>
 
-				<article class="card">
+				<article class="card reveal" style="--delay: 0ms">
 					<h3>Spell ranks</h3>
 					<p>Spells with ranks are grouped. Pick a specific rank, or Highest Rank, which moves up by itself when you learn a new one.</p>
 				</article>
 
-				<article class="card">
+				<article class="card reveal" style="--delay: 80ms">
 					<h3>Other addons' buttons</h3>
 					<p>Key bindings from other addons, for example WellMet, can go on any controller button.</p>
 				</article>
 
-				<article class="card">
+				<article class="card reveal" style="--delay: 160ms">
 					<h3>Touch bars</h3>
 					<p>Two bars on the left and right edges of the screen for tapping spells, made for Steam Link on a phone or tablet. Choose how many buttons, their size and position, and when they show. Off until you turn them on.</p>
 				</article>
 
-				<article class="card">
+				<article class="card reveal" style="--delay: 0ms">
 					<h3>Glyphs that match</h3>
 					<p>The bar hints, class prompts, targeting markers and on-screen legend show the buttons you actually press, in Xbox, PlayStation or Nintendo style.</p>
 				</article>
 
-				<article class="card">
+				<article class="card reveal" style="--delay: 80ms">
 					<h3>Any controller</h3>
 					<p>If the game doesn't recognise your pad, pick PlayStation, Xbox or Switch layout from a card, or press each button once to teach it. On Steam Link, Xbox is suggested.</p>
 				</article>
 
-				<article class="card">
+				<article class="card reveal" style="--delay: 160ms">
 					<h3>Controller-first settings</h3>
 					<p>Three tabs (Bindings, Modifiers, Touch) in Forever's own look, driven entirely with the D-pad, with the controller drawn in the middle so you see which button you're editing.</p>
 				</article>
 			</div>
 		</section>
 
-		<section id="screenshots" class="band">
+		<section id="screenshots" class="band reveal">
 			<h2>Screenshots</h2>
 
 			<div class="gallery">
-				<figure><img src="img/shot-bindings.png" width="1280" height="720" loading="lazy" alt="The Bindings tab with a focused row"><figcaption>Bindings: every face and D-pad button, on every bar</figcaption></figure>
-				<figure><img src="img/shot-modifiers.png" width="1280" height="720" loading="lazy" alt="The Modifiers tab"><figcaption>Modifiers: a role for every bumper, trigger and paddle</figcaption></figure>
-				<figure><img src="img/shot-picker-ranks.png" width="1280" height="720" loading="lazy" alt="The action picker on the Spells category"><figcaption>The action picker: spells, items, mounts, macros and more</figcaption></figure>
-				<figure><img src="img/shot-touch-tab.png" width="1280" height="720" loading="lazy" alt="The Touch tab"><figcaption>Touch: set up the on-screen bars</figcaption></figure>
-				<figure><img src="img/shot-touch-bars.png" width="1280" height="720" loading="lazy" alt="Touch bars on the screen edges in game"><figcaption>Touch bars in game, for Steam Link</figcaption></figure>
-				<figure><img src="img/shot-setup.png" width="1280" height="910" loading="lazy" alt="The first-start guide offering three starting layouts"><figcaption>Set up in seconds: pick a starting layout</figcaption></figure>
-				<figure><img src="img/shot-glyphs.png" width="1280" height="720" loading="lazy" alt="The crossbar with matching glyphs"><figcaption>Glyphs that match your layout</figcaption></figure>
-				<figure><img src="img/shot-addons.png" width="1280" height="784" loading="lazy" alt="The action picker on the AddOns category, with WellMet focused"><figcaption>Other addons' key bindings, like WellMet, on any button</figcaption></figure>
+				<figure><a class="shot" href="img/shot-bindings.jpg" aria-haspopup="dialog"><img src="img/thumb/shot-bindings.jpg" width="800" height="466" loading="lazy" decoding="async" alt="The Bindings tab with a focused row"></a><figcaption>Bindings: every face and D-pad button, on every bar</figcaption></figure>
+				<figure><a class="shot" href="img/shot-modifiers.jpg" aria-haspopup="dialog"><img src="img/thumb/shot-modifiers.jpg" width="800" height="418" loading="lazy" decoding="async" alt="The Modifiers tab"></a><figcaption>Modifiers: a role for every bumper, trigger and paddle</figcaption></figure>
+				<figure><a class="shot" href="img/shot-picker-ranks.jpg" aria-haspopup="dialog"><img src="img/thumb/shot-picker-ranks.jpg" width="800" height="490" loading="lazy" decoding="async" alt="The action picker on the Spells category"></a><figcaption>The action picker: spells, items, mounts, macros and more</figcaption></figure>
+				<figure><a class="shot" href="img/shot-touch-tab.jpg" aria-haspopup="dialog"><img src="img/thumb/shot-touch-tab.jpg" width="800" height="558" loading="lazy" decoding="async" alt="The Touch tab"></a><figcaption>Touch: set up the on-screen bars</figcaption></figure>
+				<figure><a class="shot" href="img/shot-touch-bars.jpg" aria-haspopup="dialog"><img src="img/thumb/shot-touch-bars.jpg" width="800" height="500" loading="lazy" decoding="async" alt="Touch bars on the screen edges in game"></a><figcaption>Touch bars in game, for Steam Link</figcaption></figure>
+				<figure><a class="shot" href="img/shot-setup.jpg" aria-haspopup="dialog"><img src="img/thumb/shot-setup.jpg" width="800" height="568" loading="lazy" decoding="async" alt="The first-start guide offering three starting layouts"></a><figcaption>Set up in seconds: pick a starting layout</figcaption></figure>
+				<figure><a class="shot" href="img/shot-glyphs.jpg" aria-haspopup="dialog"><img src="img/thumb/shot-glyphs.jpg" width="800" height="450" loading="lazy" decoding="async" alt="The crossbar with matching glyphs"></a><figcaption>Glyphs that match your layout</figcaption></figure>
+				<figure><a class="shot" href="img/shot-addons.jpg" aria-haspopup="dialog"><img src="img/thumb/shot-addons.jpg" width="800" height="490" loading="lazy" decoding="async" alt="The action picker on the AddOns category, with WellMet focused"></a><figcaption>Other addons' key bindings, like WellMet, on any button</figcaption></figure>
 			</div>
 		</section>
 
-		<section id="controllers" class="band">
+		<section id="controllers" class="band reveal">
 			<h2>Controllers</h2>
 
 			<div class="table-wrap">
@@ -149,7 +153,7 @@
 			<p class="small">Tried another controller? <a href="https://github.com/racha/forever-controller-tweaks/issues">Tell us how it went</a> and include the lines <code>/fct selftest</code> prints.</p>
 		</section>
 
-		<section id="install" class="band">
+		<section id="install" class="band reveal">
 			<h2>Install</h2>
 
 			<ol class="steps">
@@ -161,7 +165,7 @@
 			</ol>
 		</section>
 
-		<section id="faq" class="band">
+		<section id="faq" class="band reveal">
 			<h2>FAQ</h2>
 
 			<details>

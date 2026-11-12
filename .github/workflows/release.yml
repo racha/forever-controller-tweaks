@@ -1,5 +1,6 @@
 # On a v* tag (v1.0.0, v1.0.0-beta.2): build ForeverControllerTweaks-<version>.zip with the BigWigs packager,
-# create the GitHub release with it, and upload it to CurseForge when the CF_API_KEY secret is set.
+# create the GitHub release with it, and upload it to CurseForge when the CF_API_KEY secret is set and to Wago
+# (addons.wago.io, which lists WoW Forever 1.60.1) when the WAGO_API_TOKEN secret is set and the TOC has '## X-Wago-ID'.
 # The packager reads '## Interface: 16001' as WoW Forever (game version 1.60.1) and the CurseForge
 # project from '## X-Curse-Project-ID'. A tag containing "beta" or "alpha" is uploaded as that type (packager v2.7.0: case-insensitive substring, alpha wins).
 # CHANGELOG.md needs a '## <tag without v> — <date>' heading: not "unreleased", no YYYY-MM-DD placeholder.
@@ -17,6 +18,7 @@ jobs:
     runs-on: ubuntu-latest
     env:
       CF_API_KEY: ${{ secrets.CF_API_KEY }}
+      WAGO_API_TOKEN: ${{ secrets.WAGO_API_TOKEN }}
       GITHUB_OAUTH: ${{ secrets.GITHUB_TOKEN }}
     steps:
       - uses: actions/checkout@v7

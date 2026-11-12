@@ -9,6 +9,7 @@
 ## X-License: MIT
 ## X-Website: https://racha.github.io/forever-controller-tweaks/
 ## X-Curse-Project-ID: 1800450
+## X-Wago-ID: EGPamkN1
 ## AddonCompartmentFunc: ForeverControllerTweaks_OnCompartmentClick
 ## AddonCompartmentFuncOnEnter: ForeverControllerTweaks_OnCompartmentEnter
 ## AddonCompartmentFuncOnLeave: ForeverControllerTweaks_OnCompartmentLeave
