@@ -40,13 +40,13 @@ An unrecognised controller gets four cards when you first log in with it:
 
 On Steam Link, **Xbox** is marked **Suggested**: Steam's virtual controller usually behaves like an Xbox pad. A controller that reports its own style gets that card suggested instead.
 
-Change it later in **Modifiers → More → Controller type**, or with `/fct family xbox`, `playstation`, `switch` or `reset`.
+Change it later in **More → Controller type**, or with `/fct family xbox`, `playstation`, `switch` or `reset`.
 
 ## Controller setup ("press each button")
 
 For a controller the cards don't cover, or one whose buttons come out wrong:
 
-- `/fct detect`, **Modifiers → More → Detect controller buttons**, or the **Custom** card;
+- `/fct detect`, **More → Detect controller buttons**, or the **Custom** card;
 - press each control once, about a minute in all;
 - choose the glyph style.
 

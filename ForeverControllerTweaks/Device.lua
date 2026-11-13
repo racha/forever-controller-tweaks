@@ -27,7 +27,15 @@ local function rawState(id)
 	if ok and type(raw) == "table" and type(raw.rawButtons) == "table" then return raw end
 end
 
-local function listed() return C_GamePad.GetAllDeviceIDs and C_GamePad.GetAllDeviceIDs() or {} end
+-- The device list as a 1-based array: like the raw tables, it may come 0-based, and ipairs would miss device [0].
+local function listed()
+	local ok, ids = pcall(C_GamePad.GetAllDeviceIDs)
+	local list = ok and type(ids) == "table" and ids or {}
+	local out = {}
+	if list[0] ~= nil then out[1] = list[0] end
+	for _, id in ipairs(list) do out[#out + 1] = id end
+	return out
+end
 
 -- The active device wins when it has a raw state. It is often the combined device, which has none; then the device
 -- chosen before stays (the watch below moves it to the one that sends input), else combined, else the first listed.
@@ -663,3 +671,58 @@ ns.On("PLAYER_LOGIN", function()
 	refresh()
 	C_Timer.NewTicker(WATCH_POLL, watch)
 end)
+
+-- /fct selftest: what each device API returns, to tell why no pad resolves (no raw state from any device id, a list
+-- the addon can't read, the gamepad off) from the player's chat lines.
+local function hex(n) return type(n) == "number" and string.format("%04x", n) or tostring(n) end
+
+local function deviceLine(id)
+	local ok, state = pcall(C_GamePad.GetDeviceRawState, id)
+	local okMapped, mapped = pcall(C_GamePad.GetDeviceMappedState, id)
+	local rawText = "raw none"
+	if not ok then
+		rawText = "raw error: " .. tostring(state)
+	elseif type(state) == "table" then
+		rawText = string.format("raw %s name=%s vendor=%s product=%s rawButtons=%s(%s)", rawState(id) and "ok" or "unusable", tostring(state.name), hex(state.vendorID), hex(state.productID), type(state.rawButtons), tostring(state.rawButtonCount))
+	end
+	local mappedText = okMapped and type(mapped) == "table" and string.format("mapped name=%s labelStyle=%s buttons=%s", tostring(mapped.name), tostring(mapped.labelStyle), tostring(mapped.buttonCount)) or "mapped none"
+	return string.format("device %s: %s; %s", tostring(id), rawText, mappedText)
+end
+
+function Device.Report()
+	local function get(fn)
+		local ok, value = pcall(fn)
+		if not ok then return "n/a" end
+		return value
+	end
+	local active, combined = get(C_GamePad.GetActiveDeviceID), get(C_GamePad.GetCombinedDeviceID)
+	local okList, ids = pcall(C_GamePad.GetAllDeviceIDs)
+	local shown = {}
+	if okList and type(ids) == "table" then
+		for k, v in pairs(ids) do shown[#shown + 1] = tostring(k) .. "=" .. tostring(v) end
+	end
+	table.sort(shown)
+	local lines = {
+		string.format("devices: active %s, combined %s, list {%s}, enabled %s, GamePadEnable %s", tostring(active), tostring(combined), okList and table.concat(shown, " ") or "error", tostring(get(C_GamePad.IsEnabled)), tostring(GetCVar and GetCVar("GamePadEnable"))),
+	}
+	local seen, order = {}, listed()
+	table.insert(order, 1, type(combined) == "number" and combined or false)
+	table.insert(order, 1, type(active) == "number" and active or false)
+	for _, id in ipairs(order) do
+		if id and not seen[id] then
+			seen[id] = true
+			lines[#lines + 1] = deviceLine(id)
+		end
+	end
+	lines[#lines + 1] = string.format("resolved: %s (raw device %s)", current and current.key or "none", tostring(rawID))
+	return lines
+end
+
+local selftest = ns.commands.selftest
+function ns.commands.selftest(args)
+	selftest(args)
+	for _, line in ipairs(Device.Report()) do
+		ns.log("selftest: " .. line)
+		ns.debug("selftest %s", line)
+	end
+end

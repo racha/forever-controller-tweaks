@@ -168,4 +168,28 @@ assert(not H.ns.Device.NeedsSetup() and H.ns.db.devices["2dc8/6001"].confirmed a
 H.run()
 assert(H.configs["2dc8/6001"] and H.ns.Remap.State() == "ours", "confirmed by learning: the layout applies")
 
+-- A 0-based device list (as the raw tables can be) with the active device id giving no raw state: the pad at [0]
+-- still resolves.
+do
+	local H0 = harness(dir, { pads = { [5] = harness(dir).newPad("Xbox Wireless Controller", 0x045e, 0x0b13) } })
+	C_GamePad.GetActiveDeviceID = function() return 7 end
+	C_GamePad.GetAllDeviceIDs = function() return { [0] = 5 } end
+	H0.login()
+	local device = H0.ns.Device.Current()
+	assert(device and device.key == "045e/0b13" and device.deviceID == 5, "a pad listed at index 0 resolves")
+	local report = table.concat(H0.ns.Device.Report(), "\n")
+	assert(report:find("list {0=5}", 1, true) and report:find("device 5: raw ok name=Xbox Wireless Controller vendor=045e product=0b13", 1, true) and report:find("resolved: 045e/0b13", 1, true), "report: the list, the pad's raw state, the result")
+end
+
+-- No device gives a raw state (the game only maps it): nothing resolves, and /fct selftest says per device why.
+do
+	local H1 = harness(dir, { pads = { [5] = harness(dir).newPad("Xbox Wireless Controller", 0x045e, 0x0b13) } })
+	C_GamePad.GetDeviceRawState = function() return nil end
+	C_GamePad.GetDeviceMappedState = function(id) if id == 5 then return { name = "Xbox Wireless Controller", labelStyle = "Letters", buttonCount = 32 } end end
+	H1.login()
+	assert(H1.ns.Device.Current() == nil and H1.ns.Device.Refresh() == nil, "no raw state anywhere: no device")
+	H1.slash("selftest")
+	assert(H1.said("selftest: device 5: raw none; mapped name=Xbox Wireless Controller labelStyle=Letters buttons=32") and H1.said("selftest: resolved: none"), "selftest prints each device's raw and mapped state")
+end
+
 io.stdout:write("device_spec: all checks passed\n")

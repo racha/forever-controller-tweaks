@@ -5,7 +5,7 @@
 -- Any cell takes any catalog entry (the face actions are in it): an entry the router must carry (Face.Routable: a
 -- face button's base layer, or a face action anywhere) goes to Face.SetCellEntry, every other one into the storage
 -- slot (Actions.Assign). A spell group opens its ranks on a second page of the same list.
--- List mode (opts.list) shows any one list in the same look, e.g. Modifiers' roles: no clear row, no categories,
+-- List mode (opts.list) shows any one list in the same look, e.g. Bindings' role list: no clear row, no categories,
 -- the focused entry's details beside it, and A hands the entry to list.onPick.
 local _, ns = ...
 local UI = ns.UI
@@ -22,25 +22,27 @@ local frame, state
 
 -- A target cell: { code = "FT"..., layer = "T" | "L" | "R" | "B", slot = storage slot, pos = base face position,
 -- page = the Bindings page shown (a routed entry belongs to that page) }, or a touch bar button { touch = { side,
--- index } } (Touch tab; ns.Touch may not be loaded yet).
+-- index, layer } } (Touch tab; layer T unless Touch takes layers), or a ring slot { ring = { id, index } } (Rings tab).
 local POS_CODE = {}
 for code, pos in pairs(UI.CODE_POS) do POS_CODE[pos] = code end
 
 -- The routed entry of a cell: { id, name, icon, kind } or nil.
 function Picker.CellEntry(t)
-	if t.touch then return ns.Touch and ns.Touch.Entry(t.touch.side, t.touch.index) end
+	if t.ring then return ns.Rings.SlotEntry(t.ring.id, t.ring.index) end
+	if t.touch then return ns.Touch and ns.Touch.Entry(t.touch.side, t.touch.index, t.touch.layer) end
 	return ns.Face.CellEntry(t.code, t.layer, t.page)
 end
 
 -- Sets (or with nil clears) a routed cell on its page, or a touch button.
 local function setEntry(t, entry)
+	if t.ring then return ns.Rings.SetSlot(t.ring.id, t.ring.index, entry) end
 	if not t.touch then return ns.Face.SetCellEntry(t.code, t.layer, entry, t.page) end
 	if not ns.Touch then return nil, L.TOUCH_MISSING end
-	return ns.Touch.SetEntry(t.touch.side, t.touch.index, entry)
+	return ns.Touch.SetEntry(t.touch.side, t.touch.index, entry, t.touch.layer)
 end
 
 local function assign(t, entry)
-	if t.touch or ns.Face.Routable(t.code, t.layer, entry) then return setEntry(t, entry) end
+	if t.touch or t.ring or ns.Face.Routable(t.code, t.layer, entry) then return setEntry(t, entry) end
 	if not t.slot then return nil, L.NO_SLOT end
 
 	local ok, err = ns.Actions.Assign(t.slot, entry)
@@ -74,6 +76,14 @@ end
 -- Focus the current entry: its row, or for a ranked spell its group's row with the ranks page opened on it.
 local function build()
 	state.categories = ns.Actions.Catalog()
+	-- A ring slot can't open another ring.
+	if state.ring then
+		local list = {}
+		for _, category in ipairs(state.categories) do
+			if category.name ~= "Rings" then list[#list + 1] = category end
+		end
+		state.categories = list
+	end
 	local wanted = currentId(state)
 	state.category, state.index, state.current = 1, 1, wanted
 	if not wanted then return end
@@ -283,7 +293,7 @@ local lastClear
 function Picker.ClearCell(t)
 	if InCombatLockdown() then return end
 	local entry = Picker.CellEntry(t)
-	if entry or t.pos or t.touch then
+	if entry or t.pos or t.touch or t.ring then
 		lastClear = { target = t, entry = entry }
 		return report(setEntry(t, nil))
 	end
@@ -303,6 +313,13 @@ local function find(id)
 	end
 end
 
+-- What Undo would put back, by name.
+function Picker.UndoName()
+	if not Picker.CanUndo() then return end
+	local entry = lastClear.entry or find(lastClear.id)
+	return entry and entry.name
+end
+
 function Picker.Undo()
 	local undo = lastClear
 	if InCombatLockdown() or not Picker.CanUndo() then return end
@@ -314,7 +331,7 @@ end
 
 function Picker.Clear()
 	local done = state.onDone
-	Picker.ClearCell({ code = state.code, layer = state.layer, slot = state.slot, pos = state.pos, page = state.page, touch = state.touch })
+	Picker.ClearCell({ code = state.code, layer = state.layer, slot = state.slot, pos = state.pos, page = state.page, touch = state.touch, ring = state.ring })
 	Picker.Close()
 	if done then done() end
 end
@@ -419,7 +436,7 @@ local function create()
 	frame:Hide()
 end
 
--- opts = { window, cell, code, layer, slot = storage slot, pos = base face position }; onDone after a change.
+-- opts = { window, cell, code, layer, slot = storage slot, pos = base face position, touch, ring }; onDone after a change.
 -- Onboarding passes only pos: that is the base (top bar) layer of the face button.
 -- List mode: opts = { window, cell (focus returns there), list = { title, entries, current = id, onPick(entry) },
 -- point = an anchor instead of beside the cell }. Entries: { id, name, icon, color, note, live, detail, disabled }.
@@ -429,7 +446,7 @@ function Picker.Open(opts)
 	if state then Picker.Close() end
 
 	local code = opts.code or POS_CODE[opts.pos]
-	state = { window = opts.window, cell = opts.cell, code = code, layer = opts.layer or "T", slot = opts.slot, pos = opts.pos, onDone = opts.onDone, offset = 0, list = opts.list, page = opts.page, touch = opts.touch }
+	state = { window = opts.window, cell = opts.cell, code = code, layer = opts.layer or "T", slot = opts.slot, pos = opts.pos, onDone = opts.onDone, offset = 0, list = opts.list, page = opts.page, touch = opts.touch, ring = opts.ring }
 	local list = state.list
 	if list then
 		state.categories, state.category, state.index, state.current, state.info = { { name = list.title, entries = list.entries } }, 1, 1, list.current, true

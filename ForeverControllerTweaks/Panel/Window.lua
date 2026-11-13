@@ -223,6 +223,8 @@ local function onHide(self)
 	end
 end
 
+local BODY_ATLAS, BODY_ALPHA, BODY_GREY = "bank-frame-background", 0.5, 0.6
+
 -- A w x h window, centred on screen.
 function UI.NewWindow(w, h)
 	local window = Mixin(CreateFrame("Frame", nil, UIParent, "ForeverControllerTweaksWindowTemplate"), Window)
@@ -237,6 +239,18 @@ function UI.NewWindow(w, h)
 	underlay:SetColorTexture(0, 0, 0, 1)
 	underlay:SetAllPoints()
 	window.underlay = underlay
+	-- The body texture: the native Bank frame's background (BankFrameTemplates.xml, bank-frame-background), tiled at
+	-- 256 x 256 as the Bank frame does, so it stays crisp at any window size (the Character window's body atlas is
+	-- drawn for its small inset and blurs when stretched this large). It sits in our Bg frame at sublevel 1: above the
+	-- template's flat fill (sublevel 0) and the underlay, below every content frame.
+	local body = (window.Bg or window):CreateTexture(nil, "BACKGROUND", nil, 1)
+	body:SetAtlas(BODY_ATLAS)
+	body:SetHorizTile(true)
+	body:SetVertTile(true)
+	body:SetAllPoints()
+	body:SetAlpha(BODY_ALPHA)
+	body:SetDesaturation(BODY_GREY)
+	window.body = body
 	window:EnableGamePadButton(true)
 	window:EnableKeyboard(true)
 	window:SetScript("OnGamePadButtonDown", onPadDown)

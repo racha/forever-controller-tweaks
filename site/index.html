@@ -4,12 +4,12 @@
 	<meta charset="utf-8">
 	<meta name="viewport" content="width=device-width, initial-scale=1">
 	<title>Forever Controller Tweaks</title>
-	<meta name="description" content="A WoW Forever addon: remap bumpers and triggers, put any action on any controller button, and add on-screen touch bars, all set up with the controller.">
+	<meta name="description" content="A WoW Forever addon: remap bumpers and triggers, put any action on any controller button, type with an on-screen keyboard, build action rings and add on-screen touch bars, all set up with the controller.">
 	<meta name="color-scheme" content="dark">
 	<meta property="og:type" content="website">
 	<meta property="og:url" content="https://racha.github.io/forever-controller-tweaks/">
 	<meta property="og:title" content="Forever Controller Tweaks">
-	<meta property="og:description" content="Play WoW Forever on a controller your way: remap bumpers and triggers, put any action on any button, and tap spells on screen over Steam Link.">
+	<meta property="og:description" content="Play WoW Forever on a controller your way: remap bumpers and triggers, put any action on any button, type with a smart on-screen keyboard, open action rings and tap spells on screen over Steam Link.">
 	<meta property="og:image" content="https://racha.github.io/forever-controller-tweaks/img/logo.png">
 	<meta property="og:image:width" content="400">
 	<meta property="og:image:height" content="400">
@@ -46,7 +46,7 @@
 
 				<h1>Play WoW Forever on a controller your way.</h1>
 
-				<p class="lead">Choose which bumper or trigger opens each crossbar bar and targeting mode, put any spell, item or action on any face or D-pad button, and tap spells on screen when you play through Steam Link. The glyphs always match the buttons you press, and you set everything up with the controller.</p>
+				<p class="lead">Choose which bumper or trigger opens each crossbar bar and targeting mode, put any spell, item or action on any face or D-pad button, type in chat with an on-screen keyboard, open your own action rings, and tap spells on screen when you play through Steam Link. The glyphs always match the buttons you press, and you set everything up with the controller.</p>
 
 				<ul class="roles" aria-label="Example layout, Left = bars, Right = targeting">
 					<li style="--role: var(--role-left)"><b>L2</b> LEFT BAR</li>
@@ -61,7 +61,7 @@
 					<a class="button" href="https://github.com/racha/forever-controller-tweaks/releases">GitHub download</a>
 				</div>
 
-				<p class="small"><strong>Public beta 1.0.0-beta.1.</strong> Free and open source (MIT). For WoW Forever 1.60.1. Found a bug? <a href="https://github.com/racha/forever-controller-tweaks/issues">Report it on GitHub</a>.</p>
+				<p class="small"><strong>Public beta 1.1.0-beta.1.</strong> Free and open source (MIT). For WoW Forever 1.60.1. Found a bug? <a href="https://github.com/racha/forever-controller-tweaks/issues">Report it on GitHub</a>.</p>
 			</div>
 
 			<figure class="hero-logo">
@@ -76,8 +76,23 @@
 
 			<div class="grid">
 				<article class="card reveal" style="--delay: 0ms">
+					<h3>On-screen keyboard <span class="tag ok">New</span></h3>
+					<p>A radial keyboard in Forever's style opens on any text box: chat, whispers, bag search, mail, macros. Both sticks type, it places itself clear of the chat window, and every button can be rebound.</p>
+				</article>
+
+				<article class="card reveal" style="--delay: 80ms">
+					<h3>Knows what you want to say <span class="tag ok">New</span></h3>
+					<p>263 hand-written lines for 25 situations, replies to chat aimed at you (125 recognised phrases like "inv?" or "LF healer"), quest progress for the quest you follow, and next-word prediction that learns how you write. All offline, nothing is ever sent for you.</p>
+				</article>
+
+				<article class="card reveal" style="--delay: 160ms">
+					<h3>Action rings <span class="tag ok">New</span></h3>
+					<p>Build up to 12 radial menus of 4 to 12 slots, with any action and any icon. Put a ring on any button: hold it, aim with the stick, release. Choose the Right stick, Left stick, or Dynamic per ring. Works in combat and on touch buttons.</p>
+				</article>
+
+				<article class="card reveal" style="--delay: 0ms">
 					<h3>Remap the modifiers</h3>
-					<p>Give the left bar, right bar, friendly targeting and hostile targeting to any of L1, R1, L2, R2 or the back paddles. Picking a role another button already has swaps the two. One preset sets "Left = bars, Right = targeting".</p>
+					<p>Give the left bar, right bar, friendly targeting and hostile targeting to any of L1, R1, L2, R2 or the back paddles, right on the Bindings screen. Picking a role another button already has swaps the two. One preset sets "Left = bars, Right = targeting".</p>
 				</article>
 
 				<article class="card reveal" style="--delay: 80ms">
@@ -102,7 +117,7 @@
 
 				<article class="card reveal" style="--delay: 160ms">
 					<h3>Touch bars</h3>
-					<p>Two bars on the left and right edges of the screen for tapping spells, made for Steam Link on a phone or tablet. Choose how many buttons, their size and position, and when they show. Off until you turn them on.</p>
+					<p>Two bars on the left and right edges of the screen for tapping spells, made for Steam Link on a phone or tablet. Each button has an action per bar, following your modifiers. Set count, size, position, shape and empty buttons per side, and when they show. Off until you turn them on.</p>
 				</article>
 
 				<article class="card reveal" style="--delay: 0ms">
@@ -117,7 +132,7 @@
 
 				<article class="card reveal" style="--delay: 160ms">
 					<h3>Controller-first settings</h3>
-					<p>Three tabs (Bindings, Modifiers, Touch) in Forever's own look, driven entirely with the D-pad, with the controller drawn in the middle so you see which button you're editing.</p>
+					<p>Four tabs (Bindings, Touch, Keyboard, Rings) in Forever's own look, driven entirely with the D-pad, with the controller drawn in the middle so you see which button you're editing. Triangle opens More on every screen.</p>
 				</article>
 			</div>
 		</section>
@@ -126,10 +141,15 @@
 			<h2>Screenshots</h2>
 
 			<div class="gallery">
-				<figure><a class="shot" href="img/shot-bindings.jpg" aria-haspopup="dialog"><img src="img/thumb/shot-bindings.jpg" width="800" height="466" loading="lazy" decoding="async" alt="The Bindings tab with a focused row"></a><figcaption>Bindings: every face and D-pad button, on every bar</figcaption></figure>
-				<figure><a class="shot" href="img/shot-modifiers.jpg" aria-haspopup="dialog"><img src="img/thumb/shot-modifiers.jpg" width="800" height="418" loading="lazy" decoding="async" alt="The Modifiers tab"></a><figcaption>Modifiers: a role for every bumper, trigger and paddle</figcaption></figure>
+				<figure><a class="shot" href="img/shot-ring.jpg" aria-haspopup="dialog"><img src="img/thumb/shot-ring.jpg" width="800" height="450" loading="lazy" decoding="async" alt="An action ring open in game"></a><figcaption>Action rings: hold, aim, release</figcaption></figure>
+				<figure><a class="shot" href="img/shot-keyboard.jpg" aria-haspopup="dialog"><img src="img/thumb/shot-keyboard.jpg" width="800" height="450" loading="lazy" decoding="async" alt="The on-screen keyboard suggesting the next word after hello"></a><figcaption>The keyboard: next-word prediction as you type</figcaption></figure>
+				<figure><a class="shot" href="img/shot-phrases.jpg" aria-haspopup="dialog"><img src="img/thumb/shot-phrases.jpg" width="800" height="450" loading="lazy" decoding="async" alt="The keyboard on an empty chat box with quick phrases for the zone"></a><figcaption>Quick phrases for where you are and what's happening</figcaption></figure>
+				<figure><a class="shot" href="img/shot-rings-tab.jpg" aria-haspopup="dialog"><img src="img/thumb/shot-rings-tab.jpg" width="800" height="450" loading="lazy" decoding="async" alt="The Rings tab with an eight-slot ring"></a><figcaption>Rings: build your own radial menus</figcaption></figure>
+				<figure><a class="shot" href="img/shot-bindings.jpg" aria-haspopup="dialog"><img src="img/thumb/shot-bindings.jpg" width="800" height="450" loading="lazy" decoding="async" alt="The Bindings tab with a focused face button"></a><figcaption>Bindings: every face and D-pad button, on every bar</figcaption></figure>
+				<figure><a class="shot" href="img/shot-modifiers.jpg" aria-haspopup="dialog"><img src="img/thumb/shot-modifiers.jpg" width="800" height="450" loading="lazy" decoding="async" alt="The Bindings tab with the role list open on L2"></a><figcaption>Modifiers: a role for every bumper, trigger and paddle</figcaption></figure>
+				<figure><a class="shot" href="img/shot-keyboard-tab.jpg" aria-haspopup="dialog"><img src="img/thumb/shot-keyboard-tab.jpg" width="800" height="450" loading="lazy" decoding="async" alt="The Keyboard tab"></a><figcaption>Keyboard: placement, layout and buttons</figcaption></figure>
+				<figure><a class="shot" href="img/shot-touch-tab.jpg" aria-haspopup="dialog"><img src="img/thumb/shot-touch-tab.jpg" width="800" height="450" loading="lazy" decoding="async" alt="The Touch tab"></a><figcaption>Touch: on-screen bars with a page per modifier</figcaption></figure>
 				<figure><a class="shot" href="img/shot-picker-ranks.jpg" aria-haspopup="dialog"><img src="img/thumb/shot-picker-ranks.jpg" width="800" height="490" loading="lazy" decoding="async" alt="The action picker on the Spells category"></a><figcaption>The action picker: spells, items, mounts, macros and more</figcaption></figure>
-				<figure><a class="shot" href="img/shot-touch-tab.jpg" aria-haspopup="dialog"><img src="img/thumb/shot-touch-tab.jpg" width="800" height="558" loading="lazy" decoding="async" alt="The Touch tab"></a><figcaption>Touch: set up the on-screen bars</figcaption></figure>
 				<figure><a class="shot" href="img/shot-touch-bars.jpg" aria-haspopup="dialog"><img src="img/thumb/shot-touch-bars.jpg" width="800" height="500" loading="lazy" decoding="async" alt="Touch bars on the screen edges in game"></a><figcaption>Touch bars in game, for Steam Link</figcaption></figure>
 				<figure><a class="shot" href="img/shot-setup.jpg" aria-haspopup="dialog"><img src="img/thumb/shot-setup.jpg" width="800" height="568" loading="lazy" decoding="async" alt="The first-start guide offering three starting layouts"></a><figcaption>Set up in seconds: pick a starting layout</figcaption></figure>
 				<figure><a class="shot" href="img/shot-glyphs.jpg" aria-haspopup="dialog"><img src="img/thumb/shot-glyphs.jpg" width="800" height="450" loading="lazy" decoding="async" alt="The crossbar with matching glyphs"></a><figcaption>Glyphs that match your layout</figcaption></figure>
@@ -169,7 +189,7 @@
 				<li><strong>Turn on the Gamepad UI.</strong> Options → Gamepad → <em>Enable Gamepad UI (Beta)</em>.</li>
 				<li><strong>Restart the game</strong> completely, and enable Forever Controller Tweaks in the AddOns list.</li>
 				<li><strong>Pick a layout</strong> when the short guide asks how you want to play.</li>
-				<li><strong>Open the settings any time:</strong> hold <strong>L2 + R2</strong> and press <strong>Create</strong> (PlayStation) or <strong>View</strong> (Xbox), click the minimap button, go to Options → AddOns → Forever Controller Tweaks, or type <code>/fct</code>.</li>
+				<li><strong>Open the settings any time:</strong> hold <strong>L2 + R2</strong> and press <strong>Create</strong> (PlayStation) or <strong>View</strong> (Xbox), click the minimap button, go to Options → AddOns → Forever Controller Tweaks, or type <code>/fct</code> (<code>/fct rings</code> opens the Rings tab).</li>
 			</ol>
 		</section>
 
@@ -184,6 +204,16 @@
 			<details>
 				<summary>Does it work in combat?</summary>
 				<p>Yes. Your layout, moved actions, touch bars and glyphs work in and out of combat. Only the settings window closes when combat starts, and it offers to reopen afterwards.</p>
+			</details>
+
+			<details>
+				<summary>Does the keyboard work everywhere?</summary>
+				<p>On almost every text box. A few boxes the game blocks addons from typing into, such as the Options search, the Group Finder's boxes and spellbook search, are left to a real keyboard, and the keyboard says so instead of opening. Slash commands (anything starting with <code>/</code> in chat) also need a real keyboard.</p>
+			</details>
+
+			<details>
+				<summary>Do rings use action slots?</summary>
+				<p>No. Rings fire their actions directly, so they never take any of the hidden action slots that moved buttons and touch buttons use.</p>
 			</details>
 
 			<details>
@@ -211,7 +241,7 @@
 	<footer class="foot">
 		<p><a href="https://github.com/racha/forever-controller-tweaks">Source on GitHub</a> · <a href="https://addons.wago.io/addons/forever-controller-tweaks">Wago</a> · <a href="https://www.curseforge.com/wow/addons/forever-controller-tweaks">CurseForge</a> · MIT licence © 2026 HouseLegend</p>
 
-		<p class="small">Thanks to Improved Forever and Controller Companion (both MIT) for ideas and techniques, and to ConsolePort for inspiring the bindings screen; no ConsolePort code or art is used. PlayStation, Xbox, Nintendo Switch and Steam are trademarks of their respective owners. World of Warcraft is a trademark of Blizzard Entertainment, Inc. This addon isn't affiliated with or endorsed by Blizzard Entertainment.</p>
+		<p class="small">Thanks to Improved Forever and Controller Companion (both MIT) for ideas and techniques, and to ConsolePort for inspiring the bindings screen and the keyboard; no ConsolePort code or art is used. PlayStation, Xbox, Nintendo Switch and Steam are trademarks of their respective owners. World of Warcraft is a trademark of Blizzard Entertainment, Inc. This addon isn't affiliated with or endorsed by Blizzard Entertainment.</p>
 
 		<p class="small"><em>Made with the help of AI:</em> this addon was designed by HouseLegend and written with <a href="https://claude.com/claude-code">Claude Code</a>, Anthropic's AI coding assistant. Every change is reviewed and tested in game before release.</p>
 	</footer>

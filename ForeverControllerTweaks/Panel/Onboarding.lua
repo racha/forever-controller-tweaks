@@ -1,4 +1,4 @@
--- Forever Controller Tweaks onboarding: Welcome -> Choose a layout -> (Set it up yourself, the Modifiers window in guided
+-- Forever Controller Tweaks onboarding: Welcome -> Choose a layout -> (Set it up yourself, the Bindings window in guided
 -- mode) -> Try it -> Face actions -> Done, in one 760x470 native window. It shows once per account per controller
 -- family on the first login with the gamepad UI on and a pad connected; /fct setup and "Setup guide" re-run it.
 local _, ns = ...
@@ -15,7 +15,16 @@ local window, pages, step, active
 local TITLES = { family = L.FAMILY_TITLE, welcome = L.WELCOME_TITLE, choose = L.CHOOSE_TITLE, try = L.TRY_TITLE, face = L.FACE_TITLE, done = L.DONE_TITLE }
 local FAMILIES = { "playstation", "xbox", "switch", "custom" }
 local FAMILY_ART = { playstation = "playstation", xbox = "xbox", switch = "switch", custom = "generic" }
-local FAMILY_W, FAMILY_PITCH, FAMILY_H = 169, 181, 330
+local FAMILY_W, FAMILY_PITCH, FAMILY_H = 169, 181, 316
+-- A family card's art: the pad cropped to the drawing's units (VB_X, VB_Y, VB_W, VB_H), stretched over its canvas, so
+-- UI.DIA positions map onto it by ART_K. The face glyphs are the game's sets (Detect.STYLE_FACES: bottom, right, left,
+-- top), the legend repeats them larger.
+local VB_X, VB_Y, VB_W, VB_H = 28, 14, 344, 268
+local ART_W, ART_TOP = FAMILY_W - 4, 44
+local ART_K = ART_W / VB_W
+local FAMILY_STYLE = { playstation = "Shapes", xbox = "Letters", switch = "Reverse" }
+local FACE_CODES = { "FB", "FR", "FL", "FT" }
+local LEGEND_Y, LEGEND_SIZE, LEGEND_GAP = 204, 28, 6
 
 local function onboarded()
 	ns.db.onboarded = ns.db.onboarded or {}
@@ -40,7 +49,7 @@ end
 
 -- 0 An unrecognised pad: which layout is it? Four cards with the family art; PlayStation, Xbox or Switch is saved
 -- through Device.SetFamily (when the build has it) and the guide goes on to the layout choice; Custom runs
--- controller setup. Modifiers > More > Controller type opens the same page and returns to Modifiers.
+-- controller setup. Bindings > More > Controller type opens the same page and returns to Bindings.
 local familyFromMore
 
 -- True: as a page's Back it has opened the next window, which must stay (Window closes all on a false Back).
@@ -50,7 +59,7 @@ local function afterFamily()
 		return true
 	end
 	O.Finish()
-	UI.Modifiers.Open()
+	UI.Bindings.Open()
 	return true
 end
 
@@ -69,6 +78,48 @@ local function pickFamily(id)
 	afterFamily()
 end
 
+-- A mark on the card art at drawing units (x, y): a face glyph, a "?" or a trigger name (point: which side of it).
+local function onArt(card, region, x, y, point) region:SetPoint(point or "CENTER", card.art, "TOPLEFT", (x - VB_X) * ART_K, -(y - VB_Y) * ART_K) end
+
+local function familyMarks(card, id)
+	local style, pos = FAMILY_STYLE[id], UI.DIA[FAMILY_ART[id]].pos
+	local faces = style and UI.Detect.STYLE_FACES[style]
+	local legendX = (FAMILY_W - 4 * LEGEND_SIZE - 3 * LEGEND_GAP) / 2
+	for i, code in ipairs(FACE_CODES) do
+		local x, y = unpack(pos[code])
+		local mark = faces and card:CreateTexture(nil, "OVERLAY") or card:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+		local legend = faces and card:CreateTexture(nil, "OVERLAY") or CreateFrame("Frame", nil, card)
+		legend:SetSize(LEGEND_SIZE, LEGEND_SIZE)
+		UI.At(legend, card, legendX + (i - 1) * (LEGEND_SIZE + LEGEND_GAP), LEGEND_Y - LEGEND_SIZE / 2)
+		if faces then
+			mark:SetAtlas(faces[i])
+			mark:SetSize(28 * ART_K, 28 * ART_K)
+			legend:SetAtlas(faces[i])
+		else
+			mark:SetText("?")
+			-- The custom card's legend: neutral slots with "?", as the learn screen starts.
+			legend.border = legend:CreateTexture(nil, "ARTWORK")
+			legend.border:SetAllPoints()
+			legend.border:SetAtlas("gamepad-footer-slot-frameneutral")
+			legend.text = legend:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+			legend.text:SetPoint("CENTER")
+			legend.text:SetText("?")
+		end
+		onArt(card, mark, x, y)
+	end
+	-- Names sit outside the pad beside their trigger or shoulder; the custom card marks its triggers with "?".
+	local names = UI.FAMILY[id] and UI.FAMILY[id].names
+	for _, code in ipairs(names and { "L2", "L1", "R2", "R1" } or { "L2", "R2" }) do
+		local x, y = unpack(pos[code])
+		local left = code:sub(1, 1) == "L"
+		local label = card:CreateFontString(nil, "OVERLAY", names and "GameFontNormalSmall" or "GameFontNormal")
+		label:SetText(names and names[code] or "?")
+		if names then onArt(card, label, x + (left and -36 or 36), y, left and "RIGHT" or "LEFT") else onArt(card, label, x, y) end
+	end
+	local line = names and string.format(L.FAMILY_NAMES, names.L1, names.L2, names.R1, names.R2) or ""
+	card.names = UI.CenterText(card, "GameFontNormal", 8, LEGEND_Y + LEGEND_SIZE / 2 + 10, FAMILY_W - 16, line)
+end
+
 local function buildFamily(page)
 	UI.Text(page, "GameFontHighlight", 24, 34, L.FAMILY_HEADING)
 	page.hint = UI.Text(page, "GameFontDisableSmall", 24, 52)
@@ -77,26 +128,23 @@ local function buildFamily(page)
 		local card = CreateFrame("Button", nil, page)
 		card:SetSize(FAMILY_W, FAMILY_H)
 		UI.At(card, page, 24 + (i - 1) * FAMILY_PITCH, 70)
-		local inset = CreateFrame("Frame", nil, card, "InsetFrameTemplate")
+		local inset = UI.InsetFill(CreateFrame("Frame", nil, card, "InsetFrameTemplate"))
 		inset:SetAllPoints()
-		card.wash = card:CreateTexture(nil, "BACKGROUND", nil, 7)
-		card.wash:SetColorTexture(1, 1, 1, 0.1)
-		card.wash:SetAllPoints()
 		card.border = card:CreateTexture(nil, "OVERLAY")
 		card.border:SetAtlas("gamepad-footer-slot-framefocused")
 		card.border:SetPoint("TOPLEFT", -6, 6)
 		card.border:SetPoint("BOTTOMRIGHT", 6, -6)
 		card.title = UI.Text(card, "GameFontNormalLarge", 14, 16, L.FAMILY_CARDS[id], FAMILY_W - 28)
-		-- The family's card art: the drawing's 400 x 300 units of its 600 x 300 sheet.
 		card.art = card:CreateTexture(nil, "ARTWORK")
 		card.art:SetTexture(UI.ART .. FAMILY_ART[id] .. "-card.tga")
-		card.art:SetTexCoord(0, 2 / 3, 0, 1)
-		card.art:SetSize(FAMILY_W - 20, (FAMILY_W - 20) * 0.75)
-		card.art:SetPoint("TOP", 0, -48)
-		card.text = UI.Text(card, "GameFontHighlightSmall", 14, 48 + (FAMILY_W - 20) * 0.75 + 12, L.FAMILY_LINES[id], FAMILY_W - 28)
+		card.art:SetSize(ART_W, ART_W * VB_H / VB_W)
+		card.art:SetPoint("TOP", 0, -ART_TOP)
+		familyMarks(card, id)
+		local textY = id == "custom" and LEGEND_Y + LEGEND_SIZE / 2 + 10 or LEGEND_Y + 56
+		card.text = UI.CenterText(card, "GameFontHighlightSmall", 12, textY, FAMILY_W - 24, L.FAMILY_LINES[id])
 		card.text:SetSpacing(1)
 		-- What the pad itself suggests (Device.SuggestedFamily): marked, preselected, still the player's pick.
-		card.suggested = UI.Text(card, "GameFontNormalSmall", 14, FAMILY_H - 26, L.SUGGESTED, FAMILY_W - 28)
+		card.suggested = UI.Text(card, "GameFontNormalSmall", 14, FAMILY_H - 24, L.SUGGESTED, FAMILY_W - 28)
 		card.anchor = CreateFrame("Frame", nil, card)
 		card.anchor:SetSize(1, 1)
 		card.anchor:SetPoint("LEFT", card, "TOPLEFT", 0, -26)
@@ -110,11 +158,7 @@ local function buildFamily(page)
 		self.hint:SetText(suggested and L.FAMILY_SUGGESTED[suggested] or "")
 		local nodes, preselect = {}, nil
 		for i, card in ipairs(self.cards) do
-			nodes[i] = UI.Node(window, card, function() pickFamily(card.id) end, { cursorRegion = card.anchor, onFocus = function(on)
-				card.wash:SetShown(on)
-				card.border:SetShown(on)
-			end })
-			card.wash:Hide()
+			nodes[i] = UI.Node(window, card, function() pickFamily(card.id) end, { cursorRegion = card.anchor, onFocus = function(on) card.border:SetShown(on) end })
 			card.border:Hide()
 			card.suggested:SetShown(card.id == suggested)
 			if card.id == suggested then preselect = nodes[i] end
@@ -159,64 +203,86 @@ local function buildWelcome(page)
 	end
 end
 
--- 2 Choose a layout: three cards; the controller ringed in the layout's role colours.
+-- 2 Choose a layout: three cards of equal height. Each shows the shared controller drawing at card size with the
+-- shoulders and triggers filled in the layout's role colours (neutral on the custom card), and a legend in Bindings'
+-- modifier row style: glyph, role colour bar, role word, left side and right side in two columns. The focused card wears the
+-- native gold focus frame.
+local CARD_PAD, CARD_DRAW_TOP, LEGEND_PITCH, LEGEND_GAP = 16, 92, 20, 8
+local NEUTRAL = { 0.45, 0.45, 0.45, 0.45 }
+
 local function newCard(page, i, title, text, note)
 	local card = CreateFrame("Button", nil, page)
 	card:SetSize(CARD_W, CARD_H)
 	UI.At(card, page, 24 + (i - 1) * 242, 62)
-	local inset = CreateFrame("Frame", nil, card, "InsetFrameTemplate")
+	local inset = UI.InsetFill(CreateFrame("Frame", nil, card, "InsetFrameTemplate"))
 	inset:SetAllPoints()
-	card.wash = card:CreateTexture(nil, "BACKGROUND", nil, 7)
-	card.wash:SetColorTexture(1, 1, 1, 0.1)
-	card.wash:SetAllPoints()
 	card.border = card:CreateTexture(nil, "OVERLAY")
 	card.border:SetAtlas("gamepad-footer-slot-framefocused")
 	card.border:SetPoint("TOPLEFT", -6, 6)
 	card.border:SetPoint("BOTTOMRIGHT", 6, -6)
-	card.title = UI.Text(card, "GameFontNormalLarge", 16, 16, title, 194)
-	card.text = UI.Text(card, "GameFontHighlightSmall", 16, 16, text, 194)
-	card.text:SetPoint("TOPLEFT", card.title, "BOTTOMLEFT", 0, -6)
+	card.border:Hide()
+	card.title = UI.Text(card, "GameFontNormalLarge", CARD_PAD, 14, title, CARD_W - 2 * CARD_PAD)
+	card.text = UI.Text(card, "GameFontHighlightSmall", CARD_PAD, 14, text, CARD_W - 2 * CARD_PAD)
+	card.text:SetPoint("TOPLEFT", card.title, "BOTTOMLEFT", 0, -4)
 	card.text:SetSpacing(1)
-	card.drawing = UI.Drawing(card, true, { "L2", "L1", "R2", "R1" })
+	card.drawing = UI.Drawing(card, false, { "L2", "L1", "R2", "R1" })
 	card.rows = {}
-	card.note = UI.Text(card, "GameFontDisableSmall", nil, nil, note, 194)
+	card.note = UI.Text(card, "GameFontDisableSmall", nil, nil, note, CARD_W - 2 * CARD_PAD)
 	card.anchor = CreateFrame("Frame", nil, card)
 	card.anchor:SetSize(1, 1)
-	card.anchor:SetPoint("LEFT", card, "TOPLEFT", 0, -30)
+	card.anchor:SetPoint("LEFT", card, "TOPLEFT", 0, -26)
 	return card
 end
 
+local function legendRow(card)
+	local row = CreateFrame("Frame", nil, card)
+	row:SetSize((CARD_W - 2 * CARD_PAD) / 2, LEGEND_PITCH)
+	row.glyph = UI.Glyph(row, 18)
+	row.glyph:SetPoint("LEFT")
+	row.marker = UI.Marker(row, 10)
+	row.marker:SetPoint("LEFT", row.glyph, "RIGHT", 6, 0)
+	row.word = row:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+	row.word:SetPoint("LEFT", row.glyph, "RIGHT", 22, 0)
+	return row
+end
+
+-- roles: the layout's roles, or nil for the custom card (neutral controls, "?").
 local function fillCard(card, roles)
-	local top = 16 + card.title:GetStringHeight() + 6 + math.max(26, card.text:GetStringHeight()) + 8
-	card.drawing:Place(16, top, 194 / 400)
-	card.drawing:Rings(modCodes(), function(code) return roles and roles[code] end)
-	card.drawing:Style(nil, nil, nil, false)
+	local scale = (CARD_W - 2 * CARD_PAD) / 400
+	local drawing = card.drawing
+	drawing:Place(CARD_PAD, CARD_DRAW_TOP, scale)
+	drawing:Style(function(code) return UI.MOD_CODES[code] end, nil, nil, true)
+	drawing:Fills(function(code)
+		if not roles then return NEUTRAL end
+		local role = roles[code]
+		if not role then return end
+		local r, g, b = UI.RoleRGB(role)
+		return { r, g, b, 0.85 }
+	end)
 
 	for _, row in ipairs(card.rows) do row:Hide() end
-	local rowsTop = top + 146 + 6
-	-- With paddles the 2x2 list becomes 2x3 or 2x4; tighter rows keep the custom card's note inside the card.
-	local pitch = #modCodes() > 4 and 22 or 26
-	for i, code in ipairs(modCodes()) do
-		local row = card.rows[i]
-		if not row then
-			row = CreateFrame("Frame", nil, card)
-			row:SetSize(94, 22)
-			row.glyph = UI.Glyph(row, 18)
-			row.glyph:SetPoint("LEFT", row, "LEFT", 0, 0)
-			row.word = row:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-			row.word:SetPoint("LEFT", row.glyph, "RIGHT", 3, 0)
-			card.rows[i] = row
+	local leftPads, rightPads = UI.Paddles()
+	local columns = { { "L2", "L1" }, { "R2", "R1" } }
+	for _, phys in ipairs(leftPads) do table.insert(columns[1], phys) end
+	for _, phys in ipairs(rightPads) do table.insert(columns[2], phys) end
+	local top, used = CARD_DRAW_TOP + 300 * scale + LEGEND_GAP, 0
+	for c, codes in ipairs(columns) do
+		for i, code in ipairs(codes) do
+			used = used + 1
+			local row = card.rows[used] or legendRow(card)
+			card.rows[used] = row
+			row:ClearAllPoints()
+			UI.At(row, card, CARD_PAD + (c - 1) * (CARD_W - 2 * CARD_PAD) / 2, top + (i - 1) * LEGEND_PITCH)
+			row.glyph:SetCode(code)
+			local role = roles and roles[code]
+			row.marker:SetRole(role)
+			row.word:SetText(not roles and "?" or role and UI.ROLE[role].card or "–")
+			if role then row.word:SetTextColor(UI.RoleRGB(role)) else row.word:SetTextColor(0.5, 0.5, 0.5) end
+			row:Show()
 		end
-		row:ClearAllPoints()
-		UI.At(row, card, 16 + ((i - 1) % 2) * 100, rowsTop + math.floor((i - 1) / 2) * pitch)
-		row.glyph:SetCode(code)
-		local role = roles and roles[code]
-		row.word:SetText(roles and (role and UI.ROLE[role].card or "–") or "?")
-		if role then row.word:SetTextColor(UI.RoleRGB(role)) else row.word:SetTextColor(0.5, 0.5, 0.5) end
-		row:Show()
 	end
 	card.note:ClearAllPoints()
-	UI.At(card.note, card, 16, rowsTop + math.ceil(#modCodes() / 2) * pitch + 4)
+	UI.At(card.note, card, CARD_PAD, top + math.max(#columns[1], #columns[2]) * LEGEND_PITCH + 4)
 end
 
 local function buildChoose(page)
@@ -229,7 +295,7 @@ local function buildChoose(page)
 	local function pick(i)
 		if i == 3 then
 			window.handoff = true
-			return UI.Modifiers.OpenGuided(function() O.Show("try") end, function() O.Show("choose") end)
+			return UI.Bindings.OpenGuided(function() O.Show("try") end, function() O.Show("choose") end)
 		end
 		local ok, err = Layout.SetPreset(i == 1 and "native" or "split")
 		if not ok then ns.log(err) end
@@ -245,11 +311,7 @@ local function buildChoose(page)
 		fillCard(cards[3], nil)
 		local nodes = {}
 		for i, card in ipairs(cards) do
-			nodes[i] = UI.Node(window, card, function() pick(i) end, { cursorRegion = card.anchor, onFocus = function(on)
-				card.wash:SetShown(on)
-				card.border:SetShown(on)
-			end })
-			card.wash:Hide()
+			nodes[i] = UI.Node(window, card, function() pick(i) end, { cursorRegion = card.anchor, onFocus = function(on) card.border:SetShown(on) end })
 			card.border:Hide()
 		end
 		window:SetNodes(nodes)
@@ -295,9 +357,8 @@ local function buildTry(page)
 		self.sub:SetText(#held > 0 and string.format(L.TRY_HOLDING, table.concat(names, " + ")) or L.TRY_IDLE)
 		self.status:SetFontObject(text and "GameFontNormal" or "GameFontDisableSmall")
 		self.status:SetText(text or L.HOLD_IDLE)
-		local glow = {}
-		for _, phys in ipairs(held) do glow[phys] = true end
-		self.drawing:Style(function(code) return UI.MOD_CODES[code] end, glow, nil, true)
+		-- The rows and the status line answer the hold; the drawing stays still.
+		self.drawing:Style(function(code) return UI.MOD_CODES[code] end, nil, nil, true)
 	end
 	function page:Refresh()
 		self.drawing:Place(20, 90, 0.8)
@@ -479,14 +540,14 @@ function O.Start()
 	O.Show(unknown(device) and "family" or "welcome")
 end
 
--- Modifiers > More > Controller type: the family cards, back to Modifiers after.
+-- Bindings > More > Controller type: the family cards, back to Bindings after.
 function O.ShowFamily()
 	familyFromMore = true
 	O.Show("family")
 end
 
 -- Not now: keep the game's layout as it is and don't ask again for this controller (the welcome note's promise);
--- Setup guide, /fct setup and Modifiers > More > Controller type still open it.
+-- Setup guide, /fct setup and Bindings > More > Controller type still open it.
 function O.NotNow()
 	local device = ns.Device.Current()
 	if device then

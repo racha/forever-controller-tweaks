@@ -2,7 +2,10 @@
 -- window's edges, ordered by where the control sits on the pad. A row holds the four crossbar layers (top, left, right, bottom bar) of the
 -- shown page, the control's glyph, and what it does on the shown layer. Only the focused row draws a curve into the
 -- drawing, to its control, which lights up. A D-pad or face row's cell opens the action picker (an entry the router
--- carries shows instead of the storage slot's action); a modifier row's opens Modifiers; a game default explains itself.
+-- carries shows instead of the storage slot's action); a game default explains itself.
+-- The modifier rows (shoulders, triggers, the paddles this pad has) show each button's role: A opens the role list
+-- (picking a role another button holds swaps the two). Presets, controller setup, Learn and Reset are in More. The
+-- setup guide's custom step runs here in guided mode: one role at a time, chosen by pressing the button.
 local _, ns = ...
 local UI = ns.UI
 local L, Layout = UI.L, ns.Layout
@@ -43,20 +46,26 @@ local LAYER_ROLE = { T = "top", L = "leftmod", R = "rightmod", B = "bottom" }
 local ROLE_LAYER = { leftmod = "L", rightmod = "R", bottom = "B" }
 local LAYER_INDEX = { T = 1, L = 2, R = 3, B = 4 }
 
--- Geometry (window units). Cells 34 (circles 32) on a 38 pitch; rows 38 tall on a 42 pitch at the window edges, a
+-- Geometry (window units). Cells 34 (circles 32) on a 38 pitch; rows 38 tall on a 42 pitch in a box at each side, a
 -- layer header over each column's cells; both columns start level, the longer one centred in the area; the drawing
--- at 1.2 between them.
+-- at 1.1 between them, on the window body. Every tab's content boxes share one rule: y 84 to 610, 24 from the window's
+-- sides, 20 apart (the Keyboard and Rings tabs too). Rows sit 12 inside their box. The side boxes clear the drawing's
+-- opaque art by at least 12 for every family: the widest, generic, spans viewBox x 12.3-384.2 of 400 (measured from
+-- Art/*-controller.tga), so at 1.1 its left edge is at 393.5 and the box ends at 380.
 local WIDTH, HEIGHT = 1200, 640
 local CELL, CIRCLE, CELL_PITCH, ROW_H, ROW_PITCH = 34, 32, 38, 38, 42
-local EDGE, GLYPH_X, MARKER_X, NAME_X, NAME_W = 16, 185, 212, 222, 132
+local BOX_MARGIN, BOX_GAP, BOX_PAD = 24, 20, 12
+local EDGE, GLYPH_X, MARKER_X, NAME_X, NAME_W = BOX_MARGIN + BOX_PAD, 205, 232, 242, 126
 local ROW_W, CELLS_W = NAME_X + NAME_W - EDGE, 3 * CELL_PITCH + CELL
-local AREA_TOP, AREA_BOTTOM, RULE_END = 66, 630, 392
+local AREA_TOP, AREA_BOTTOM, RULE_END = 84, 610, NAME_X + NAME_W + 38
+local SIDE_BOX_W = NAME_X + NAME_W + BOX_PAD - BOX_MARGIN
+local MIDDLE_X = BOX_MARGIN + SIDE_BOX_W + BOX_GAP
 local HEADER_H, HEADER_GAP = 50, 4
-local DRAWING_SCALE = 1.2
+local DRAWING_SCALE = 1.1
 local DRAWING_PLACE = { (WIDTH - 400 * DRAWING_SCALE) / 2, (AREA_TOP + AREA_BOTTOM) / 2 - 150 * DRAWING_SCALE, DRAWING_SCALE }
 -- Which column each control's row is in, and the tie order; rows run top to bottom by where the control sits on
--- the drawing. Only controls the addon can set are listed: the D-pad and face buttons (cells) and the modifiers (they
--- explain the layer headers and open Modifiers); the game keeps L3, R3 and the centre buttons to itself.
+-- the drawing. Only controls the addon can set are listed: the D-pad and face buttons (cells) and the modifiers (their
+-- roles, which the layer headers follow); the game keeps L3, R3 and the centre buttons to itself.
 local LEFT_ORDER = { "L1", "L2", "DU", "DR", "DD", "DL", "P2", "P4" }
 local RIGHT_ORDER = { "R1", "R2", "FT", "FR", "FB", "FL", "P1", "P3" }
 local DRAWN = { "L2", "R2", "L1", "R1", "FT", "FL", "FR", "FB", "L3", "R3", "SEL", "START", "SOCIAL", "SYSTEM" }
@@ -70,7 +79,11 @@ local ACTION_SLOT = { interact = 5, inspect = 6, back = 7, jump = 8 }
 local SPECIAL_INSET = { back = -9, inspect = 3.5 }
 local SPECIAL_FALLBACK = { jump = "gamepad-ability-icon-jump", back = "128-redbutton-exit", inspect = "gamepad-actionbar-circleslot-permabound" }
 
-local window, drawing, curve
+local GUIDE_ROLES = { "leftmod", "rightmod", "friendly", "hostile" }
+local LEARN_TIMEOUT = 10.5
+local BUTTON_TIPS = L.BUTTON_TIPS
+
+local window, drawing, curve, guided, learn
 local rows, heldLayer = {}, nil
 local tabs = { left = {}, right = {} }
 
@@ -238,7 +251,7 @@ local function fillCell(cell, faceAction)
 end
 
 
--- A row (Bindings and Modifiers): the glyph, the role bar, then name and subtitle, mirrored in the right column;
+-- A row (Bindings and Touch): the glyph, the role bar, then name and subtitle, mirrored in the right column;
 -- under it a rule that fades out toward the drawing. Bindings adds four layer cells at the window edge.
 function B.NewRow(parent, code)
 	local row = CreateFrame("Frame", nil, parent)
@@ -258,8 +271,7 @@ function B.NewRow(parent, code)
 	return row
 end
 
--- A plate over glyph and names: the focus region and click target of a row without cells (modifier rows here, every
--- row in Modifiers).
+-- A plate over glyph and names: the focus region and click target of a row without cells (the modifier rows).
 function B.AddPlate(row, onClick)
 	local plate = CreateFrame("Button", nil, row)
 	plate:SetSize(NAME_X + NAME_W - GLYPH_X + 17, ROW_H)
@@ -323,14 +335,88 @@ function B.FocusLine(line, board, rowList, focusRow)
 	line:Set(points, GOLD[1], GOLD[2], GOLD[3], 1, 3.5)
 end
 
--- D-pad and face rows get the four layer cells; modifier rows (no assignable cells) a plate that opens Modifiers on
--- that button.
+local function isPaddle(phys) return phys:sub(1, 1) == "P" end
+
+local function holderOf(roles, role)
+	for _, phys in ipairs(Layout.PHYSICAL) do
+		if roles[phys] == role then return phys end
+	end
+end
+
+-- The roles the player set for this pad (the preset name is read from them).
+local function storedRoles()
+	local device = ns.Device.Current()
+	local entry = device and ns.db.devices[device.key]
+	return entry and entry.roles or {}
+end
+
+local function report(ok, err)
+	if not ok and err then ns.log(err) end
+end
+
+local function freePaddle(roles)
+	local device = ns.Device.Current()
+	for _, paddle in ipairs({ "P1", "P2", "P3", "P4" }) do
+		if device and device.raw[paddle] and not roles[paddle] then return paddle end
+	end
+end
+
+-- "None" on a shoulder or trigger hands its role to a free paddle (Layout allows none on paddles only).
+local function assign(phys, role)
+	if role ~= "none" or isPaddle(phys) then return report(Layout.SetRole(phys, role)) end
+
+	local roles = Layout.Roles()
+	local paddle = freePaddle(roles)
+	if paddle then report(Layout.SetRole(paddle, roles[phys])) end
+end
+
+-- The roles, each with its colour and what it does; a note says what picking it moves.
+local function roleEntries(phys)
+	local roles = Layout.Roles()
+	local mine = roles[phys] or "none"
+	local entries = {}
+	for _, role in ipairs(UI.PICK_ROLES) do
+		local info = UI.ROLE[role]
+		local entry = { id = role, name = info.name, detail = info.hint, live = true }
+		if info.color then entry.icon, entry.color = UI.ART .. "disc.tga", { UI.RoleRGB(role) } end
+		local holder = role ~= "none" and holderOf(roles, role)
+		if role ~= mine and role == "none" and not isPaddle(phys) then
+			local paddle = freePaddle(roles)
+			entry.note, entry.disabled = paddle and L.ROLE_TO_PADDLE or L.ROLE_NEEDS_BUTTON, not paddle
+		elseif role ~= mine and holder then
+			entry.note = string.format(mine == "none" and L.ROLE_TAKES or L.ROLE_SWAPS, UI.Name(holder))
+		end
+		entries[#entries + 1] = entry
+	end
+	return entries, mine
+end
+
+-- Picking a role another button holds swaps the two; the note under the drawing says so in one line.
+local function pickRole(phys, role)
+	local before = Layout.Roles()
+	assign(phys, role)
+	local after = Layout.Roles()
+	window.note:SetText("")
+	for _, other in ipairs(Layout.PHYSICAL) do
+		if other ~= phys and before[other] ~= after[other] then
+			window.note:SetText(string.format(L.ROLE_SWAPPED, UI.Name(phys), UI.ROLE[after[phys] or "none"].name, UI.Name(other), UI.ROLE[after[other] or "none"].name))
+		end
+	end
+end
+
+local function openRoles(row)
+	if guided or InCombatLockdown() then return end
+	local entries, mine = roleEntries(row.code)
+	UI.ActionPicker.Open({ window = window, cell = row.plate, list = { title = string.format(L.ROLES_TITLE, UI.Name(row.code)), entries = entries, current = mine, onPick = function(entry) pickRole(row.code, entry.id) end } })
+end
+
+-- D-pad and face rows get the four layer cells; modifier rows (no assignable cells) a plate that opens the role list.
 local function newRow(code)
 	local face = UI.CODE_POS[code] ~= nil
 	local row = B.NewRow(window, code)
 	row.face, row.kind, row.cells = face, UI.MOD_CODES[code] and "mod" or "slot", {}
 	if row.kind == "mod" then
-		B.AddPlate(row, function() UI.Modifiers.Open(code) end)
+		B.AddPlate(row, function() openRoles(row) end)
 		return row
 	end
 	for i, layer in ipairs(LAYERS) do row.cells[i] = newCell(row, code, layer, face) end
@@ -353,56 +439,62 @@ local function shownLayer()
 	return region and region.layer or "T"
 end
 
+-- A modifier row: its role and what that does; in guided mode, where the button stands (grey while not set).
+local function modText(row)
+	local phys = row.code
+	if guided and guided.detected == phys then return UI.ROLE[GUIDE_ROLES[guided.step]].name, L.GUIDE_CONFIRM, GUIDE_ROLES[guided.step] end
+	if guided and not guided.confirmed[phys] then return L.GUIDE_NOT_SET, L.GUIDE_WAITING, nil, true end
+	local role = Layout.Roles()[phys] or "none"
+	local info = UI.ROLE[role]
+	return info.name, info.hint, role
+end
+
 local function rowText(row, layer)
-	if row.kind == "mod" then
-		local role = Layout.Roles()[row.code] or "none"
-		return UI.ROLE[role].name or L.NONE, L.MODIFIER, role
-	end
+	if row.kind == "mod" then return modText(row) end
 	local cell = row.cells[LAYER_INDEX[layer]]
 	local word = UI.ROLE[LAYER_ROLE[layer]].word
 	return boundName(cell), string.format(cell.reserved and L.FACE_SUB or L.BAR_SUB, word)
 end
 
 local function rowTip(row)
-	local name = rowText(row, "T")
-	return { title = UI.Name(row.code) .. ": " .. (name or L.NONE), lines = { L.MODIFIER_TIP }, actions = { { "PAD1", L.OPEN_MODIFIERS } }, side = row.left and "left" or "right" }
+	local held = Layout.Roles()[row.code] or "none"
+	local info = UI.ROLE[held]
+	return { title = UI.Name(row.code) .. " · " .. info.name, lines = { info.hint, L.ROLE_TIP }, actions = { { "PAD1", L.CHANGE_ROLE }, { "PAD4", L.MORE } }, side = row.left and "left" or "right" }
 end
 
--- Names follow the shown layer; the tab of that layer is selected.
+-- Names follow the shown layer; the tab of that layer is selected. In guided mode the cell rows step back.
 local function drawNames()
 	local layer = shownLayer()
 	for _, row in pairs(rows) do
 		if row:IsShown() then
-			local name, sub, role = rowText(row, layer)
+			local name, sub, role, grey = rowText(row, layer)
 			row.name:SetText(name or L.NOT_BOUND)
-			row.name:SetFontObject(name and "GameFontNormal" or "GameFontDisable")
+			row.name:SetFontObject(name and not grey and "GameFontNormal" or "GameFontDisable")
 			row.sub:SetText(sub)
 			row.marker:SetRole(role)
+			row:SetAlpha(grey and 0.45 or guided and row.kind ~= "mod" and 0.35 or 1)
 		end
 	end
-	for _, side in pairs(tabs) do
-		for i, tab in ipairs(side) do
-			local on = LAYERS[i] == layer
-			tab.highlight:SetShown(on)
-			tab:SetAlpha(on and 1 or 0.55)
-		end
-	end
+	local region = window.focus and window.focus.region
+	B.LightLayerHeaders(tabs, layer, region and region.layer and (region.row.left and "left" or "right"))
 end
 
--- The focused row's line runs into its control, which lights up.
+-- The focused row's line runs into its control, which lights up (in guided mode the detected button's, with only
+-- the modifiers at full strength).
 local function drawFocus()
-	local focusRow = window.focus and window.focus.region and window.focus.region.row
-	drawing:Style(nil, focusRow and { [focusRow.code] = true } or {}, focusRow and focusRow.code, false)
-	B.FocusLine(curve, drawing, rows, focusRow)
+	local focusRow = guided and rows[guided.detected] or not guided and window.focus and window.focus.region and window.focus.region.row
+	local active = guided and function(code) return UI.MOD_CODES[code] end or nil
+	drawing:Style(active, focusRow and { [focusRow.code] = true } or {}, focusRow and focusRow.code, false)
+	B.FocusLine(curve, drawing, rows, focusRow and focusRow:IsShown() and focusRow or nil)
 	drawNames()
 end
 
--- Layer headers over each column's cells, one per cell column (top, left, right, bottom bar; the same order on
--- both sides): the button(s) to hold for that bar as native glyphs, stacked when two ("None" for the top bar), over
--- a role-colour band. The shown layer's header is lit on both sides. A click moves the focus to that column of the
--- focused row.
-local function newTab(i)
-	local tab = CreateFrame("Button", nil, window)
+-- Layer headers over each column's cells (Bindings, Touch), one per cell column (top, left, right, bottom bar; the
+-- same order on both sides): the button(s) to hold for that bar as native glyphs, stacked when two ("None" for the
+-- top bar), over a role-colour band. The shown layer's header is lit on both sides. A click moves the focus to that
+-- column of the focused row.
+local function newTab(owner, i)
+	local tab = CreateFrame("Button", nil, owner)
 	tab:SetSize(CELL_PITCH - 2, HEADER_H)
 	tab.highlight = tab:CreateTexture(nil, "BACKGROUND")
 	tab.highlight:SetTexture("Interface\\QuestFrame\\UI-QuestTitleHighlight")
@@ -420,10 +512,10 @@ local function newTab(i)
 	tab.band:SetSize(CELL - 6, 3)
 	tab.band:SetPoint("BOTTOM", 0, 2)
 	tab:SetScript("OnClick", function()
-		local region = window.focus and window.focus.region
+		local region = owner.focus and owner.focus.region
 		local row = region and region.row
-		if not (row and row.cells[i]) then return end
-		for _, node in ipairs(window.nodes) do if node.region == row.cells[i] then window:Focus(node) end end
+		if not (row and row.cells and row.cells[i]) then return end
+		for _, node in ipairs(owner.nodes) do if node.region == row.cells[i] then owner:Focus(node) end end
 	end)
 	return tab
 end
@@ -450,8 +542,45 @@ local function fillTab(tab, layer, roles)
 	tab.none:SetShown(#codes == 0)
 end
 
+function B.NewLayerHeaders(owner)
+	local headers = { left = {}, right = {} }
+	for i in ipairs(LAYERS) do
+		headers.left[i] = newTab(owner, i)
+		headers.right[i] = newTab(owner, i)
+	end
+	return headers
+end
+
+-- The headers follow the player's roles (who holds which bar).
+function B.FillLayerHeaders(headers, roles)
+	for _, side in pairs(headers) do
+		for i, tab in ipairs(side) do fillTab(tab, LAYERS[i], roles) end
+	end
+end
+
+-- One side's headers over its four cell columns, at top (window units).
+function B.PlaceLayerHeaders(headers, isLeft, top)
+	for i, tab in ipairs(headers[isLeft and "left" or "right"]) do
+		tab:ClearAllPoints()
+		UI.At(tab, tab:GetParent(), (isLeft and EDGE or WIDTH - EDGE - CELLS_W) + (i - 1) * CELL_PITCH - 1, top)
+	end
+end
+
+-- Only the focused side's header of the shown layer is lit ("left" or "right"); with the focus off the cells
+-- (a modifier row, the header) neither side is.
+function B.LightLayerHeaders(headers, layer, side)
+	for name, list in pairs(headers) do
+		for i, tab in ipairs(list) do
+			local on = name == side and LAYERS[i] == layer
+			tab.highlight:SetShown(on)
+			tab:SetAlpha(on and 1 or 0.55)
+		end
+	end
+end
+
 local function build()
 	window = UI.NewWindow(WIDTH, HEIGHT)
+	B.Boxes(window)
 	window.tabs = UI.SideTabs(window, UI.TABS, 1)
 	window.device = UI.Text(window, "GameFontHighlight", 24, 30)
 	window.sub = UI.Text(window, "GameFontDisableSmall", 24, 47)
@@ -475,10 +604,12 @@ local function build()
 	window:SetTitle(L.BINDINGS_TITLE)
 	drawing = UI.Drawing(window, false, DRAWN)
 	curve = UI.Connector(window, drawing)
-	for i in ipairs(LAYERS) do
-		tabs.left[i] = newTab(i)
-		tabs.right[i] = newTab(i)
-	end
+	tabs = B.NewLayerHeaders(window)
+	-- Guided mode's step line over the drawing; normal mode's one-line role swap note under it. All in the middle area.
+	local x, _, w = unpack(B.GEO.MIDDLE)
+	window.title = UI.CenterText(window, "GameFontNormalLarge", x + 10, 96, w - 20)
+	window.hint = UI.CenterText(window, "GameFontDisableSmall", x + 10, 140, w - 20)
+	window.note = UI.CenterText(window, "GameFontHighlightSmall", x + 10, 560, w - 20)
 end
 
 -- The rows of one side, in order, for this pad (only the paddles it has).
@@ -527,8 +658,7 @@ local function columnTops(left, right)
 	return AREA_TOP + math.floor((AREA_BOTTOM - AREA_TOP - block) / 2)
 end
 
--- Where a control's row sits on this pad: left column or not, and its top. Modifiers puts its rows there too, so
--- switching tabs moves nothing.
+-- Where a control's row sits on this pad: left column or not, and its top.
 function B.RowSpot(code)
 	local left, right = B.Columns()
 	local top = columnTops(left, right)
@@ -537,20 +667,34 @@ function B.RowSpot(code)
 	end
 end
 
--- The window and row geometry Modifiers shares.
+-- The window and row geometry Touch shares.
 B.DRAWN = DRAWN
-B.GEO = { WIDTH = WIDTH, HEIGHT = HEIGHT, EDGE = EDGE, GLYPH_X = GLYPH_X, NAME_X = NAME_X, NAME_W = NAME_W, ROW_H = ROW_H, ROW_PITCH = ROW_PITCH, CELL = CELL, AREA_TOP = AREA_TOP, AREA_BOTTOM = AREA_BOTTOM, DRAWING_PLACE = DRAWING_PLACE }
+B.LAYERS, B.ROLE_LAYER, B.LAYER_ROLE = LAYERS, ROLE_LAYER, LAYER_ROLE
+B.GEO = { CELL_PITCH = CELL_PITCH, CELLS_W = CELLS_W, BAND = HEADER_H + HEADER_GAP, WIDTH = WIDTH, HEIGHT = HEIGHT, EDGE = EDGE, GLYPH_X = GLYPH_X, NAME_X = NAME_X, NAME_W = NAME_W, ROW_H = ROW_H, ROW_PITCH = ROW_PITCH, CELL = CELL, AREA_TOP = AREA_TOP, AREA_BOTTOM = AREA_BOTTOM, DRAWING_PLACE = DRAWING_PLACE }
+-- The middle area between the row columns' boxes: x, y, width, height.
+B.GEO.MIDDLE = { MIDDLE_X, AREA_TOP, WIDTH - 2 * MIDDLE_X, AREA_BOTTOM - AREA_TOP }
 
+-- The content boxes of a tab with row columns: one per side, and with middle one over the middle area (Touch; the
+-- controller drawing floats on the window body instead). Made right after the window, so everything made later (rows,
+-- the drawing and its focus line) is above them.
+function B.Boxes(owner, middle)
+	UI.Inset(owner, BOX_MARGIN, AREA_TOP, SIDE_BOX_W, AREA_BOTTOM - AREA_TOP)
+	if middle then UI.Inset(owner, unpack(B.GEO.MIDDLE)) end
+	UI.Inset(owner, WIDTH - BOX_MARGIN - SIDE_BOX_W, AREA_TOP, SIDE_BOX_W, AREA_BOTTOM - AREA_TOP)
+end
+
+-- The device is resolved at login, on world entry and on connect events; a pad unreadable then (still waking, or
+-- Steam's virtual pad not there yet) is looked for again here, so the header doesn't keep saying none was found.
+-- The sub line names the active preset, or Custom for the player's own roles.
 local function refresh()
-	local device = ns.Device.Current()
+	local device = ns.Device.Current() or ns.Device.Refresh()
 	window.device:SetText(device and device.name or "")
-	window.sub:SetText(device and (device.key .. " · " .. (ns.Remap.State() ~= "off" and L.LAYOUT_ON or L.LAYOUT_NATIVE)) or L.NO_PAD)
+	local state = ns.Remap.State() ~= "off" and L.LAYOUT_ON or L.LAYOUT_NATIVE
+	window.sub:SetText(device and (device.key .. " · " .. state .. " · " .. UI.PresetLabel(Layout.PresetName(storedRoles()))) or L.NO_PAD)
 	drawing:Place(unpack(DRAWING_PLACE))
 
 	local roles, face = Layout.Roles(), Layout.Face()
-	for _, side in pairs(tabs) do
-		for i, tab in ipairs(side) do fillTab(tab, LAYERS[i], roles) end
-	end
+	B.FillLayerHeaders(tabs, roles)
 
 	local count = pageCount()
 	page = math.min(page, count)
@@ -566,17 +710,17 @@ local function refresh()
 	local top = columnTops(left, right)
 	for _, column in ipairs({ { left, true }, { right, false } }) do
 		local codes, isLeft = column[1], column[2]
-		for i, tab in ipairs(tabs[isLeft and "left" or "right"]) do
-			tab:ClearAllPoints()
-			UI.At(tab, window, (isLeft and EDGE or WIDTH - EDGE - CELLS_W) + (i - 1) * CELL_PITCH - 1, headerTop(codes, top))
-		end
+		B.PlaceLayerHeaders(tabs, isLeft, headerTop(codes, top))
 		for i, code in ipairs(codes) do
 			local row = rows[code] or newRow(code)
 			rows[code] = row
 			placeRow(row, isLeft, rowTop(codes, i, top))
 			row.glyph:SetCode(code)
 			local plate = row.plate
-			if plate then nodes[#nodes + 1] = UI.Node(window, plate, function() UI.Modifiers.Open(code) end, { onFocus = function(on) plate.wash:SetShown(on) end, tip = function() return rowTip(row) end }) end
+			if plate then
+				plate:EnableMouse(not guided)
+				nodes[#nodes + 1] = UI.Node(window, plate, function() openRoles(row) end, { phys = code, onFocus = function(on) plate.wash:SetShown(on) end, tip = function() return rowTip(row) end })
+			end
 			for j, cell in ipairs(row.cells) do
 				fillCell(cell, row.face and j == 1 and face[UI.CODE_POS[code]] or nil)
 				local node = UI.Node(window, cell, function() selectCell(cell) end, { onFocus = function(on) setCellFocus(cell, on) end, tip = function() return cellTip(cell) end })
@@ -593,13 +737,192 @@ local function refresh()
 		onDir = function(step) B.SetPage(page + step) end,
 		tip = { title = string.format(L.PAGE_OF, page, count), lines = { L.PAGE_TIP }, actions = { { "PADLTRIGGER", L.PAGE_PREVIOUS }, { "PADRTRIGGER", L.PAGE_NEXT } }, side = "below" },
 	})
-	window:SetNodes(nodes)
-	if not UI.DialogShown() then window:SetPrompts(B.Prompts()) end
+
+	selector:SetShown(not guided)
+	window.tabs:SetShown(not guided)
+	window.tabsLocked = not not guided
+	window.title:SetShown(guided ~= nil)
+	window.hint:SetShown(guided ~= nil)
+	window.note:SetShown(not guided)
+	if guided then
+		local stepRole = GUIDE_ROLES[guided.step]
+		window:SetTitle(L.CUSTOM_TITLE)
+		window.title:SetText(string.format(L.GUIDE_HEADING, guided.step, L.GUIDE_TARGET[stepRole]))
+		window.hint:SetText(L.GUIDE_HINT)
+		window:SetPrompts({ { "PAD3", L.SKIP }, { "PAD2", L.BACK } })
+		window:SetNodes({})
+		window.cursor:Hide()
+	else
+		window:SetTitle(L.BINDINGS_TITLE)
+		window:SetNodes(nodes)
+		if not UI.DialogShown() then window:SetPrompts(B.Prompts()) end
+	end
 	drawFocus()
 end
 
--- Holding modifiers shows their bar in every row.
+-- Learn controller: L1, R1, L2, R2 and the paddles in turn, each through Device.Learn; the dialog shows what the
+-- raw state shows meanwhile.
+local function zeroBased(list)
+	local out, base = {}, type(list) == "table" and list[0] ~= nil and 0 or 1
+	if type(list) ~= "table" then return out end
+	local i = base
+	while list[i] ~= nil do
+		out[i - base] = list[i]
+		i = i + 1
+	end
+	return out
+end
+
+local function rawSnapshot()
+	local _, raw = ns.Device.Raw()
+	return raw and { buttons = zeroBased(raw.rawButtons), axes = zeroBased(raw.rawAxes) } or { buttons = {}, axes = {} }
+end
+
+local function detectedText()
+	local now, base, device = rawSnapshot(), learn.base, ns.Device.Current()
+	for i, down in pairs(now.buttons) do
+		if down and not base.buttons[i] then return string.format(L.LEARN_DETECTED, string.format(L.LEARN_BUTTON, i)) end
+	end
+	local motion = device and device.motionAxes or {}
+	for i, value in pairs(now.axes) do
+		if not motion[i] and math.abs(base.axes[i] or 0) < 0.2 and value > 0.8 then return string.format(L.LEARN_DETECTED, string.format(L.LEARN_AXIS, i)) end
+	end
+end
+
+-- Paddles have no glyph in the input icon sets (asking the set for one errors), so they read as their name.
+local function glyphMarkup(phys)
+	local atlas = not isPaddle(phys) and UI.GlyphAtlas(UI.KEY[phys], "Normal")
+	if atlas then return CreateAtlasMarkup(atlas, 22, 22) end
+	return "(" .. UI.Name(phys) .. ")"
+end
+
+local learnStep
+
+local function learnSub(text) UI.Dialog():SetSub(string.format(L.LEARN_STEP, text, learn.index, #learn.steps)) end
+
+function learnStep()
+	local phys = learn.steps[learn.index]
+	if not phys then
+		learn = nil
+		return
+	end
+
+	local device = ns.Device.Current()
+	learn.phys, learn.before, learn.started, learn.base = phys, device and device.raw[phys], GetTime(), rawSnapshot()
+	ns.Device.Learn(phys)
+	UI.Dialog():Open(window, {
+		text = string.format(L.LEARN_TEXT, UI.Name(phys)) .. " " .. glyphMarkup(phys),
+		buttons = { L.SKIP, L.CANCEL },
+		on1 = function()
+			learn.index = learn.index + 1
+			learnStep()
+		end,
+		on2 = function()
+			if ns.Device.LearnCancel then ns.Device.LearnCancel() end
+			learn = nil
+		end,
+	})
+	learnSub(L.LEARN_WAIT)
+end
+
+local function learnTick()
+	local device = ns.Device.Current()
+	if not (device and UI.DialogShown()) then return end
+
+	if device.raw[learn.phys] ~= learn.before then
+		learn.index = learn.index + 1
+		UI.Dialog():Close()
+		return learnStep()
+	end
+	if GetTime() - learn.started > LEARN_TIMEOUT then
+		ns.log(string.format(L.LEARN_NONE, UI.Name(learn.phys)))
+		learn.index = learn.index + 1
+		UI.Dialog():Close()
+		return learnStep()
+	end
+	local text = detectedText()
+	if text then learnSub(text) end
+end
+
+function B.Learn()
+	local device = ns.Device.Current() or ns.Device.Refresh()
+	if not device then return ns.log(L.NO_PAD) end
+
+	local steps = { "L1", "R1", "L2", "R2" }
+	local leftPads, rightPads = UI.Paddles()
+	for _, list in ipairs({ rightPads, leftPads }) do
+		for _, phys in ipairs(list) do steps[#steps + 1] = phys end
+	end
+	learn = { steps = steps, index = 1 }
+	learnStep()
+end
+
+function B.Reset()
+	UI.Dialog():Open(window, { text = L.RESET_TEXT, sub = L.RESET_SUB, buttons = { L.RESET, L.CANCEL }, on1 = function() report(Layout.Reset()) end })
+end
+
+-- Guided mode keys: a modifier press detects, the same press again confirms; Skip and Back from the footer.
+local function guidedKey(key)
+	local phys = UI.CODE[key]
+	local device = ns.Device.Current()
+	if key == "PAD3" then
+		guided.step, guided.detected = guided.step + 1, nil
+	elseif key == "PAD2" then
+		local back = guided.onBack
+		B.EndGuided()
+		if back then back() end
+		return true
+	elseif phys and UI.MOD_CODES[phys] and device and device.raw[phys] then
+		if guided.detected ~= phys then
+			guided.detected = phys
+			refresh()
+			return true
+		end
+		report(Layout.SetRole(phys, GUIDE_ROLES[guided.step]))
+		guided.confirmed[phys] = true
+		guided.step, guided.detected = guided.step + 1, nil
+	else
+		return true
+	end
+
+	if guided.step > #GUIDE_ROLES then
+		local done = guided.onDone
+		B.EndGuided()
+		if done then done() end
+		return true
+	end
+	refresh()
+	return true
+end
+
+-- Learn and Reset run in this window: from another tab they open it first.
+local function here(run) return function() if UI.Current() ~= window then B.Open() end run() end end
+
+-- More, from Y on every tab, in the picker's look over the window's foot: Undo while a clear can be undone, the tab's
+-- own entries (current: the id to tick), then the same common ones everywhere.
+function UI.OpenMore(owner, entries, current)
+	if InCombatLockdown() then return end
+	local list, Picker = {}, UI.ActionPicker
+	if Picker.CanUndo() then list[1] = { id = "undo", name = string.format(L.UNDO_RESTORE, Picker.UndoName() or L.UNNAMED_ACTION), detail = L.UNDO_TIP, run = Picker.Undo } end
+	for _, entry in ipairs(entries or {}) do list[#list + 1] = entry end
+	local common = {
+		{ id = "family", name = L.CONTROLLER_TYPE, detail = L.CONTROLLER_TYPE_TIP, run = function() UI.Onboarding.ShowFamily() end },
+		{ id = "detect", name = L.DETECT_BUTTON_LABEL, detail = L.DETECT_BUTTON_TIP, run = function() UI.Detect.Open() end },
+		{ id = "detectreset", name = L.DETECT_RESET, detail = L.DETECT_RESET_TEXT, run = function() UI.Detect.Reset(owner) end },
+		{ id = "guide", name = L.SETUP_GUIDE, detail = BUTTON_TIPS[1], run = function() UI.Onboarding.Start() end },
+		{ id = "learn", name = L.LEARN, detail = BUTTON_TIPS[2], run = here(function() B.Learn() end) },
+		{ id = "keyboard", name = L.KEYBOARD, detail = L.KEYBOARD_TIP, run = function() ns.Keyboard.SettingsTab.Open() end },
+		{ id = "minimap", name = ns.db.options.minimapIcon == false and L.MINIMAP_SHOW or L.MINIMAP_HIDE, detail = L.MINIMAP_TIP, run = function() UI.ToggleMinimapButton() end },
+		{ id = "reset", name = L.RESET, detail = BUTTON_TIPS[3], run = here(function() B.Reset() end) },
+	}
+	for _, entry in ipairs(common) do list[#list + 1] = entry end
+	local focus = owner.focus and owner.focus.region or owner
+	Picker.Open({ window = owner, cell = focus, point = { "BOTTOM", owner, "BOTTOM", 0, 24 }, list = { title = L.MORE, entries = list, current = current, onPick = function(entry) entry.run() end } })
+end
+
+-- Holding modifiers shows their bar in every row; Learn watches the raw state meanwhile.
 local function holdTick()
+	if learn then learnTick() end
 	local role = UI.HoldResult(UI.HeldButtons(), Layout.Roles())
 	local layer = role and ROLE_LAYER[role]
 	if layer == heldLayer then return end
@@ -613,22 +936,43 @@ local function setup()
 	window.OnRefresh = refresh
 	window.OnFocusChanged = drawFocus
 	window.OnHoldTick = holdTick
-	window.OnBack = function() UI.CloseAll() end
+	window.OnBack = function()
+		if guided then return guidedKey("PAD2") end
+		UI.CloseAll()
+	end
 	window.OnPageTap = function(_, step) B.SetPage(page + step) end
 	window.OnKey = function(_, key)
+		if guided then return guidedKey(key) end
 		if key == "PAD3" then
 			local region = window.focus and window.focus.region
 			clearCell(region and region.layer and region)
 			return true
 		end
-		if key == "PAD4" and UI.ActionPicker.CanUndo() then
-			UI.ActionPicker.Undo()
-			return true
+		if key ~= "PAD4" then return end
+		-- More: the presets (the active one ticked), the pages, then the common entries.
+		local count, entries = pageCount(), {}
+		for _, name in ipairs({ "native", "split" }) do
+			entries[#entries + 1] = { id = name, name = UI.PresetLabel(name), detail = L.PRESET_TIP, live = true, run = function() report(Layout.SetPreset(name)) end }
 		end
+		for n = 1, count do entries[#entries + 1] = { id = "page" .. n, name = string.format(L.PAGE_OF, n, count), detail = L.PAGE_TIP, run = function() B.SetPage(n) end } end
+		UI.OpenMore(window, entries, Layout.PresetName(storedRoles()))
+		return true
 	end
 	window.OnClosed = function()
 		heldLayer = nil
+		window.note:SetText("")
 		UI.HideTooltip()
+		if learn and ns.Device.LearnCancel then ns.Device.LearnCancel() end
+		learn = nil
+		if guided and UI.combatClosing then
+			local saved = guided
+			UI.resume = { text = L.RESUME_CUSTOM, fn = function()
+				guided = saved
+				guided.detected = nil
+				UI.Show(window)
+			end }
+		end
+		if guided then B.EndGuided() end
 	end
 end
 
@@ -641,9 +985,7 @@ function B.SetPage(n)
 end
 
 function B.Prompts()
-	local list = { { "PAD1", L.SELECT }, { "PAD3", L.CLEAR_SLOT }, { "PADRSHOULDER", L.MODIFIERS }, { "PADRTRIGGER", L.PAGE }, { "PAD2", L.CLOSE } }
-	if UI.ActionPicker.CanUndo() then table.insert(list, 3, { "PAD4", L.UNDO_CLEAR }) end
-	return list
+	return { { "PAD1", L.SELECT }, { "PAD3", L.CLEAR_SLOT }, { "PAD4", L.MORE }, { "PADRSHOULDER", L.TOUCH }, { "PADRTRIGGER", L.PAGE }, { "PAD2", L.CLOSE } }
 end
 
 -- facePos: open the action picker on that first-page face slot (onboarding's "Face actions" step).
@@ -655,6 +997,18 @@ function B.Open(facePos)
 	for code, row in pairs(rows) do
 		if row:IsShown() and UI.CODE_POS[code] == facePos then selectCell(row.cells[1]) end
 	end
+end
+
+-- The setup guide's custom step. onDone runs after the fourth role, onBack on Back.
+function B.OpenGuided(onDone, onBack)
+	setup()
+	guided = { step = 1, confirmed = {}, onDone = onDone, onBack = onBack }
+	UI.Show(window)
+end
+
+function B.EndGuided()
+	guided = nil
+	if window and window:IsShown() then refresh() end
 end
 
 ns.On("ACTIONBAR_SLOT_CHANGED", function()

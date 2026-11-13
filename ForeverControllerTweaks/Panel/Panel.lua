@@ -1,5 +1,5 @@
 -- Forever Controller Tweaks panel entry points: /fct, the pad shortcut (hold L2 + R2, press Create), the Key Bindings
--- entry, Options > AddOns and the compartment open the Bindings window (Modifiers is its second tab); /fct setup
+-- entry, Options > AddOns and the compartment open the Bindings window; /fct setup
 -- the guide. Blocked-action reports are Core's (ns.OnBlocked).
 local _, ns = ...
 local UI = ns.UI
@@ -188,7 +188,7 @@ function ns.SetPanelOpen(open)
 end
 
 -- Our own minimap button, no library: the native tracking-button look with the addon's icon, on the minimap ring at
--- options.minimapAngle (drag it round); a click opens the addon. options.minimapIcon = false hides it (Modifiers > More).
+-- options.minimapAngle (drag it round); a click opens the addon. options.minimapIcon = false hides it (More).
 local MINIMAP_ANGLE, MINIMAP_OUTSIDE = 225, 10
 local atan2 = math.atan2 or math.atan
 local minimapButton
@@ -257,6 +257,7 @@ local function registerSettings()
 	local category, layout = Settings.RegisterVerticalLayoutCategory(L.SETTINGS_TITLE)
 	layout:AddInitializer(CreateSettingsButtonInitializer(L.SETTINGS_OPEN_LABEL, L.SETTINGS_OPEN, nextFrame(UI.Bindings.Open), string.format(L.SETTINGS_OPEN_TIP, UI.ToggleKeyText(nil, true)), true))
 	layout:AddInitializer(CreateSettingsButtonInitializer(L.SETTINGS_SETUP_LABEL, L.SETTINGS_SETUP, nextFrame(UI.Onboarding.Start), L.SETTINGS_SETUP_TIP, true))
+	layout:AddInitializer(CreateSettingsButtonInitializer(L.KEYBOARD, L.KEYBOARD_OPEN, nextFrame(function() ns.Keyboard.SettingsTab.Open() end), L.KEYBOARD_TIP, true))
 	Settings.RegisterAddOnCategory(category)
 end
 

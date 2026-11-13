@@ -78,7 +78,8 @@ local ROUTER_SNIPPET = [[
 			end
 		end
 		if self:GetAttribute("ps-action-" .. layer) then name = "action"
-		elseif self:GetAttribute("ps-entry-" .. layer) then name = "entry" end
+		elseif self:GetAttribute("ps-entry-" .. layer) then name = "entry"
+		elseif self:GetAttribute("ps-ring-" .. layer) then name = "ring" end
 		self:SetAttribute("ps-cur", name)
 		self:SetAttribute("ps-curlayer", name and layer or nil)
 	else
@@ -87,6 +88,15 @@ local ROUTER_SNIPPET = [[
 	end
 	if self:GetAttribute("ps-debug") then self:SetAttribute("ps-route", format("%s %s %s %s", self:GetAttribute("ps-pos"), down and "down" or "up", layer, tostring(name))) end
 	if not name then return false end
+	-- A ring (Rings.lua): the press opens it, the release fires the slot the right stick points at.
+	if name == "ring" then
+		local rings = self:GetFrameRef("rings")
+		self:SetAttribute("type", nil)
+		self:SetAttribute("typerelease", nil)
+		if rings and down then rings:RunAttribute("_open", self:GetAttribute("ps-ring-" .. layer), "hold", self:GetAttribute("ps-kind")) end
+		if rings and not down then rings:RunAttribute("_release", self:GetName()) end
+		return
+	end
 	-- A shadow slot: the pair Blizzard's action buttons use, UseAction on press and ReleaseAction on release
 	-- (hold-to-cast, empower). The release keeps what the press set.
 	-- The cast checks only on that route: on a macro press they'd look up a stale or default action.
@@ -320,12 +330,19 @@ local function setup()
 	for _, override in ipairs(OVERRIDES) do RegisterStateDriver(header, override.kind, override.condition .. " on; off") end
 	for i, router in ipairs(routers) do
 		router:SetAttribute("ps-pos", CODE_POS[CODES[i]] or CODES[i])
+		-- A dynamic ring aims with the stick of the hand that isn't on the button (Rings.lua).
+		router:SetAttribute("ps-kind", CODE_POS[CODES[i]] and "face" or "dpad")
 		router:SetAttribute("type", "macro")
 		router:SetAttribute("typerelease", "macro")
 		router:SetAttribute("pressAndHoldAction", true)
 		header:WrapScript(router, "OnClick", ROUTER_SNIPPET)
 		header:SetAttribute("ps-router" .. i, router:GetName())
 		SecureHandlerSetFrameRef(header, "router" .. i, router)
+		-- The ring arms the router by name: RunAttribute can't carry a frame handle.
+		if ns.Rings then
+			SecureHandlerSetFrameRef(router, "rings", ns.Rings.Frame())
+			SecureHandlerSetFrameRef(ns.Rings.Frame(), router:GetName(), router)
+		end
 	end
 end
 
@@ -450,6 +467,7 @@ local function sameFace(face)
 	return true
 end
 
+-- GetGamePadState().buttons indexes of the crossbar modifiers, { leftmod, rightmod }; Touch.lua picks layers by them too.
 local function modifierIndexes()
 	local out = {}
 	for _, role in ipairs(MOD_ROLES) do
@@ -458,11 +476,18 @@ local function modifierIndexes()
 	end
 	return out
 end
+Face.ModifierIndexes = modifierIndexes
 
--- How a routed cell runs: ("click", face action) or ("text", secure macro text); nil when the entry no longer resolves.
+-- How a routed cell runs: ("click", face action), ("ring", ring id) or ("text", secure macro text); nil when the
+-- entry no longer resolves.
 local function resolve(entry)
 	local action = tostring(entry.id):match("^face:(%a+)$")
 	if action then return ACTION_SLOT[action] and "click", action end
+	local ring = tonumber(tostring(entry.id):match("^ring:(%d+)$"))
+	if ring then
+		if ns.Rings and ns.Rings.Get(ring) then return "ring", ring end
+		return
+	end
 	local text = entryText(entry)
 	if text then return "text", text end
 end
@@ -608,6 +633,7 @@ local function applyNow(ignorePanel)
 			local how = slot and route and route[1]
 			router:SetAttribute("ps-entry-" .. layer, how == "text" and route[2] or nil)
 			router:SetAttribute("ps-action-" .. layer, how == "action" and route[2] or nil)
+			router:SetAttribute("ps-ring-" .. layer, how == "ring" and route[2] or nil)
 			shadowOf[code .. "/" .. cellLayer] = route and route[1] == "action" and route[2] or nil
 			-- A moved face action on the base layer is a routed cell too.
 			local shown = how and route or slot and cellLayer == "T" and pos and action ~= Layout.NATIVE_FACE[pos] and { "click", action }

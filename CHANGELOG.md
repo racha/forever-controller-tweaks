@@ -1,5 +1,50 @@
 # Changelog
 
+## 1.1.0-beta.1 — 2026-11-13
+
+Two big additions, an on-screen keyboard and action rings, plus touch bar modifier pages and a cleaner settings window. Still a beta: please report anything odd with `/fct selftest`.
+
+### On-screen keyboard (new)
+- A radial keyboard in WoW Forever's style opens on any text box while the Gamepad UI is on: chat, whispers, bag search, mail, macros, the auction house and more. Choose whether it opens only when you use the controller, or always.
+- Both sticks type: each stick picks a cluster of four letters, the face buttons pick the letter. L1 is Shift, L2 is Symbols, and the hub has Space, Send, Erase and Close. Every button can be rebound.
+- It places itself on the line from the text box toward the screen centre, clear of the chat window, the crossbar, your unit frame and the touch bars. Or pin it to the centre, or to a custom offset.
+- **Smart suggestions**, all offline in the game:
+  - 263 hand-written lines across 25 situations (ready check, resurrect, summon, invite, trade, duel, loot roll, dungeon, raid, battleground, city, guild and more), with fill-ins such as {zone}, {quest}, {target}, {class}, {role} and {level}.
+  - Replies to chat aimed at you: 25 intent rules recognise 125 phrases ("inv?", "LF healer", "ready?", "res pls"…), and the reply goes back on the right channel. "I can heal" only shows if you can.
+  - Quest progress for the quest you follow: "Need 5 more Wolf Pelts", "Done with {quest}, turning in". At most two quest lines.
+  - Next-word prediction like a phone keyboard: after "Hello " it offers "everyone", "there", "all". It starts with built-in word pairs and learns how you write. R1 inserts a word and a space, so repeated R1 presses build a sentence.
+  - Shorthands expand: lf, lfm, brb, omw, wts, oom, ty…
+  - Each kind of box gets its own list: item names in bag search, names in mail "To" and /who, nothing in number boxes, word suggestions only in mail and macro text.
+- Nothing is ever sent for you, and nothing leaves your PC. Only your own sent messages are learned from; other players' lines are kept for three minutes at most and never saved.
+- Boxes the game blocks addons from typing into (the Options search, the Group Finder's boxes, spellbook search) are left to the real keyboard, with a one-line note instead of an error. Slash commands in chat (anything starting with `/`) are left to the real keyboard too.
+
+### Action rings (new)
+- Make your own radial menus: up to 12 rings of 4–12 slots, each with a name and an icon from the game's full macro icon set.
+- Fill the slots from the same action list as the bindings: spells (with Highest Rank), items, toys, mounts, macros, game actions and other addons' bindings.
+- Put "Open ring" on any face, D-pad or touch button, on any bar. Hold the button, aim with the stick, release to use; release with the stick centred to cancel. Works in combat.
+- Choose the aiming stick per ring: **Right**, **Left**, or **Dynamic** (the stick of the hand that isn't on the button). The other stick keeps moving or looking, and the aiming stick is held back after release until it's centred, so you don't walk off.
+- Slots show cooldowns, charges, range and usability. Touch rings open with a tap and fire with a tap.
+- Rings don't use any hidden action slots.
+
+### Bindings and modifiers in one screen
+- The **Modifiers** tab is merged into **Bindings**: L1, L2, R1, R2 and the paddles are rows at the top of each side. Press A to give a button a role; picking a role another button has swaps the two.
+- Presets (**Game default**, **Left = bars, Right = targeting**) are first in Triangle → More, and the header names the active one.
+- The guided "set it up yourself" step runs on the Bindings screen.
+- Tabs are now **Bindings**, **Touch**, **Keyboard** and **Rings**.
+
+### Touch bars
+- Modifier pages: each touch button has an action per bar (top, left, right, bottom), following your modifiers. An empty page hides its button instead of falling back.
+- Settings per side: count, size, spacing, distance from the edge, height, opacity, **Circle** or **Square** buttons, and **Hide** or **Show** empty buttons.
+
+### Look and feel
+- Every screen has Triangle = **More**, with one shared menu.
+- Calm, textured window background in WoW Forever's stone style, with translucent content boxes on every tab.
+- New controller drawing in the logo's style. Only the focused row's button lights, never a button you're physically pressing.
+- Controller type cards show each family's own layout and glyphs; the "Choose your layout" screen is redrawn to match.
+
+### Fixes
+- The "no controller found" line no longer sticks when a pad wasn't readable at login, and `/fct selftest` now lists what every controller reports.
+
 ## 1.0.0-beta.1 — 2026-11-12
 
 First public beta, for WoW Forever 1.60.1 (Interface 16001). Everything works, but not many people have played it yet, so please report anything odd.

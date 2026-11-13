@@ -39,7 +39,7 @@ Each bar has eight buttons: the four face buttons and the four D-pad directions.
 ## Opening the settings
 
 - **On the controller:** hold **L2 + R2** and press **Create** (PlayStation), **View** (Xbox) or **Minus** (Switch). L2 and R2 here are the physical triggers, whatever your layout gives them.
-- The addon's **minimap button**. Drag it to move it, or hide it from **Modifiers → More**.
+- The addon's **minimap button**. Drag it to move it, or hide it from **More** (Triangle).
 - The minimap **AddOns** menu.
 - **Options → AddOns → Forever Controller Tweaks**: **Open Settings**, or **Run setup guide**. Options goes invisible underneath the settings and comes back when you close them.
 - **Key Bindings → AddOns → Forever Controller Tweaks**, to put it on a key of your choice.
@@ -52,18 +52,19 @@ In every window:
 - **D-pad:** move the focus. Hold a direction to repeat. The sticks don't move the focus.
 - **Cross:** select.
 - **Circle:** back or close.
-- **L1 / R1:** switch tabs: Bindings, Modifiers, Touch.
+- **L1 / R1:** switch tabs: Bindings, Touch, Keyboard, Rings.
+- **Triangle:** **More**, the same menu on every screen: presets, undo, controller type and setup, Learn, keyboard settings, minimap icon and reset.
 
 The footer always lists the buttons you can use, and tooltips explain the focused item.
 
 ## Bindings
 
-The controller is drawn in the middle, with one row per button at the window's edges, placed where that button sits on the pad. Each row shows the button's glyph and four cells, one per bar: top, left, right and bottom. The focused row draws a gold line to its button on the drawing.
+The controller is drawn in the middle, with one row per button at the window's edges, placed where that button sits on the pad. Each face and D-pad row shows the button's glyph and four cells, one per bar: top, left, right and bottom. At the top of each side are the bumper and trigger rows (and paddle rows, if your pad has paddles), where their roles are set. The focused row draws a gold line to its button on the drawing.
 
 - **Pages:** the header shows **Page 1 of 3**. **L2 / R2** switch pages. If a stance or pet bar replaces a bar on that page, a note says so.
 - **Cross on a face or D-pad cell** opens the action picker.
-- **Square** clears a cell, and **Triangle** undoes the last clear.
-- **Cross on a bumper or trigger row** opens Modifiers, where its role is set.
+- **Square** clears a cell. **More → Undo** puts back the last clear.
+- **Cross on a bumper or trigger row** opens its role list. See [Modifiers](#modifiers).
 - On a cell that holds the game's own action, **Restore default action** puts it back after a change.
 
 ### Any action on any button
@@ -74,7 +75,8 @@ Every face and D-pad cell, on every bar, can hold:
 - your macros;
 - game actions: Bags, Map, Target nearest enemy, Extra action and more;
 - **Jump, Interact, Back and Inspect**. Interact keeps hold-to-loot, and Jump keeps swim up and stop;
-- key bindings from other addons, from the **AddOns** category (for example WellMet).
+- key bindings from other addons, from the **AddOns** category (for example WellMet);
+- **Open ring** for any of your [action rings](#rings).
 
 A moved action looks and works like a native slot. It shows cooldowns, range, mana, charges, proc glow and its tooltip, and you can click it with the mouse.
 
@@ -82,7 +84,7 @@ In a vehicle, or while a pet or possess bar is up, the face buttons keep the gam
 
 ### Action picker
 
-- **L1 / R1** switch categories: Spells, Items, Mounts, Macros, Movement, Targeting, Combat, Windows, Misc and AddOns.
+- **L1 / R1** switch categories: Spells, Items, Mounts, Macros, Movement, Targeting, Combat, Windows, Misc, AddOns and Rings.
 - **L2 / R2** page through long lists. Hold the D-pad to scroll faster.
 - **Cross** assigns the action, **Triangle** shows its details, **Square** clears the cell, and **Circle** closes the picker.
 - An entry that can't go on this cell is greyed out. Select it to read why.
@@ -103,13 +105,12 @@ Circle goes back to the list.
 
 ## Modifiers
 
-Same drawing, one row per bumper, trigger and paddle, showing its role.
+Roles are set on the Bindings screen, in the bumper, trigger and paddle rows at the top of each side. Press D-pad up from the top face or D-pad row to reach them.
 
-- **Presets** in the header: **Game default**, **Left = bars, Right = targeting**, or **Custom** (your own roles).
-- **Cross on a row** opens the role picker: Left bar, Right bar, Friendly targeting, Hostile targeting or None. If another button already has that role, the two swap.
-- **Hold** any bumper, trigger or paddle: what it opens lights up on the drawing.
-- **Triangle (More):**
-  - **Setup guide:** runs the first-start guide again.
+- **Cross on a row** opens the role list: Left bar, Right bar, Friendly targeting, Hostile targeting or None. If another button already has that role, the two swap, and a note under the drawing says so.
+- **Presets** are first in **More**: **Game default** and **Left = bars, Right = targeting**. The header names the active one, or **Custom** for your own roles.
+- **More** also has:
+  - **Setup guide:** runs the first-start guide again. Its "set it up yourself" step runs on the Bindings screen.
   - **Controller type:** PlayStation, Xbox, Switch or Custom. See below.
   - **Detect controller buttons** and **Reset detection:** see [Controller setup](#controller-setup).
   - **Learn controller:** use it if a bumper or trigger does the wrong thing. Press each button when asked, and the addon learns which raw input it sends.
@@ -122,10 +123,36 @@ Two bars of tap buttons on the left and right edges of the screen, for playing t
 
 - **On / Off** and **Show** in the header. Show can be **Always**, **Gamepad UI** (while it's on), **In combat** or **Never**.
 - The middle shows your screen with both bars at their real size and place.
-- The edge columns list each bar's buttons. **Cross** opens the action picker, **Square** clears a button.
-- Under the preview, D-pad left / right change: buttons per bar (1–12), button size, spacing, distance from the edge, up / down and opacity.
+- The edge columns list each bar's buttons, with four cells per button: one per bar (top, left, right, bottom), like the Bindings rows. A tap uses the action for the bar your modifiers have open. An empty cell hides its button on that bar. **Cross** opens the action picker, **Square** clears a cell.
+- Under the preview, switch between **Left bar** and **Right bar**, then D-pad left / right change that side's buttons per bar (1–12), button size, spacing, distance from the edge, up / down, opacity, **Shape** (Circle or Square) and **Empty buttons** (Hide or Show).
 
 Touch buttons look and behave like native crossbar slots. They're saved per character, and they work in combat.
+
+## Keyboard
+
+An on-screen keyboard for chat and text boxes, while the Gamepad UI is on. It opens when a text box gets the focus: with **Open → With the controller** only when you're using the controller, or **Always**.
+
+- **Typing:** the letters sit in clusters of four around the disc. Point a stick at a cluster and press the face button for the letter. **L1** is Shift, **L2** Symbols. The hub has Space, Send, Erase and Close, each on a face button.
+- **Suggestions** show in the tab beside the disc. **D-pad up / down** choose, **R1** inserts. A word goes in with a space, so pressing R1 again takes the next word.
+  - An empty chat box shows quick phrases for where you are and what's happening: 263 lines for 25 situations, such as a ready check, a resurrect, a dungeon, a city or your guild.
+  - Lines aimed at you in chat get replies, on the right channel: "inv?", "LF healer", "ready?" and 125 other phrases are recognised.
+  - The quest you follow adds its progress, at most two lines: "Need 5 more Wolf Pelts", "Done with the quest, turning in".
+  - While you type: word completion, a correction for a typo, the next word (it learns how you write), and shorthands such as lf, brb and omw.
+  - Other boxes get their own list: item names in bag search, names in mail "To" and /who, nothing in number boxes.
+- Nothing is ever sent for you, and nothing leaves your PC. Only your own sent messages are learned from.
+- **Keyboard tab:** On / Off, when it opens, **Layout** (Ring or Compact), **Scale**, **Word suggestions** on or off, **Position** (Auto places it between the text box and the screen centre, clear of the chat and your bars; Centre; or Custom with offsets), every button, and **Reset keyboard to defaults**.
+- A few boxes the game blocks addons from typing into (the Options search, the Group Finder's boxes, spellbook search) are left to a real keyboard; the keyboard says so instead of opening. Slash commands in chat (anything starting with `/`) need a real keyboard too.
+
+## Rings
+
+Radial menus of actions you build yourself. Open the **Rings** tab, or `/fct rings`.
+
+- **New ring** adds one, up to 12. **Rename**, **Icon** (a grid of every macro icon) and **Delete** work on the selected ring.
+- **Slots:** 4 to 12. **Cross on a slot** opens the action picker: spells (with Highest Rank), items, toys, mounts, macros, game actions and other addons' bindings.
+- **Stick:** which stick aims, per ring. **Right**, **Left**, or **Dynamic**: a ring opened from a D-pad button aims with the right stick, one opened from a face button with the left.
+- **Using a ring:** put **Open ring** on any face, D-pad or touch cell in Bindings or Touch. Hold the button, aim with the stick, release to use the lit slot. Release with the stick centred to cancel. The other stick keeps moving or looking, and the aiming stick is held back after release until it's centred. Works in combat.
+- **On a touch button:** a tap opens the ring, a tap on a slot uses it, a tap outside closes it.
+- Slots show cooldowns, charges, range and whether they're usable. Rings are shared by all your characters and use no hidden action slots.
 
 ## Glyphs
 
@@ -144,11 +171,11 @@ If the game doesn't recognise your pad, the addon asks which kind it is, with fo
 - **Switch:** B, A, Y, X; L and R, ZL and ZR.
 - **Custom:** press each button once. This starts controller setup.
 
-Change it later in **Modifiers → More → Controller type**, or with `/fct family xbox` (`playstation`, `switch`, or `reset` to forget it).
+Change it later in **More → Controller type**, or with `/fct family xbox` (`playstation`, `switch`, or `reset` to forget it).
 
 ## Controller setup
 
-Use this for a controller the cards don't cover, or one whose buttons come out wrong. Open it with `/fct detect`, **Modifiers → More → Detect controller buttons**, or the **Custom** card.
+Use this for a controller the cards don't cover, or one whose buttons come out wrong. Open it with `/fct detect`, **More → Detect controller buttons**, or the **Custom** card.
 
 1. **Let go of the controller** while it calibrates (about a second).
 2. **Press each button** when asked: face buttons, D-pad, bumpers, triggers, stick clicks, Start, Select, and the optional Home, Share and back paddles. For the sticks, push them all the way, then let go.
@@ -168,7 +195,7 @@ Pressing a button that's already used shows which step uses it. Press a differen
 
 ## Turning it off
 
-- **Game default layout:** Modifiers → Game default, or `/fct preset native`.
+- **Game default layout:** More → Game default, or `/fct preset native`.
 - **Uninstalling:** type `/fct release` first. It empties the addon's hidden slots on keyboard bars 6–8 and deletes its `FCT:` macros. Then disable or delete the addon and restart. The controller config is cleaned up on logout, so the game is fully native.
 
 ## Troubleshooting
@@ -177,7 +204,7 @@ Pressing a button that's already used shows which step uses it. Press a differen
 |---|---|
 | The addon says the Gamepad UI is off | Options → Gamepad → Enable Gamepad UI (Beta) |
 | The controller isn't recognised | Pick its type from the cards, or `/fct detect` |
-| A bumper or trigger does the wrong thing | Modifiers → More → Learn controller |
+| A bumper or trigger does the wrong thing | More → Learn controller |
 | The shortcut doesn't open the settings | Use `/fct` or the minimap button, then check the controller type |
 | A game action does nothing | Check your macro list (Esc → Macros) for free slots |
 | A moved action does nothing | Check keyboard bars 6–8 have free slots (slots 145–180) |

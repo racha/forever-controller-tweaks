@@ -39,15 +39,7 @@ local CONTROL = {
 }
 -- Mask canvases (pixels) and their viewBox (shape + 2 units of padding a side), centred with "meet": the texcoords
 -- crop to the viewBox so each mask scales uniformly.
-local MASK = { shoulder = { 256, 64, 66, 16 }, pill = { 128, 64, 22, 12 }, dpadv = { 64, 64, 18, 20 }, dpadh = { 64, 64, 20, 18 }, tab = { 128, 64, 26, 14 }, trigger = { 128, 64, 72, 36 } }
-
-local function maskCoords(kind)
-	local cw, ch, vw, vh = unpack(MASK[kind])
-	local scale = math.min(cw / vw, ch / vh)
-	local w, h = vw * scale, vh * scale
-	local x, y = (cw - w) / 2, (ch - h) / 2
-	return x / cw, (x + w) / cw, y / ch, (y + h) / ch
-end
+local maskCoords = UI.MaskCoords
 
 local function rgb(hex) return tonumber(hex:sub(1, 2), 16) / 255, tonumber(hex:sub(3, 4), 16) / 255, tonumber(hex:sub(5, 6), 16) / 255 end
 local STATE = {
@@ -683,7 +675,7 @@ function D.Open(options)
 	end, on2 = close })
 end
 
--- Modifiers' "Reset detection": a native confirm first.
+-- More's "Reset detection": a native confirm first.
 function D.Reset(owner)
 	UI.Dialog():Open(owner, { text = L.DETECT_RESET_TEXT, sub = L.DETECT_RESET_SUB, buttons = { L.RESET, L.CANCEL }, on1 = function()
 		if not ns.Device.DetectReset() then ns.log(L.DETECT_NOTHING_TO_RESET) end

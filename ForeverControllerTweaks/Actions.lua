@@ -34,7 +34,7 @@ local RANDOM_MOUNT = "random"
 -- GetActionInfo's id for "Summon random favorite mount", and the spell a macro casts for it.
 local RANDOM_MOUNT_ACTION, RANDOM_MOUNT_SPELL = 268435455, 150544
 
-Actions.CATEGORIES = { "Spells", "Items", "Mounts", "Macros", "Movement", "Targeting", "Combat", "Windows", "Misc", "AddOns" }
+Actions.CATEGORIES = { "Spells", "Items", "Mounts", "Macros", "Movement", "Targeting", "Combat", "Windows", "Misc", "AddOns", "Rings" }
 
 -- Game commands. short = macro name after "FCT:" (macro names hold 16 characters). button = a Blizzard button
 -- whose existence is checked at build time. press = when the button acts: "up" (default, plain buttons) or "both"
@@ -401,6 +401,8 @@ local function build()
 	macroEntries(add)
 	bindingEntries(add)
 	gameEntries(add)
+	-- Rings.lua: "Open ring: <name>", one per ring the player made.
+	for _, entry in ipairs(ns.Rings and ns.Rings.Entries() or {}) do add(entry) end
 
 	local categories = {}
 	for _, name in ipairs(Actions.CATEGORIES) do
@@ -714,7 +716,7 @@ end
 local RELEASED = "Controller Tweaks gave its action slots back (/fct release); /reload to use them again."
 local released
 
-local FULL_SHADOW = "No free action slot for %s: Controller Tweaks keeps routed actions on the hidden keyboard bars 6-8 (slots 145-180). Clear one there or route fewer actions."
+local FULL_SHADOW = "No free action slot for %s: routed buttons and touch-bar buttons share the 36 hidden slots on keyboard bars 6-8 (slots 145-180), and none is free. Clear one of them, or empty a slot there."
 
 -- The shadow slot holding entry for this cell, placed if needed (out of combat, empty cursor). Returns the slot, or nil
 -- and a reason. A slot the player changed is given up (left as is) and a new one picked; the cell's previous entry is
@@ -786,6 +788,17 @@ local function guard(fn)
 	end
 end
 for _, name in ipairs({ "Assign", "Clear", "Shadow", "ReleaseShadow" }) do Actions[name] = guard(Actions[name]) end
+
+-- Bars 6-8 as the allocator sees them: slots it holds (routed cells and touch buttons alike), empty slots it could
+-- still take, and the range's size.
+function Actions.ShadowCapacity()
+	local owned = shadowSlots() or {}
+	local used, free = 0, 0
+	for slot = SHADOW_FIRST, SHADOW_LAST do
+		if owned[slot] then used = used + 1 elseif not C_ActionBar.HasAction(slot) and not isGamepadSlot(slot) then free = free + 1 end
+	end
+	return used, free, SHADOW_LAST - SHADOW_FIRST + 1
+end
 
 -- The shadow slots in use, for /fct selftest.
 function Actions.ShadowState()
@@ -893,7 +906,7 @@ function Actions.TextFor(id)
 	end
 end
 
-local DESCRIBE = { spell = "Spell", pet = "Pet spell", item = "Item with a use effect", toy = "Toy", set = "Equipment set", mount = "Mount", macro = "Your macro", face = "Face action (press and hold)" }
+local DESCRIBE = { spell = "Spell", pet = "Pet spell", item = "Item with a use effect", toy = "Toy", set = "Equipment set", mount = "Mount", macro = "Your macro", face = "Face action (press and hold)", ring = "Ring: hold the button, aim with the right stick, release to use (a touch button: tap)" }
 
 function Actions.Describe(entry)
 	if entry.kind == "game" then return "Game command: " .. entry.payload.text end
@@ -903,7 +916,7 @@ end
 
 -- Actions owns the caches: the catalog is rebuilt lazily on the next read, the spellbook only after spells change.
 -- FCT_CATALOG_CHANGED(event) follows; Face and Touch rebuild texts only for TEXT_EVENTS.
-for _, event in ipairs({ "SPELLS_CHANGED", "BAG_UPDATE_DELAYED", "PLAYER_EQUIPMENT_CHANGED", "EQUIPMENT_SETS_CHANGED", "NEW_MOUNT_ADDED", "NEW_TOY_ADDED", "UPDATE_MACROS", "FCT_ACTIVE_CHANGED", "ADDON_LOADED", "UPDATE_BINDINGS" }) do
+for _, event in ipairs({ "SPELLS_CHANGED", "BAG_UPDATE_DELAYED", "PLAYER_EQUIPMENT_CHANGED", "EQUIPMENT_SETS_CHANGED", "NEW_MOUNT_ADDED", "NEW_TOY_ADDED", "UPDATE_MACROS", "FCT_ACTIVE_CHANGED", "ADDON_LOADED", "UPDATE_BINDINGS", "FCT_RINGS_CHANGED" }) do
 	ns.On(event, function()
 		cache = nil
 		if event == "SPELLS_CHANGED" then book = nil end

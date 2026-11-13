@@ -1,4 +1,4 @@
--- Forever Controller Tweaks panel: pieces shared by the Modifiers, Bindings and onboarding windows.
+-- Forever Controller Tweaks panel: pieces shared by the Bindings, Touch and onboarding windows.
 -- Taint rule: nothing here drives Blizzard's Menu, StaticPopup, FrameControlsManager, SmartNavigation,
 -- InputBindingManager or GamepadMode, and no Blizzard callback registry is written. Visual templates whose code is
 -- pure (SettingsFrameTemplate's NineSlice, flat background and close button, InsetFrameTemplate,
@@ -13,7 +13,6 @@ local ART = "Interface\\AddOns\\ForeverControllerTweaks\\Art\\"
 UI.ART = ART
 
 UI.L = {
-	MODIFIERS_TITLE = "Controller Tweaks · Modifiers & targeting",
 	BINDINGS_TITLE = "Controller Tweaks · Bindings",
 	CUSTOM_TITLE = "Controller Tweaks · Set it up yourself",
 	WELCOME_TITLE = "Welcome to Forever Controller Tweaks",
@@ -40,7 +39,6 @@ UI.L = {
 	CONTINUE = "Continue",
 	NOT_NOW = "Not now",
 	BINDINGS = "Bindings",
-	MODIFIERS = "Modifiers",
 	CLEAR_SLOT = "Clear slot",
 	TOUCH_MISSING = "Touch bars are not in this build yet.",
 	TOUCH = "Touch",
@@ -53,19 +51,25 @@ UI.L = {
 	TOUCH_SHOW = { always = "Always", gamepad = "Gamepad UI", combat = "In combat", never = "Never" },
 	TOUCH_SHOW_TIP = "When the bars are on screen.",
 	TOUCH_SHOW_LABEL = "Show",
+	TOUCH_SLOTS = "Slots %d / %d",
+	TOUCH_FULL = "All %d touch slots are in use: clear a button first.",
+	TOUCH_LAYERS_LATER = "Modifier layers on touch buttons need a newer Touch build.",
+	TOUCH_SUB_LAYER = "%s · button %d · %s bar",
+	TOUCH_SIDE_TIP = "Which bar the settings below change.",
 	TAB_BINDINGS = "Bindings",
-	TAB_MODIFIERS = "Modifiers & targeting",
 	LEARN_BUTTON = "button %d",
 	LEARN_AXIS = "axis %d",
-	STEP_LESS = "Less",
-	STEP_MORE = "More",
+	STEP_LESS = "Decrease",
+	STEP_MORE = "Increase",
 	UNNAMED_ACTION = "Action",
 	TOUCH_SIDE = { left = "Left bar", right = "Right bar" },
 	TOUCH_SUB = "%s · button %d",
 	TOUCH_EMPTY = "Not set",
-	TOUCH_SETTINGS = { count = "Buttons per bar", size = "Button size", gap = "Spacing", inset = "From the edge", offsetY = "Up / down", alpha = "Opacity" },
+	TOUCH_SETTINGS = { count = "Buttons per bar", size = "Button size", gap = "Spacing", inset = "From the edge", offsetY = "Up / down", alpha = "Opacity", shape = "Shape", showEmpty = "Empty buttons" },
+	TOUCH_CHOICES = { shape = { circle = "Circle", square = "Square" }, showEmpty = { [false] = "Hide", [true] = "Show" } },
 	TOUCH_NO_CHARACTER = "Touch bars: no character yet, try again in a moment.",
 	STEPPER_TIP = "D-pad left and right change it.",
+	CHOICE_TIP = "D-pad left and right pick one.",
 	NO_SLOT = "This button has no crossbar slot on this page.",
 	RANKS_TIP = "%d ranks. Press to choose one.",
 	OPEN_BINDINGS = "Open Bindings",
@@ -85,9 +89,6 @@ UI.L = {
 	OVERRIDE_BARS = { GamepadStanceBarOverride = "Stance", GamepadPossessBarOverride = "Pet" },
 	GAME_DEFAULT_SUFFIX = " · game default",
 	NOT_BOUND = "Not bound",
-	MODIFIER = "Modifier",
-	MODIFIER_TIP = "Its role is set in Modifiers.",
-	OPEN_MODIFIERS = "Change in Modifiers",
 	BAR_SUB = "%s bar",
 	FACE_SUB = "%s bar · face action",
 	GUIDE_HEADING = "Step %d of 4 · Press the button you want for %s",
@@ -100,7 +101,6 @@ UI.L = {
 	CHANGE_ROLE = "Change role",
 	PRESET_NATIVE = "Game default",
 	PRESET_SPLIT = "Left = bars, Right = targeting",
-	PRESET_SPLIT_SHORT = "Bars + targeting",
 	PRESET_CUSTOM = "Custom",
 	ROLES_TITLE = "%s: role",
 	ROLE_SWAPS = "swaps with %s",
@@ -111,8 +111,6 @@ UI.L = {
 	MORE = "More",
 	GUIDE_CONFIRM = "Detected · press again to confirm",
 	PRESET_TIP = "Sets every role at once.",
-	USE_LAYOUT = "Use this layout",
-	PRESETS_NOTE = "Your own roles. Pick a preset to replace them all at once.",
 	BUTTON_TIPS = { "Runs the first-start guide again.", "Teaches Controller Tweaks which raw input each shoulder, trigger and paddle sends.", "Puts back the game's default roles and face actions." },
 	DETECTED = "%s detected",
 	WELCOME_LINE1 = "Forever Controller Tweaks lets you choose which shoulder, trigger and paddle buttons open the crossbar bars and targeting.",
@@ -134,8 +132,8 @@ UI.L = {
 	MOVED_BY_ADDON = " · moved by Controller Tweaks",
 	DONE_HEADING = "Your layout: %s",
 	DONE_CHANGE = "Change it any time",
-	DONE_LINES = { "Modifiers & targeting: which button opens which bar.", "Bindings: what each button does on each bar." },
-	COMPARTMENT_TIP = "Open Bindings & Modifiers",
+	DONE_LINES = { "Bindings: which button opens which bar (the shoulder and trigger rows),", "and what each button does on each bar." },
+	COMPARTMENT_TIP = "Open Bindings",
 	MINIMAP_SHORTCUT = "On the controller: %s.",
 	MINIMAP_SHOW = "Show minimap icon",
 	MINIMAP_HIDE = "Hide minimap icon",
@@ -145,7 +143,8 @@ UI.L = {
 	FAMILY_TITLE = "Which controller is this?",
 	FAMILY_HEADING = "We couldn't recognise this controller. Which layout is it?",
 	FAMILY_CARDS = { playstation = "PlayStation", xbox = "Xbox", switch = "Switch", custom = "Custom" },
-	FAMILY_LINES = { playstation = "Cross, Circle, Square, Triangle; L1 and R1, L2 and R2.", xbox = "A, B, X, Y; LB and RB, LT and RT.", switch = "B, A, Y, X; L and R, ZL and ZR.", custom = "Press each button once and Controller Tweaks learns them." },
+	FAMILY_LINES = { playstation = "Sticks side by side, a large touchpad on top.", xbox = "Offset sticks, a round guide button on top.", switch = "Offset sticks, small + and - buttons.", custom = "Press each button once and Controller Tweaks learns them." },
+	FAMILY_NAMES = "%s  %s   ·   %s  %s",
 	FAMILY_MISSING = "Controller type can't be saved in this build yet.",
 	SUGGESTED = "Suggested",
 	FAMILY_SUGGESTED = { xbox = "Steam Link controllers usually work as Xbox.", playstation = "This controller says it works as PlayStation.", switch = "This controller says it works as Switch." },
@@ -204,7 +203,14 @@ UI.L = {
 	KEY_ESCAPE = "Esc",
 	NOTICE_TITLE = "Forever Controller Tweaks",
 	RESTORE_DEFAULT = "Restore default action",
-	UNDO_CLEAR = "Undo clear",
+	UNDO_RESTORE = "Undo: restore %s",
+	KEYBOARD = "On-screen keyboard",
+	KEYBOARD_OPEN = "Keyboard settings",
+	KEYBOARD_TIP = "Type in chat and text boxes with the controller: on or off, when it opens, its size and its buttons.",
+	UNDO_TIP = "Puts back what you just cleared.",
+	TOUCH_RESET = "Reset touch layout",
+	TOUCH_RESET_TIP = "Puts both bars' size, place, shape and other settings back to the defaults. Their actions stay.",
+	TOUCH_RESET_TEXT = "Reset both touch bars' settings to the defaults?",
 	INFO = "Info",
 	CATEGORY = "Category",
 	PAGE = "Page",
@@ -217,9 +223,9 @@ UI.L = {
 	RESUME_GUIDE = "Combat closed the Controller Tweaks setup guide. Resume where you left it?",
 	RESUME_CUSTOM = "Combat closed \"Set it up yourself\". Resume where you left it?",
 	SETTINGS_TITLE = "Forever Controller Tweaks",
-	SETTINGS_OPEN_LABEL = "Bindings & Modifiers",
+	SETTINGS_OPEN_LABEL = "Bindings",
 	SETTINGS_OPEN = "Open Settings",
-	SETTINGS_OPEN_TIP = "Opens the Bindings and Modifiers & targeting windows. On the controller: %s.",
+	SETTINGS_OPEN_TIP = "Opens Bindings: buttons, roles and presets. On the controller: %s.",
 	SETTINGS_SETUP_LABEL = "Setup guide",
 	SETTINGS_SETUP = "Run setup guide",
 	SETTINGS_SETUP_TIP = "Walks you through choosing a layout for this controller again.",
@@ -328,7 +334,7 @@ UI.DIA = {
 	switch = { dpad = { 170, 180 }, pos = { L2 = { 127, 42 }, R2 = { 273, 42 }, L1 = { 120, 70 }, R1 = { 280, 70 }, DU = { 170, 167 }, DD = { 170, 193 }, DL = { 157, 180 }, DR = { 183, 180 }, FT = { 270, 105 }, FB = { 270, 151 }, FL = { 247, 128 }, FR = { 293, 128 }, L3 = { 132, 128 }, R3 = { 230, 180 }, SEL = { 176, 104 }, START = { 224, 104 }, SOCIAL = { 184, 132 }, SYSTEM = { 216, 132 } } },
 }
 -- The addon's generic pad (controller setup's drawing), for pads outside the known vendors.
-UI.DIA.generic = { dpad = { 124, 142 }, pos = { L2 = { 130, 46 }, R2 = { 270, 46 }, L1 = { 129, 68 }, R1 = { 271, 68 }, DU = { 124, 128 }, DD = { 124, 156 }, DL = { 110, 142 }, DR = { 138, 142 }, FT = { 276, 119 }, FB = { 276, 165 }, FL = { 253, 142 }, FR = { 299, 142 }, L3 = { 162, 198 }, R3 = { 238, 198 }, SEL = { 177, 110 }, START = { 223, 110 }, SOCIAL = { 200, 152 }, SYSTEM = { 200, 130 }, P1 = { 303, 267 }, P2 = { 97, 267 }, P3 = { 328, 244 }, P4 = { 72, 244 } } }
+UI.DIA.generic = { dpad = { 124, 142 }, stick = 24, pos = { L2 = { 130, 46 }, R2 = { 270, 46 }, L1 = { 129, 68 }, R1 = { 271, 68 }, DU = { 124, 128 }, DD = { 124, 156 }, DL = { 110, 142 }, DR = { 138, 142 }, FT = { 276, 119 }, FB = { 276, 165 }, FL = { 253, 142 }, FR = { 299, 142 }, L3 = { 162, 198 }, R3 = { 238, 198 }, SEL = { 177, 110 }, START = { 223, 110 }, SOCIAL = { 200, 152 }, SYSTEM = { 200, 130 }, P1 = { 303, 267 }, P2 = { 97, 267 }, P3 = { 328, 244 }, P4 = { 72, 244 } } }
 
 -- The detected device, its family key (generic falls back to the Xbox names and drawing) and the family data.
 function UI.Device()
@@ -430,10 +436,9 @@ end
 
 function UI.OpenWays() return string.format(L.OPEN_WAYS, UI.ToggleKeyText()) end
 
--- The side tabs both settings windows share: Modifiers & targeting, Bindings.
+-- The side tabs every settings window shares; Touch, Keyboard and Rings add theirs after Bindings.
 UI.TABS = {
 	{ "Interface\\Icons\\INV_Misc_Book_09", L.TAB_BINDINGS, function() UI.Bindings.Open() end },
-	{ "Interface\\Icons\\Trade_Engineering", L.TAB_MODIFIERS, function() UI.Modifiers.Open() end },
 }
 
 function UI.PresetLabel(name)
@@ -464,11 +469,19 @@ function UI.CenterText(parent, font, x, y, width, text)
 	return fs
 end
 
+-- An inset panel; its own dark fill is kept translucent so the window's body texture shows through.
+local INSET_FILL_ALPHA = 0.55
+
+function UI.InsetFill(inset)
+	if inset.Bg then inset.Bg:SetAlpha(INSET_FILL_ALPHA) end
+	return inset
+end
+
 function UI.Inset(parent, x, y, w, h)
 	local inset = CreateFrame("Frame", nil, parent, "InsetFrameTemplate")
 	inset:SetSize(w, h)
 	at(inset, parent, x, y)
-	return inset
+	return UI.InsetFill(inset)
 end
 
 -- The small 4-unit colour bar of a role (a plain colour texture over a 1-unit black outline).
@@ -635,6 +648,15 @@ local DrawingMixin = {}
 -- buttons are 22, in a real pad's proportion to the d-pad.
 local GLYPH_SIZE = { L1 = 24, R1 = 24, L2 = 24, R2 = 24, FT = 22, FL = 22, FR = 22, FB = 22, L3 = 20, R3 = 20, SEL = 18, START = 12, SOCIAL = 14, SYSTEM = 16, P1 = 18, P2 = 18, P3 = 18, P4 = 18 }
 local BIG_CODES = { "L2", "R2", "L1", "R1", "FT", "FL", "FR", "FB", "L3", "R3", "SEL", "START" }
+-- The drawing's controls, as the art draws them (the logo's style): a trigger 66 x 32 above its position, a shoulder
+-- 62 x 12 around it (both lit by a shape fill), round face buttons of radius 11, stick pads of radius 22 (the
+-- family's dia.stick when larger) with an inner ring at 0.6 of it. Their boxes are the leader lines' targets and the
+-- curves' obstacles; a stick's is its inner ring, so a line may cross a pad's rim but never its centre.
+local FILL_SHAPE = { L2 = "trigger", R2 = "trigger", L1 = "shoulder", R1 = "shoulder" }
+local FILL_BOX = { trigger = { -33, -18, 66, 32 }, shoulder = { -31, -6, 62, 12 } }
+local FACE_R, STICK_R, STICK_RING = 11, 22, 0.6
+local ROUND = { FT = "face", FL = "face", FR = "face", FB = "face", L3 = "stick", R3 = "stick" }
+local GOLD = { 1, 210 / 255, 0, 1 }
 local MOD_CODES = { L1 = true, R1 = true, L2 = true, R2 = true, P1 = true, P2 = true, P3 = true, P4 = true }
 UI.MOD_CODES = MOD_CODES
 
@@ -818,8 +840,17 @@ function DrawingMixin:LayoutGlyphs()
 			glyph:SetPoint("CENTER", self, "TOPLEFT", pos[1] * self.scale, -pos[2] * self.scale)
 			glyph:Show()
 			if self.boxes then
-				local x, y, half = self.ox + pos[1] * self.scale, self.oy + pos[2] * self.scale, size / 2
-				self.boxes[code] = { x - half, y - half, x + half, y + half }
+				local s = self.scale
+				local x, y, half = self.ox + pos[1] * s, self.oy + pos[2] * s, size / 2
+				local round, shape = ROUND[code], FILL_SHAPE[code]
+				if round then half = math.max(half, (round == "face" and FACE_R or (self.dia.stick or STICK_R) * STICK_RING) * s) end
+				if shape then
+					local box = FILL_BOX[shape]
+					local left, top = self.ox + (pos[1] + box[1]) * s, self.oy + (pos[2] + box[2]) * s
+					self.boxes[code] = { left, top, left + box[3] * s, top + box[4] * s }
+				else
+					self.boxes[code] = { x - half, y - half, x + half, y + half }
+				end
 				-- The focused control's fill: a native-gold disc behind the glyph, as strong as the d-pad's gold arm.
 				glyph.hot = glyph.hot or glyph:CreateTexture(nil, "BACKGROUND")
 				glyph.hot:SetTexture(ART .. "disc.tga")
@@ -831,50 +862,63 @@ function DrawingMixin:LayoutGlyphs()
 	end
 end
 
--- active(code) -> full strength (else 30 %), glow[code] -> lit, hot = the d-pad arm drawn gold, armsDim -> arms at 35 %.
-function DrawingMixin:Style(active, glow, hot, armsDim)
+-- A trigger or shoulder fill in color ({ r, g, b, a }, nil hides it), laid on the control by its position.
+function DrawingMixin:Fill(code, color)
+	local kind = FILL_SHAPE[code]
+	if not kind then return end
+	self.fills = self.fills or {}
+	local fill = self.fills[code]
+	if not fill then
+		fill = self:CreateTexture(nil, "ARTWORK", nil, 1)
+		fill:SetTexture(ART .. "ctl-" .. kind .. "-fill.tga")
+		fill:SetTexCoord(UI.MaskCoords(kind))
+		self.fills[code] = fill
+	end
+	local pos = self.dia.pos[code]
+	fill:SetShown(pos ~= nil and color ~= nil)
+	if not (pos and color) then return end
+
+	local box, s = FILL_BOX[kind], self.scale
+	fill:ClearAllPoints()
+	fill:SetPoint("TOPLEFT", self, "TOPLEFT", (pos[1] + box[1] - 2) * s, -(pos[2] + box[2] - 2) * s)
+	fill:SetSize((box[3] + 4) * s, (box[4] + 4) * s)
+	fill:SetVertexColor(unpack(color))
+end
+
+-- Role colours on the triggers and shoulders (the layout cards). colorOf(code) -> { r, g, b, a } or nil.
+function DrawingMixin:Fills(colorOf)
+	self.roleFills = true
+	for code in pairs(FILL_SHAPE) do self:Fill(code, colorOf(code)) end
+end
+
+-- active(code) -> full strength (else 30 %); glow[code] -> the focused control, filled gold: a trigger or shoulder in
+-- its own shape (unless the layout cards fill them with role colours), a button by a gold disc behind its glyph, and
+-- hot, the d-pad arm, gold over the plus (the other arms are the art's plus itself).
+function DrawingMixin:Style(active, glow, hot)
 	for code, glyph in pairs(self.glyphs) do
+		local lit = glow and glow[code] or false
 		glyph:SetAlpha((not active or active(code)) and 1 or 0.3)
-		glyph:SetLit(glow and glow[code])
-		if glyph.hot then glyph.hot:SetShown(glow and glow[code] or false) end
+		glyph:SetLit(lit)
+		local shaped = FILL_SHAPE[code] and not self.roleFills
+		if glyph.hot then glyph.hot:SetShown(lit and not shaped) end
+		if shaped then self:Fill(code, lit and GOLD or nil) end
 	end
 	for code, arm in pairs(self.arms or {}) do
-		arm:SetTexture(ART .. "dpad-arm-" .. (arm.dir or "v") .. (hot == code and "-hot.tga" or ".tga"))
-		arm:SetAlpha(armsDim and 0.35 or 1)
+		arm:SetTexture(ART .. "dpad-arm-" .. (arm.dir or "v") .. "-hot.tga")
+		arm:SetShown(hot == code)
 	end
 end
 
--- Coloured rings around the modifier buttons on a card drawing; role(code) -> role or nil (grey dashed ring).
-function DrawingMixin:Rings(codes, role)
-	self.rings = self.rings or {}
-	for _, ring in pairs(self.rings) do
-		ring.fill:Hide()
-		ring.line:Hide()
-	end
-	for _, code in ipairs(codes) do
-		local pos = self.dia.pos[code]
-		if pos then
-			local ring = self.rings[code]
-			if not ring then
-				ring = { fill = self:CreateTexture(nil, "ARTWORK", nil, 1), line = self:CreateTexture(nil, "ARTWORK", nil, 2) }
-				ring.fill:SetTexture(ART .. "disc.tga")
-				self.rings[code] = ring
-			end
-			local x, y, s = pos[1] * self.scale, -pos[2] * self.scale, self.scale
-			local r, g, b = 0.5, 0.5, 0.5
-			local wanted = role(code)
-			if wanted then r, g, b = UI.RoleRGB(wanted) end
-			ring.fill:SetSize(54 * s, 54 * s)
-			ring.fill:SetPoint("CENTER", self, "TOPLEFT", x, y)
-			ring.fill:SetVertexColor(r, g, b, wanted and 0.28 or 0.15)
-			ring.line:SetTexture(ART .. (wanted and "ring.tga" or "ring-dashed.tga"))
-			ring.line:SetSize(64 * s, 64 * s)
-			ring.line:SetPoint("CENTER", self, "TOPLEFT", x, y)
-			ring.line:SetVertexColor(r, g, b, 1)
-			ring.fill:Show()
-			ring.line:Show()
-		end
-	end
+-- Control masks (ctl-<kind>-fill / -line.tga): canvas size (pixels) and viewBox (the shape plus 2 units of padding a
+-- side), centred with "meet"; the texcoords crop to the viewBox so each mask scales uniformly.
+local MASK = { shoulder = { 256, 64, 66, 16 }, pill = { 128, 64, 22, 12 }, dpadv = { 64, 64, 18, 20 }, dpadh = { 64, 64, 20, 18 }, tab = { 128, 64, 26, 14 }, trigger = { 128, 64, 72, 36 } }
+
+function UI.MaskCoords(kind)
+	local cw, ch, vw, vh = unpack(MASK[kind])
+	local scale = math.min(cw / vw, ch / vh)
+	local w, h = vw * scale, vh * scale
+	local x, y = (cw - w) / 2, (ch - h) / 2
+	return x / cw, (x + w) / cw, y / ch, (y + h) / ch
 end
 
 -- Route, Curve and their costs work on any frame with boxes (window coordinates) and glyphs: Touch's screen preview.
@@ -1337,7 +1381,7 @@ end
 -- open }, ... }; index = this window's tab.
 local TAB_ICON_X = -4
 
--- A segmented control in a window header (Modifiers' presets, Touch's On/Off and Show): native footer slot plates
+-- A segmented control in a window header (Touch's On/Off and Show, Keyboard's settings): native footer slot plates
 -- side by side, the selected one lit with UI-QuestTitleHighlight and gold text. specs = { { id, label }, ... };
 -- onPick(id) on a click or A. segments:Select(id) lights one.
 local SEGMENT_H = 26
