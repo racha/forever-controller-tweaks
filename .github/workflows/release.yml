@@ -40,4 +40,5 @@ jobs:
       # >>> variable CF_GAME_VERSION (Settings > Secrets and variables > Actions > Variables), e.g. 1.60.1.
       - uses: BigWigsMods/packager@v2.7.0
         with:
-          args: ${{ vars.CF_GAME_VERSION && format('-g {0}', vars.CF_GAME_VERSION) || '' }}
+          # -n: display name and zip "ForeverControllerTweaks-<tag>", without the packager's "-forever" flavour suffix.
+          args: -n "{package-name}-{project-version}" ${{ vars.CF_GAME_VERSION && format('-g {0}', vars.CF_GAME_VERSION) || '' }}

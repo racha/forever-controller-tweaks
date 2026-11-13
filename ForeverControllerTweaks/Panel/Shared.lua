@@ -108,6 +108,14 @@ UI.L = {
 	ROLE_TO_PADDLE = "moves to a free paddle",
 	ROLE_NEEDS_BUTTON = "every role needs a button",
 	ROLE_SWAPPED = "%s is now %s; %s is now %s.",
+	PADDLE_SLOT = "Back paddle · the same on every page",
+	PADDLE_SUB = "%s · %s bar",
+	PADDLE_ROLE = "Role (in More)",
+	PADDLE_ROLE_TIP = "Give this paddle a role, or keep None to run actions with it.",
+	PADDLE_FOR_ACTIONS = "use it for actions",
+	PADDLE_FOR_ACTIONS_TIP = "No role: the paddle runs its own action on each bar, like a face button.",
+	PADDLE_ROLE_TEXT = "Give %s the %s role?",
+	PADDLE_ROLE_SUB = "Its actions stay saved and come back when you set its role to None.",
 	MORE = "More",
 	GUIDE_CONFIRM = "Detected · press again to confirm",
 	PRESET_TIP = "Sets every role at once.",
@@ -269,7 +277,7 @@ L.FAMILY = {
 	},
 }
 
-L.BUTTON_NAMES = { DU = "D-pad Up", DL = "D-pad Left", DR = "D-pad Right", DD = "D-pad Down", P1 = "Paddle 1", P2 = "Paddle 2", P3 = "Paddle 3", P4 = "Paddle 4" }
+L.BUTTON_NAMES = { DU = "D-pad Up", DL = "D-pad Left", DR = "D-pad Right", DD = "D-pad Down", P1 = "Back paddle 1", P2 = "Back paddle 2", P3 = "Back paddle 3", P4 = "Back paddle 4" }
 L.GENERIC_SHORT = "Controller"
 
 -- Colour + word per role; the colours are the client's GlobalColor entries, with fixed fallbacks.

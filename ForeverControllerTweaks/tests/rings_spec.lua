@@ -375,6 +375,38 @@ W.combat = false
 assert(Rings.SetStick(heals.id, "right"))
 assert(ns.Face.SetCellEntry("DR", "T", nil))
 
+-- On a back paddle without a role: the same route on RT's layer, armed through the paddle router's name (a handle
+-- can't pass RunAttribute); a dynamic ring aims with the right stick there.
+local realDevice = ns.Device.Current
+ns.Device.Current = function() return { key = "054c/0ce6", raw = { P1 = { button = 16 } } } end
+ns.Fire("FCT_LAYOUT_CHANGED", "device")
+assert(ns.Face.Routable("P1", "R", ringEntry) and ns.Face.SetCellEntry("P1", "R", ringEntry))
+local paddle1 = frames.ForeverControllerTweaksPaddle1
+check(paddle1.attrs["ps-ring-right"] == heals.id and paddle1.attrs["frameref-rings"] == ring and ring.attrs["frameref-ForeverControllerTweaksPaddle1"] == paddle1 and W.bindings.PADPADDLE1, "paddle: the ring on its router, known to the ring by name")
+W.combat = true
+W.held = { [15] = true }
+aim(0, 0)
+check(press("PADPADDLE1", true) == nil and ring.shown and ring.attrs["ps-mode"] == "hold", "paddle: RT + paddle 1 opens the ring")
+W.held = {}
+aim(90)
+check(press("PADPADDLE1", false) == "spell 639" and not ring.shown and paddle1.attrs.typerelease == "spell", "paddle: the release fires the aimed slot and closes")
+check(press("PADPADDLE1", true) == false and not ring.shown, "paddle: no top cell, nothing opens")
+W.combat = false
+assert(Rings.SetStick(heals.id, "dynamic"))
+W.combat = true
+W.held = { [15] = true }
+press("PADPADDLE1", true)
+check(ring.attrs["ps-aim"] == 2 and ring.attrs["ps-aimside"] == "right", "paddle: a dynamic ring aims with the right stick")
+aim(90)
+check(press("PADPADDLE1", false) == "spell 639", "paddle: dynamic, the right stick picks")
+W.held = {}
+W.combat = false
+assert(Rings.SetStick(heals.id, "right"))
+assert(ns.Face.SetCellEntry("P1", "R", nil))
+check(W.bindings.PADPADDLE1 == nil, "paddle: given back, native")
+ns.Device.Current = realDevice
+ns.Fire("FCT_LAYOUT_CHANGED", "device")
+
 -- After a held ring closes, its aiming stick is still pushed: the hold-off frame keeps that stick from the game until it
 -- is back near the middle (or a second has passed), and passes the other stick on. Our own insecure frame: shown and
 -- hidden in combat.

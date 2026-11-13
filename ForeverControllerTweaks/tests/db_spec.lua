@@ -82,7 +82,7 @@ local stores = new({
 			macros = { ["FCT:Sit"] = { id = "game:sit" }, ["FCT:Bad"] = 1 },
 			highest = { [145] = { name = "Fireball", id = "spell:133" }, [146] = "x" },
 			shadow = "broken",
-			cells = { ["054c/0ce6"] = { FT = { T = { id = "spell:133" }, B = 5 }, FR = true } },
+			cells = { ["054c/0ce6"] = { FT = { T = { id = "spell:133" }, B = 5 }, FR = true, P1 = { R = { id = "face:jump" }, L = "x" }, P3 = 4 } },
 			legacyFaceDone = "yes",
 			routedUnderDone = true,
 		},
@@ -97,6 +97,8 @@ assert(sdb.macros["FCT:Sit"].chars["Ann-Realm"] and sdb.macros["FCT:Bad"] == nil
 assert(type(sdb.macros["FCT:Chars"].chars) == "table" and sdb.faceEntries["054c/0ce6"].bottom and sdb.faceEntries["054c/0ce6"].top == nil)
 assert(ann.macros["FCT:Sit"] and ann.macros["FCT:Bad"] == nil and ann.highest[145] and ann.highest[146] == nil and ann.shadow == nil)
 assert(ann.cells["054c/0ce6"].FT.T.id == "spell:133" and ann.cells["054c/0ce6"].FT.B == nil and ann.cells["054c/0ce6"].FR == nil)
+-- Back paddle cells sit next to the face cells and are repaired the same way.
+assert(ann.cells["054c/0ce6"].P1.R.id == "face:jump" and ann.cells["054c/0ce6"].P1.L == nil and ann.cells["054c/0ce6"].P3 == nil)
 assert(ann.legacyFaceDone == nil and ann.routedUnderDone == true and sdb.chars["Bob-Realm"] == nil and sdb.chars[7] == nil)
 assert(stores.said("repaired %d+ damaged saved settings"))
 

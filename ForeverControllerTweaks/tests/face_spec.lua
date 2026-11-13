@@ -824,6 +824,102 @@ ns.Device.Current = realCurrent
 ns.Fire("FCT_LAYOUT_CHANGED", "device")
 check(ns.Face.CellEntry("FT", "T").id == "spell:133" and ns.Face.Slot("FT", "T") == ySlot, "back: its cells again, on the same slot")
 
+-- Back paddles: a paddle without a role routes its cells per layer through the same snippet; a layer without a cell
+-- does nothing (a paddle has no crossbar slot), and a paddle with a role stays native with its cells kept.
+local pad = { key = "054c/0ce6", raw = { P1 = { button = 16 }, P2 = { button = 17 } } }
+ns.Device.Current = function() return pad end
+ns.Fire("FCT_LAYOUT_CHANGED", "device")
+local paddle1, faceHeader = frames.ForeverControllerTweaksPaddle1, frames.ForeverControllerTweaksFaceHeader
+check(paddle1 and paddle1.attrs["ps-kind"] == "paddle" and paddle1.attrs.pressAndHoldAction, "paddle routers: made like the others, a dynamic ring aims with the right stick")
+check(R("P1", "T", { id = "spell:133", kind = "spell" }) and R("P4", "B", nil) and not R("P5", "T", { id = "face:jump" }), "paddle: every cell routed, no storage slot")
+check(not W.bindings.PADPADDLE1 and not W.bindings.PADPADDLE2, "no paddle cells: paddles native")
+assert(ns.Face.SetCellEntry("P1", "R", { id = "spell:133", name = "Fireball" }, 1))
+assert(ns.Face.SetCellEntry("P1", "L", { id = "face:interact", name = "Interact" }, 1))
+assert(ns.Face.SetCellEntry("P1", "T", { id = "face:jump", name = "Jump" }, 1))
+check(W.bindings.PADPADDLE1 and W.bindings.PADPADDLE1.click == "ForeverControllerTweaksPaddle1:LeftButton" and W.bindings.PADPADDLE1.priority == false, "PADPADDLE1 bound to its router, non-priority")
+check(not W.bindings.PADPADDLE2 and faceHeader.attrs["ps-key9"] == "PADPADDLE1" and faceHeader.attrs["ps-key4"] == "PAD4", "a paddle without cells stays native; paddle keys after the crossbar keys (Glyphs reads 1-8)")
+check(ns.db.chars["Ann-Realm"].cells["054c/0ce6"].P1.R.id == "spell:133", "stored next to the face cells, per character and pad")
+check(lastDebug():find("P1(PADPADDLE1) PADPADDLE1=Jump PADPADDLE1/L=Interact PADPADDLE1/R=Fireball", 1, true), "debug line for the paddle")
+local pShadow = ns.Face.Slot("P1", "R")
+check(pShadow and W.slots[pShadow].id == 133 and ns.Face.Catcher("P1", "R") == nil, "slot kind: its own shadow slot, no catcher (no crossbar slot)")
+hold("PADRTRIGGER")
+check(press("PADPADDLE1", true) == "use " .. pShadow and ns.Face.Pressed("P1", "R"), "RT + paddle 1: UseAction on the shadow slot")
+hold()
+check(press("PADPADDLE1", false) == "release " .. pShadow, "release: ReleaseAction on the same slot")
+check(press("PADPADDLE1", true) == "/click " .. name(TOP, 8) .. " LeftButton 1" and press("PADPADDLE1", false) == "/click " .. name(TOP, 8) .. " LeftButton", "paddle 1 alone: Jump down and up")
+hold("PADLTRIGGER")
+check(press("PADPADDLE1", true) == "/click " .. name(TOP, 5) .. " LeftButton 1", "LT + paddle 1: Interact")
+hold("PADLTRIGGER", "PADRTRIGGER")
+check(press("PADPADDLE1", true) == false and press("PADPADDLE1", false) == false, "LT+RT + paddle 1: no bottom cell, nothing fires")
+hold()
+actionBars.friendlyTargetingBar.shown = true
+check(press("PADPADDLE1", true) == "/click " .. name(TOP, 8) .. " LeftButton 1", "a shown targeting bar doesn't take a paddle's press")
+actionBars.friendlyTargetingBar.shown = false
+-- An override bar has no slot on a paddle, so it never takes a paddle's press; an unresolved one pauses every routed key.
+W.cvars.GamepadStanceBarOverride = "2"
+for _, b in ipairs(actionBars.stanceBar.actionButtons) do b.protected = false end
+ns.Fire("GAMEPAD_STANCE_BAR_OVERRIDE_CHANGED")
+W.combat = true
+cond("bonusbar", true)
+actionBars.stanceBar.shown = true
+hold("PADLTRIGGER")
+check(W.bindings.PADPADDLE1 == nil, "unresolved stance bar while [bonusbar]: every routed key native, paddles too")
+cond("bonusbar", false)
+W.combat = false
+for _, b in ipairs(actionBars.stanceBar.actionButtons) do b.protected = true end
+ns.Fire("GAMEPAD_STANCE_BAR_OVERRIDE_CHANGED")
+W.combat = true
+cond("bonusbar", true)
+check(press("PADPADDLE1", true) == "/click " .. name(TOP, 5) .. " LeftButton 1", "stance shown on LT's layer: the paddle keeps its cell")
+actionBars.stanceBar.shown = false
+cond("bonusbar", false)
+-- Vehicles, override and possess bars and pet battles: native, in combat too.
+for _, c in ipairs({ "vehicleui", "overridebar", "possessbar", "bonusbar:5", "petbattle" }) do
+	cond(c, true)
+	check(W.bindings.PADPADDLE1 == nil, c .. ": paddle unbound in combat")
+	cond(c, false)
+	check(W.bindings.PADPADDLE1, c .. " over: paddle bound again")
+end
+check(not ns.Face.SetCellEntry("P1", "B", nil), "combat: no change")
+W.combat = false
+W.cvars.GamepadStanceBarOverride = "1"
+ns.Fire("GAMEPAD_STANCE_BAR_OVERRIDE_CHANGED")
+hold()
+-- Macro text when no shadow slot can be placed, as on any routed cell.
+ns.db.chars["Ann-Realm"].cells["054c/0ce6"].P2 = { B = { id = "spell:133", name = "Fireball", kind = "spell" } }
+W.cursor = { kind = "item" }
+ns.Fire("PLAYER_ENTERING_WORLD")
+hold("PADLTRIGGER", "PADRTRIGGER")
+check(press("PADPADDLE2", true) == "/cast Fireball" and press("PADPADDLE2", false) == "", "paddle 2, both triggers: macro text fallback")
+W.cursor = nil
+ns.db.chars["Ann-Realm"].cells["054c/0ce6"].P2 = nil
+ns.Fire("PLAYER_ENTERING_WORLD")
+hold()
+-- A role: the paddle outputs that modifier's key, so PADPADDLE1 goes native; its cells stay stored, their shadow slot
+-- is given back, and new entries wait for None.
+assert(ns.Layout.SetRole("P1", "leftmod"))
+check(not ns.Face.PaddleFree("P1") and W.bindings.PADPADDLE1 == nil, "role: paddle 1 unbound")
+check(ns.Face.CellEntry("P1", "R").id == "spell:133" and ns.Face.CellEntry("P1", "T").id == "face:jump", "role: the cells are kept")
+check(W.slots[pShadow] == nil and ns.Face.Slot("P1", "R") == nil, "role: the shadow slot is given back")
+local noRole, roleWhy = ns.Face.SetCellEntry("P1", "B", { id = "face:jump", name = "Jump" })
+check(not noRole and roleWhy:find("role") and ns.Face.CellEntry("P1", "B") == nil, "role: a new entry is refused")
+assert(ns.Face.SetCellEntry("P1", "T", nil))
+assert(ns.Layout.SetRole("P1", "none"))
+check(ns.Face.PaddleFree("P1") and W.bindings.PADPADDLE1 and ns.Face.CellEntry("P1", "R").id == "spell:133" and ns.Face.CellEntry("P1", "T") == nil, "None again: bound, cells back (the cleared one stays cleared)")
+pShadow = ns.Face.Slot("P1", "R")
+hold("PADRTRIGGER")
+check(pShadow and W.slots[pShadow].id == 133 and press("PADPADDLE1", true) == "use " .. pShadow, "None again: the shadow slot placed again")
+hold()
+-- A paddle this pad doesn't have (no raw source) never routes; a pad without paddles keeps PADPADDLEn native.
+ns.db.chars["Ann-Realm"].cells["054c/0ce6"].P3 = { T = { id = "face:jump", name = "Jump", kind = "face" } }
+ns.Fire("PLAYER_ENTERING_WORLD")
+check(not ns.Face.PaddleFree("P3") and W.bindings.PADPADDLE3 == nil and not ns.Face.SetCellEntry("P3", "L", { id = "face:jump", name = "Jump" }), "P3 not on this pad: native, refused")
+ns.db.chars["Ann-Realm"].cells["054c/0ce6"].P3 = nil
+for _, layer in ipairs({ "L", "R" }) do assert(ns.Face.SetCellEntry("P1", layer, nil)) end
+check(W.bindings.PADPADDLE1 == nil and faceHeader.attrs["ps-key9"] == nil and ns.db.chars["Ann-Realm"].cells["054c/0ce6"].P1 == nil, "cells given back: paddle native, row dropped")
+ns.Device.Current = realCurrent
+ns.Fire("FCT_LAYOUT_CHANGED", "device")
+
 -- Debug off: no route attribute, no new lines.
 SlashCmdList.FOREVERCONTROLLERTWEAKS("debug off")
 local lines = #ns.db.debugLog

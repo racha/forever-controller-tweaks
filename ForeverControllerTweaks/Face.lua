@@ -1,5 +1,5 @@
 -- Forever Controller Tweaks face router: moves Interact, Inspect, Back and Jump between the face buttons, and runs any
--- catalog entry on any face or D-pad button per crossbar layer (a "cell").
+-- catalog entry on any face or D-pad button, or on a back paddle without a role, per crossbar layer (a "cell").
 --
 -- Each routed key is bound (a non-priority override, so Blizzard's window binding sets still win) to a secure macro button. Its snippet reads the held pad buttons, picks the layer, and writes
 -- `/click <Blizzard button> LeftButton 1` on press and `/click <Blizzard button> LeftButton` on release, which keeps
@@ -11,6 +11,8 @@
 -- (Actions.Shadow) and fires with type "action" like Blizzard's buttons (ps-action-<layer>); when no shadow slot can
 -- be placed it runs its secure macro text instead (ps-entry-<layer>). Routed cells apply on every crossbar page, and
 -- a click catcher over the cell's crossbar slot takes mouse clicks, hover and gamepad focus.
+-- A back paddle has no crossbar slot: only its cells route (a layer without one does nothing), and only while the
+-- paddle has no role, so it still outputs PADPADDLEn.
 -- The header owns the bindings and drops them in vehicles, override/possess bars and pet battles, in combat too.
 local _, ns = ...
 local Layout = ns.Layout
@@ -19,12 +21,16 @@ local ACTION_SLOT = { interact = 5, inspect = 6, back = 7, jump = 8 }
 -- The game's default bindings (bar slots 1-8), used only when the core binding context can't be read.
 local ASSUMED_SLOT = { PADDLEFT = 1, PADDUP = 2, PADDRIGHT = 3, PADDDOWN = 4, PAD3 = 5, PAD4 = 6, PAD2 = 7, PAD1 = 8 }
 -- Cells use the Bindings grid's ids: row codes (face positions first, in Layout.FACE_POSITIONS order, as the router
--- index) and layers T/L/R/B (top, left, right, bottom bar).
-local CODES = { "FB", "FR", "FL", "FT", "DU", "DL", "DR", "DD" }
-local CODE_KEY = { FB = "PAD1", FR = "PAD2", FL = "PAD3", FT = "PAD4", DU = "PADDUP", DL = "PADDLEFT", DR = "PADDRIGHT", DD = "PADDDOWN" }
+-- index; the paddles last, so Glyphs' ps-key1..8 stay the crossbar keys) and layers T/L/R/B (top, left, right, bottom bar).
+local CODES = { "FB", "FR", "FL", "FT", "DU", "DL", "DR", "DD", "P1", "P2", "P3", "P4" }
+local CODE_KEY = {
+	FB = "PAD1", FR = "PAD2", FL = "PAD3", FT = "PAD4", DU = "PADDUP", DL = "PADDLEFT", DR = "PADDRIGHT", DD = "PADDDOWN",
+	P1 = "PADPADDLE1", P2 = "PADPADDLE2", P3 = "PADPADDLE3", P4 = "PADPADDLE4",
+}
 local CODE_POS = { FB = "bottom", FR = "right", FL = "left", FT = "top" }
 local POS_CODE = { bottom = "FB", right = "FR", left = "FL", top = "FT" }
-local DPAD_NAME = { DU = "Up", DL = "Left", DR = "Right", DD = "Down" }
+local ROUTER_NAME = { DU = "DpadUp", DL = "DpadLeft", DR = "DpadRight", DD = "DpadDown", P1 = "Paddle1", P2 = "Paddle2", P3 = "Paddle3", P4 = "Paddle4" }
+local PADDLES = { P1 = true, P2 = true, P3 = true, P4 = true }
 local CELL_LAYERS = { "T", "L", "R", "B" }
 local CELL_LAYER = { T = "top", L = "left", R = "right", B = "bottom" }
 local CELL_BAR = { T = "topBar", L = "leftBar", R = "rightBar", B = "bottomBar" }
@@ -199,11 +205,17 @@ end
 
 -- True when this entry on this cell must go through the router: a face button's base layer (its storage slot is
 -- reserved for the face actions), or an entry no storage slot can hold (a face action) on any layer. Everything
--- else goes into the cell's storage slot (Actions.Assign), D-pad base layer included.
+-- else goes into the cell's storage slot (Actions.Assign), D-pad base layer included. A paddle has no storage slot.
 function Face.Routable(code, layer, entry)
 	if not (CODE_KEY[code] and CELL_LAYER[layer]) then return false end
-	if layer == "T" and CODE_POS[code] then return true end
+	if PADDLES[code] or layer == "T" and CODE_POS[code] then return true end
 	return not not (entry and not ns.Actions.SLOT_KINDS[ns.Actions.KindOf(entry)])
+end
+
+-- True when a back paddle carries its cells: it has no role (so it still outputs PADPADDLEn) and this pad has it.
+function Face.PaddleFree(code)
+	local device = PADDLES[code] and ns.Device.Current()
+	return not not (device and device.raw and device.raw[code] and not Layout.Roles()[code])
 end
 
 -- The routed entry { id, name, icon, kind } on a cell, or nil. Callers must not modify it.
@@ -224,11 +236,11 @@ local BAR_INDEX = { T = 1, L = 2, R = 3, B = 4 }
 -- A routed cell applies on every crossbar page, so the cell's storage slots sit under it: shown around the routed entry
 -- and fired natively when the router stands down. page: the page being edited, whose slot is emptied whatever it
 -- holds; on every other page (or without a page) only the addon's own FCT: macros go, never the player's actions.
--- The reserved top-bar face slots have none.
+-- The reserved top-bar face slots and the paddles have none.
 local function clearUnder(code, layer, page)
 	local util = GamepadActionBarBindingUtil
 	local storage = util and util.GetGamepadStorageSlotIndexFromPageAndPageUnitSlotID
-	if not storage or (layer == "T" and CODE_POS[code]) then return true end
+	if not storage or PADDLES[code] or (layer == "T" and CODE_POS[code]) then return true end
 
 	local Actions = ns.Actions
 	for p = 1, Actions.STANDARD_PAGES do
@@ -252,6 +264,7 @@ function Face.SetCellEntry(code, layer, entry, page)
 	-- An addon's Lua key binding: restricted code can't run a binding command, and the layer is known only at the
 	-- press, too late to bind the key to it.
 	if entry and entry.disabled then return nil, entry.note end
+	if entry and PADDLES[code] and not Face.PaddleFree(code) then return nil, "this paddle has a role; set its role to None to use it for actions" end
 	local list = cells(true)
 	if not list then return nil, "no controller found" end
 
@@ -311,7 +324,7 @@ local header = CreateFrame("Frame", "ForeverControllerTweaksFaceHeader", UIParen
 local routers = {}
 for i, code in ipairs(CODES) do
 	local pos = CODE_POS[code]
-	local name = pos and "ForeverControllerTweaksFace" .. pos:gsub("^%l", string.upper) or "ForeverControllerTweaksDpad" .. DPAD_NAME[code]
+	local name = "ForeverControllerTweaks" .. (pos and "Face" .. pos:gsub("^%l", string.upper) or ROUTER_NAME[code])
 	local router = CreateFrame("Button", name, UIParent, "SecureActionButtonTemplate")
 	router:SetSize(1, 1)
 	router:EnableMouse(false)
@@ -330,8 +343,9 @@ local function setup()
 	for _, override in ipairs(OVERRIDES) do RegisterStateDriver(header, override.kind, override.condition .. " on; off") end
 	for i, router in ipairs(routers) do
 		router:SetAttribute("ps-pos", CODE_POS[CODES[i]] or CODES[i])
-		-- A dynamic ring aims with the stick of the hand that isn't on the button (Rings.lua).
-		router:SetAttribute("ps-kind", CODE_POS[CODES[i]] and "face" or "dpad")
+		-- A dynamic ring aims with the stick of the hand that isn't on the button (Rings.lua); a paddle, like a
+		-- D-pad button, with the right one.
+		router:SetAttribute("ps-kind", CODE_POS[CODES[i]] and "face" or PADDLES[CODES[i]] and "paddle" or "dpad")
 		router:SetAttribute("type", "macro")
 		router:SetAttribute("typerelease", "macro")
 		router:SetAttribute("pressAndHoldAction", true)
@@ -493,17 +507,17 @@ local function resolve(entry)
 end
 
 -- Writes one router's targets (unresolved collects the override kinds it could not resolve); returns the key's slot
--- in a bar.
+-- in a bar, nil for a paddle: it has none, so it has no native target, no targeting layer and no override bar.
 local function aim(router, actionBars, code, action, routes, mods, unresolved)
-	local slot = nativeSlot(CODE_KEY[code])
+	local slot = not PADDLES[code] and nativeSlot(CODE_KEY[code]) or nil
 	for layer, barKey in pairs(BARS) do
-		local target = button(actionBars, barKey, slot)
-		router:SetAttribute("ps-" .. layer, target and target:GetName())
+		local target = slot and button(actionBars, barKey, slot)
+		router:SetAttribute("ps-" .. layer, target and target:GetName() or nil)
 		if TARGET_LAYERS[layer] and target then SecureHandlerSetFrameRef(router, "bar-" .. layer, target) end
 	end
 	-- Top: a face button's chosen face action, a D-pad button's own top-bar slot.
-	local top = button(actionBars, "topBar", action and ACTION_SLOT[action] or slot)
-	router:SetAttribute("ps-top", top and top:GetName())
+	local top = slot and button(actionBars, "topBar", action and ACTION_SLOT[action] or slot)
+	router:SetAttribute("ps-top", top and top:GetName() or nil)
 	for cellLayer, route in pairs(routes) do
 		if route[1] == "click" then
 			local target = button(actionBars, "topBar", ACTION_SLOT[route[2]])
@@ -512,7 +526,7 @@ local function aim(router, actionBars, code, action, routes, mods, unresolved)
 	end
 	for role, index in pairs(mods) do router:SetAttribute("ps-i" .. role, index) end
 
-	for _, override in ipairs(OVERRIDES) do
+	for _, override in ipairs(slot and OVERRIDES or {}) do
 		local kind, layer = override.kind, overrideLayer(override.cvar)
 		local target = layer and button(actionBars, override.bar, slot)
 		if layer and not (target and target:IsProtected()) then layer = nil end
@@ -550,7 +564,7 @@ local function migrateLegacyFace()
 	local storage = util and util.GetGamepadStorageSlotIndexFromPageAndPageUnitSlotID
 	for page = 1, storage and Actions.STANDARD_PAGES or 0 do
 		for _, code in ipairs(CODES) do
-			for layer, barIndex in pairs(BAR_INDEX) do
+			for layer, barIndex in pairs(not PADDLES[code] and BAR_INDEX or {}) do
 				local ok, slot = pcall(storage, page, (barIndex - 1) * Actions.PER_BAR + nativeSlot(CODE_KEY[code]))
 				local oldID = ok and slot and Actions.CurrentId(slot)
 				-- An unregistered PS: macro from an older build is taken on only when its body is the addon's own.
@@ -609,8 +623,10 @@ local function applyNow(ignorePanel)
 	for i, code in ipairs(CODES) do
 		local router, key, pos, row = routers[i], CODE_KEY[code], CODE_POS[code], list[code] or {}
 		local action, label, routes = pos and face[pos], pos or code, {}
+		-- A paddle with a role keeps its cells, unrouted and without shadow slots, until it is freed again.
+		local carried = not PADDLES[code] or Face.PaddleFree(code)
 		for _, cellLayer in ipairs(CELL_LAYERS) do
-			local entry = row[cellLayer]
+			local entry = carried and row[cellLayer] or nil
 			local how, value
 			if entry then how, value = resolve(entry) end
 			-- A slot kind fires its shadow slot; placed now unless combat starts (else it stays macro text).
@@ -630,18 +646,18 @@ local function applyNow(ignorePanel)
 		local slot = moved and aim(router, actionBars, code, action, routes, mods, unresolved)
 		for cellLayer, layer in pairs(CELL_LAYER) do
 			local route = routes[cellLayer]
-			local how = slot and route and route[1]
+			local how = moved and route and route[1]
 			router:SetAttribute("ps-entry-" .. layer, how == "text" and route[2] or nil)
 			router:SetAttribute("ps-action-" .. layer, how == "action" and route[2] or nil)
 			router:SetAttribute("ps-ring-" .. layer, how == "ring" and route[2] or nil)
 			shadowOf[code .. "/" .. cellLayer] = route and route[1] == "action" and route[2] or nil
 			-- A moved face action on the base layer is a routed cell too.
 			local shown = how and route or slot and cellLayer == "T" and pos and action ~= Layout.NATIVE_FACE[pos] and { "click", action }
-			local catcher = shown and catcherFor(actionBars, code, cellLayer, slot) or catchers[code .. "/" .. cellLayer]
+			local catcher = shown and slot and catcherFor(actionBars, code, cellLayer, slot) or catchers[code .. "/" .. cellLayer]
 			if catcher then aimCatcher(catcher, shown or nil, actionBars) end
 		end
-		header:SetAttribute("ps-key" .. i, slot and key or nil)
-		if slot then
+		header:SetAttribute("ps-key" .. i, moved and key or nil)
+		if moved then
 			local cellParts = {}
 			for _, cellLayer in ipairs(CELL_LAYERS) do
 				local route = routes[cellLayer]
@@ -649,7 +665,7 @@ local function applyNow(ignorePanel)
 				if what then cellParts[#cellParts + 1] = (cellLayer == "T" and key or key .. "/" .. cellLayer) .. "=" .. what end
 			end
 			for _, part in ipairs(cellParts) do short[#short + 1] = part end
-			parts[#parts + 1] = string.format("%s(%s, slot %d) %s", label, key, slot, table.concat(cellParts, " "))
+			parts[#parts + 1] = string.format("%s(%s%s) %s", label, key, slot and ", slot " .. slot or "", table.concat(cellParts, " "))
 		end
 	end
 

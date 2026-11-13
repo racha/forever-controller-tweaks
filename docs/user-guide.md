@@ -65,6 +65,7 @@ The controller is drawn in the middle, with one row per button at the window's e
 - **Cross on a face or D-pad cell** opens the action picker.
 - **Square** clears a cell. **More → Undo** puts back the last clear.
 - **Cross on a bumper or trigger row** opens its role list. See [Modifiers](#modifiers).
+- A back paddle with no role gets four cells too. See [Back paddles](#back-paddles).
 - On a cell that holds the game's own action, **Restore default action** puts it back after a change.
 
 ### Any action on any button
@@ -81,6 +82,17 @@ Every face and D-pad cell, on every bar, can hold:
 A moved action looks and works like a native slot. It shows cooldowns, range, mana, charges, proc glow and its tooltip, and you can click it with the mouse.
 
 In a vehicle, or while a pet or possess bar is up, the face buttons keep the game's own actions.
+
+### Back paddles
+
+On a pad with back paddles (Xbox Elite, DualSense Edge), each paddle is either a modifier or an action button.
+
+- **Modifier:** give it a role (Left bar, Right bar, Friendly or Hostile targeting) like a bumper or trigger. It then shows as a role row.
+- **Action button:** set its role to **None** (the role list says "use it for actions"). The row turns into four cells, one per bar, like a D-pad row. Each cell takes anything from the action picker, for example Jump on the paddle alone and a heal on **RT + paddle**.
+- On a paddle's cell, **Triangle → More** has the paddle's role list first. Giving a role to a paddle that holds actions asks first. The actions stay saved and come back when you set the role to None again.
+- A paddle's cells are the same on every crossbar page, since a paddle has no crossbar slot. A bar with an empty cell does nothing on that paddle. A shown targeting bar or stance bar doesn't change what a paddle does.
+- In a vehicle, an override or possess bar, or a pet battle, the paddles do nothing, like the moved face actions.
+- Paddle rows show only when the addon knows your pad has paddles: an Xbox Elite or DualSense Edge, or any pad whose paddles you taught it with **Detect controller buttons**.
 
 ### Action picker
 

@@ -1,5 +1,14 @@
 # Changelog
 
+## 1.1.1-beta.1 — 2026-11-14
+
+### Back paddles as action buttons
+- A back paddle (Xbox Elite, DualSense Edge) without a role is now an action button, with its own action on each bar like a face button: for example Jump on the paddle alone and a heal on RT + paddle.
+- Anything from the action picker works there: spells (ranks and Highest Rank), items, toys, mounts, equipment sets, macros, Jump, Interact, Back, Inspect, game actions, other addons' bindings and **Open ring**.
+- Set a paddle's role to **None** to use it for actions; give it a role to make it a modifier again. Its actions stay saved while it has a role.
+- Paddles with a role work exactly as before.
+- Paddles are now named **Back paddle 1–4**.
+
 ## 1.1.0-beta.1 — 2026-11-13
 
 Two big additions, an on-screen keyboard and action rings, plus touch bar modifier pages and a cleaner settings window. Still a beta: please report anything odd with `/fct selftest`.

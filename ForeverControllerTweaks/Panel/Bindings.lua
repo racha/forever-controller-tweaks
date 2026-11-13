@@ -4,8 +4,10 @@
 -- drawing, to its control, which lights up. A D-pad or face row's cell opens the action picker (an entry the router
 -- carries shows instead of the storage slot's action); a game default explains itself.
 -- The modifier rows (shoulders, triggers, the paddles this pad has) show each button's role: A opens the role list
--- (picking a role another button holds swaps the two). Presets, controller setup, Learn and Reset are in More. The
--- setup guide's custom step runs here in guided mode: one role at a time, chosen by pressing the button.
+-- (picking a role another button holds swaps the two). A paddle whose role is None gets layer cells like a D-pad row
+-- instead (its role list is in More); giving it a role back keeps those cells, unused. Presets, controller setup, Learn
+-- and Reset are in More. The setup guide's custom step runs here in guided mode: one role at a time, chosen by
+-- pressing the button.
 local _, ns = ...
 local UI = ns.UI
 local L, Layout = UI.L, ns.Layout
@@ -92,10 +94,10 @@ local function slotInBar(key)
 	return tonumber((ok and action or ""):match("^GAMEPADACTIONBUTTON(%d)$")) or ASSUMED_SLOT[key]
 end
 
--- Storage slot of a layer cell, nil for the reserved top-bar face slots or without the gamepad action bars.
+-- Storage slot of a layer cell, nil for the reserved top-bar face slots, a paddle or without the gamepad action bars.
 local function storageSlot(code, layer)
 	local util = GamepadActionBarBindingUtil
-	if not util then return end
+	if not util or UI.MOD_CODES[code] then return end
 
 	local constants = Constants.GamepadActionBarConstants
 	local perBar = constants and constants.NUM_SLOTS_PER_GAMEPAD_ACTION_BAR or 8
@@ -159,9 +161,12 @@ local function boundName(cell)
 end
 
 local function cellTip(cell)
-	local kind = cell.reserved and L.FACE_SLOT or L.CROSSBAR_SLOT
+	local paddle = UI.MOD_CODES[cell.code]
+	local kind = cell.reserved and L.FACE_SLOT or paddle and L.PADDLE_SLOT or L.CROSSBAR_SLOT
 	local choose = cell.slot and GetCursorInfo() and L.PLACE_HELD or L.CHOOSE_ACTION
-	return { title = boundName(cell) or L.EMPTY, lines = { layerLine(cell.code, cell.layer), kind }, actions = { { "PAD1", choose }, { "PAD3", L.CLEAR_SLOT } }, side = cell.row.left and "left" or "right" }
+	local actions = { { "PAD1", choose }, { "PAD3", L.CLEAR_SLOT } }
+	if paddle then actions[3] = { "PAD4", L.PADDLE_ROLE } end
+	return { title = boundName(cell) or L.EMPTY, lines = { layerLine(cell.code, cell.layer), kind }, actions = actions, side = cell.row.left and "left" or "right" }
 end
 
 local function hideTooltip(cell)
@@ -354,11 +359,20 @@ local function report(ok, err)
 	if not ok and err then ns.log(err) end
 end
 
+local function hasActions(phys)
+	for _, layer in ipairs(LAYERS) do if ns.Face.CellEntry(phys, layer) then return true end end
+end
+
+-- A free paddle without actions first, so a role handed on doesn't park a paddle's actions.
 local function freePaddle(roles)
-	local device = ns.Device.Current()
+	local device, spare = ns.Device.Current(), nil
 	for _, paddle in ipairs({ "P1", "P2", "P3", "P4" }) do
-		if device and device.raw[paddle] and not roles[paddle] then return paddle end
+		if device and device.raw[paddle] and not roles[paddle] then
+			if not hasActions(paddle) then return paddle end
+			spare = spare or paddle
+		end
 	end
+	return spare
 end
 
 -- "None" on a shoulder or trigger hands its role to a free paddle (Layout allows none on paddles only).
@@ -380,7 +394,9 @@ local function roleEntries(phys)
 		local entry = { id = role, name = info.name, detail = info.hint, live = true }
 		if info.color then entry.icon, entry.color = UI.ART .. "disc.tga", { UI.RoleRGB(role) } end
 		local holder = role ~= "none" and holderOf(roles, role)
-		if role ~= mine and role == "none" and not isPaddle(phys) then
+		if role == "none" and isPaddle(phys) then
+			entry.detail, entry.note = L.PADDLE_FOR_ACTIONS_TIP, L.PADDLE_FOR_ACTIONS
+		elseif role ~= mine and role == "none" and not isPaddle(phys) then
 			local paddle = freePaddle(roles)
 			entry.note, entry.disabled = paddle and L.ROLE_TO_PADDLE or L.ROLE_NEEDS_BUTTON, not paddle
 		elseif role ~= mine and holder then
@@ -391,10 +407,15 @@ local function roleEntries(phys)
 	return entries, mine
 end
 
+-- A paddle switching between a role and actions changes rows: the focus follows to its other row.
+local focusCode
+
 -- Picking a role another button holds swaps the two; the note under the drawing says so in one line.
-local function pickRole(phys, role)
+local function setRole(phys, role)
 	local before = Layout.Roles()
+	focusCode = phys
 	assign(phys, role)
+	focusCode = nil
 	local after = Layout.Roles()
 	window.note:SetText("")
 	for _, other in ipairs(Layout.PHYSICAL) do
@@ -404,17 +425,27 @@ local function pickRole(phys, role)
 	end
 end
 
-local function openRoles(row)
-	if guided or InCombatLockdown() then return end
-	local entries, mine = roleEntries(row.code)
-	UI.ActionPicker.Open({ window = window, cell = row.plate, list = { title = string.format(L.ROLES_TITLE, UI.Name(row.code)), entries = entries, current = mine, onPick = function(entry) pickRole(row.code, entry.id) end } })
+-- A role on a paddle that holds actions asks first; its cells stay stored and come back with None.
+local function pickRole(phys, role)
+	if role == "none" or not (isPaddle(phys) and ns.Face.PaddleFree(phys) and hasActions(phys)) then return setRole(phys, role) end
+	UI.Dialog():Open(window, { text = string.format(L.PADDLE_ROLE_TEXT, UI.Name(phys), UI.ROLE[role].name), sub = L.PADDLE_ROLE_SUB, buttons = { L.CHANGE_ROLE, L.CANCEL }, on1 = function() setRole(phys, role) end })
 end
 
--- D-pad and face rows get the four layer cells; modifier rows (no assignable cells) a plate that opens the role list.
-local function newRow(code)
+-- anchor: where the list opens and the focus returns (the row's plate, or a paddle's focused cell).
+local function openRoles(row, anchor)
+	if guided or InCombatLockdown() then return end
+	local entries, mine = roleEntries(row.code)
+	UI.ActionPicker.Open({ window = window, cell = anchor or row.plate, list = { title = string.format(L.ROLES_TITLE, UI.Name(row.code)), entries = entries, current = mine, onPick = function(entry) pickRole(row.code, entry.id) end } })
+end
+
+-- A paddle without a role carries actions, so its row has cells (not in guided mode, which sets roles).
+local function hasCells(code) return not UI.MOD_CODES[code] or not guided and ns.Face.PaddleFree(code) end
+
+-- D-pad and face rows, and free paddles, get the four layer cells; modifier rows a plate that opens the role list.
+local function newRow(code, withCells)
 	local face = UI.CODE_POS[code] ~= nil
 	local row = B.NewRow(window, code)
-	row.face, row.kind, row.cells = face, UI.MOD_CODES[code] and "mod" or "slot", {}
+	row.face, row.kind, row.cells = face, withCells and "slot" or "mod", {}
 	if row.kind == "mod" then
 		B.AddPlate(row, function() openRoles(row) end)
 		return row
@@ -453,6 +484,7 @@ local function rowText(row, layer)
 	if row.kind == "mod" then return modText(row) end
 	local cell = row.cells[LAYER_INDEX[layer]]
 	local word = UI.ROLE[LAYER_ROLE[layer]].word
+	if UI.MOD_CODES[row.code] then return boundName(cell), string.format(L.PADDLE_SUB, UI.Name(row.code), word) end
 	return boundName(cell), string.format(cell.reserved and L.FACE_SUB or L.BAR_SUB, word)
 end
 
@@ -641,7 +673,7 @@ end
 local BAND = HEADER_H + HEADER_GAP
 
 local function firstWithCells(codes)
-	for i, code in ipairs(codes) do if not UI.MOD_CODES[code] then return i end end
+	for i, code in ipairs(codes) do if hasCells(code) then return i end end
 end
 
 -- Row i's top: the column's rows on the pitch, everything from the first row with cells down one band lower.
@@ -712,20 +744,25 @@ local function refresh()
 		local codes, isLeft = column[1], column[2]
 		B.PlaceLayerHeaders(tabs, isLeft, headerTop(codes, top))
 		for i, code in ipairs(codes) do
-			local row = rows[code] or newRow(code)
-			rows[code] = row
+			-- A paddle has two rows, its role row and its action row; the one for its role now is shown.
+			local withCells = hasCells(code)
+			local key = withCells and UI.MOD_CODES[code] and code .. "/cells" or code
+			local row = rows[key] or newRow(code, withCells)
+			rows[key] = row
 			placeRow(row, isLeft, rowTop(codes, i, top))
 			row.glyph:SetCode(code)
 			local plate = row.plate
 			if plate then
 				plate:EnableMouse(not guided)
 				nodes[#nodes + 1] = UI.Node(window, plate, function() openRoles(row) end, { phys = code, onFocus = function(on) plate.wash:SetShown(on) end, tip = function() return rowTip(row) end })
+				if code == focusCode then window.focus = { region = plate } end
 			end
 			for j, cell in ipairs(row.cells) do
 				fillCell(cell, row.face and j == 1 and face[UI.CODE_POS[code]] or nil)
 				local node = UI.Node(window, cell, function() selectCell(cell) end, { onFocus = function(on) setCellFocus(cell, on) end, tip = function() return cellTip(cell) end })
 				nodes[#nodes + 1] = node
 				if code == "DU" and j == 1 then first = node end
+				if code == focusCode and j == 1 then window.focus = { region = cell } end
 				setCellFocus(cell, window.focus and window.focus.region == cell)
 			end
 		end
@@ -949,8 +986,13 @@ local function setup()
 			return true
 		end
 		if key ~= "PAD4" then return end
-		-- More: the presets (the active one ticked), the pages, then the common entries.
+		-- More: on a free paddle's cell its role list first, then the presets (the active one ticked), the pages and the
+		-- common entries.
 		local count, entries = pageCount(), {}
+		local region = window.focus and window.focus.region
+		local row = region and region.layer and region.row
+		local paddleRow = row and UI.MOD_CODES[row.code] and row
+		if paddleRow then entries[1] = { id = "paddlerole", name = string.format(L.ROLES_TITLE, UI.Name(paddleRow.code)), detail = L.PADDLE_ROLE_TIP, run = function() openRoles(paddleRow, region) end } end
 		for _, name in ipairs({ "native", "split" }) do
 			entries[#entries + 1] = { id = name, name = UI.PresetLabel(name), detail = L.PRESET_TIP, live = true, run = function() report(Layout.SetPreset(name)) end }
 		end
