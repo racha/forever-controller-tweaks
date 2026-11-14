@@ -1,5 +1,23 @@
 # Changelog
 
+## 1.2.0-beta.1 — 2026-11-14
+
+### Modules
+- Touch bars, the on-screen keyboard and action rings are now separate modules: **Forever Controller Tweaks: Touch**, **: Keyboard** and **: Rings**. They're in the same download and listed under Forever Controller Tweaks in the AddOns list, on by default.
+- Turn off the ones you don't use in the AddOns list, then `/reload`. Their tab, More and Options entries and commands go away; their settings stay saved for when you turn them back on.
+- The main addon works on its own. A button holding **Open ring** while Rings is off does nothing, and shows greyed with a note.
+- Tabs keep their order (Bindings, Touch, Keyboard, Rings), and the L1/R1 hints name the tab next door.
+- Installing by hand: copy all four folders (`ForeverControllerTweaks` and the three `ForeverControllerTweaks_*` folders). Your settings, rings, keyboard words and touch bars carry over unchanged.
+
+### Added
+- **Open chat** action for any button: in the picker's Windows category, for face, D-pad and paddle cells, touch buttons and ring slots. It opens the chat box like Enter on a keyboard, and the on-screen keyboard follows if its module is on.
+
+### Keyboard
+- Channel switches work again: `/s`, `/y`, `/p`, `/raid`, `/i`, `/g`, `/o`, `/w Name`, `/r` and `/1`–`/10`. Other slash commands still need a real keyboard.
+- The keyboard's channel keys switch the channel at once and leave your typed text in place.
+- Sending a message closes the keyboard; it opens again the next time you open chat.
+- Suggestions too long for the list show in full in a tooltip when focused or hovered.
+
 ## 1.1.1-beta.1 — 2026-11-14
 
 ### Back paddles as action buttons

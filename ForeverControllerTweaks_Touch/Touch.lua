@@ -1,4 +1,4 @@
-local _, ns = ...
+local ns = ForeverControllerTweaks
 
 -- Touch bars: two columns of tap buttons on the left and right screen edges (Steam Link on a phone sends a tap as a
 -- mouse click). Each button holds up to four entries, one per crossbar layer (T no modifier, L, R, B both), as the
@@ -266,7 +266,6 @@ local function newButton(side, i)
 	local button = CreateFrame("Button", "ForeverControllerTweaksTouch" .. (side == "left" and "Left" or "Right") .. i, bars[side], "SecureActionButtonTemplate")
 	button:RegisterForClicks("AnyUp", "LeftButtonDown", "RightButtonDown")
 	header:WrapScript(button, "OnClick", TAP_SNIPPET)
-	if ns.Rings then SecureHandlerSetFrameRef(button, "rings", ns.Rings.Frame()) end
 	button:SetScript("OnEnter", tooltip)
 	button:SetScript("OnLeave", leave)
 	-- The native slot look and states (SlotView.lua); the view has no size or place of its own, and its press follows
@@ -388,6 +387,11 @@ local function applyNow()
 			local button = buttons[side][i] or i <= count and newButton(side, i)
 			if button then
 				local layers = config.bars[side][i]
+				-- Once the Rings module is loaded; it may load after this one.
+				if ns.Rings and not button.ringsLinked then
+					SecureHandlerSetFrameRef(button, "rings", ns.Rings.Frame())
+					button.ringsLinked = true
+				end
 				button:ClearAllPoints()
 				button:SetPoint("TOP", bar, "TOP", 0, -(i - 1) * (size + gap))
 				button:SetSize(size, size)

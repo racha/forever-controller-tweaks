@@ -52,10 +52,24 @@ In every window:
 - **D-pad:** move the focus. Hold a direction to repeat. The sticks don't move the focus.
 - **Cross:** select.
 - **Circle:** back or close.
-- **L1 / R1:** switch tabs: Bindings, Touch, Keyboard, Rings.
-- **Triangle:** **More**, the same menu on every screen: presets, undo, controller type and setup, Learn, keyboard settings, minimap icon and reset.
+- **L1 / R1:** switch tabs: Bindings, Touch, Keyboard, Rings (the modules' tabs show only while that module is on).
+- **Triangle:** **More**, the same menu on every screen: presets, undo, controller type and setup, Learn, keyboard settings (with the Keyboard module), minimap icon and reset.
 
 The footer always lists the buttons you can use, and tooltips explain the focused item.
+
+## Modules
+
+Forever Controller Tweaks comes as the main addon plus three modules, all in the one download. In the game's **AddOns** list the modules sit under **Forever Controller Tweaks**:
+
+| Module | What it adds |
+|---|---|
+| **Forever Controller Tweaks: Touch** | The touch bars and the **Touch** tab. |
+| **Forever Controller Tweaks: Keyboard** | The on-screen keyboard, its suggestions, the **Keyboard** tab and the keyboard entries in More and Options. |
+| **Forever Controller Tweaks: Rings** | Action rings, the **Rings** tab, `/fct rings` and **Open ring** in the action picker. |
+
+The main addon (bindings, modifiers, glyphs, controller setup) works on its own. To turn a module off, untick it in the AddOns list (or on the character screen's **AddOns** button) and `/reload`. Its tab, menu entries and commands go away; its settings stay saved and come back when you turn it on again. A module needs the main addon, so turning the main addon off turns them all off.
+
+With **Rings** off, a button that holds **Open ring** does nothing. Its cell is greyed in Bindings and Touch, and its tooltip says the Rings module is off.
 
 ## Bindings
 
@@ -74,10 +88,12 @@ Every face and D-pad cell, on every bar, can hold:
 
 - spells and pet spells, items, toys, mounts and equipment sets;
 - your macros;
-- game actions: Bags, Map, Target nearest enemy, Extra action and more;
+- game actions: Bags, Map, **Open chat** (opens the chat box, like Enter on a keyboard; with the Keyboard module the on-screen keyboard opens with it), Target nearest enemy, Extra action and more;
 - **Jump, Interact, Back and Inspect**. Interact keeps hold-to-loot, and Jump keeps swim up and stop;
 - key bindings from other addons, from the **AddOns** category (for example WellMet);
 - **Open ring** for any of your [action rings](#rings).
+
+To clear your target with one press, put **Clear target** (Targeting category) on any face or D-pad button, back paddle, touch button or ring slot. Start keeps opening the menu wheel, as it always does.
 
 A moved action looks and works like a native slot. It shows cooldowns, range, mana, charges, proc glow and its tooltip, and you can click it with the mouse.
 
@@ -153,7 +169,7 @@ An on-screen keyboard for chat and text boxes, while the Gamepad UI is on. It op
   - Other boxes get their own list: item names in bag search, names in mail "To" and /who, nothing in number boxes.
 - Nothing is ever sent for you, and nothing leaves your PC. Only your own sent messages are learned from.
 - **Keyboard tab:** On / Off, when it opens, **Layout** (Ring or Compact), **Scale**, **Word suggestions** on or off, **Position** (Auto places it between the text box and the screen centre, clear of the chat and your bars; Centre; or Custom with offsets), every button, and **Reset keyboard to defaults**.
-- A few boxes the game blocks addons from typing into (the Options search, the Group Finder's boxes, spellbook search) are left to a real keyboard; the keyboard says so instead of opening. Slash commands in chat (anything starting with `/`) need a real keyboard too.
+- A few boxes the game blocks addons from typing into (the Options search, the Group Finder's boxes, spellbook search) are left to a real keyboard; the keyboard says so instead of opening. Slash commands other than channel switches (`/s`, `/p`, `/g`, `/w` …) need a real keyboard.
 
 ## Rings
 
@@ -208,7 +224,7 @@ Pressing a button that's already used shows which step uses it. Press a differen
 ## Turning it off
 
 - **Game default layout:** More → Game default, or `/fct preset native`.
-- **Uninstalling:** type `/fct release` first. It empties the addon's hidden slots on keyboard bars 6–8 and deletes its `FCT:` macros. Then disable or delete the addon and restart. The controller config is cleaned up on logout, so the game is fully native.
+- **Uninstalling:** type `/fct release` first. It empties the addon's hidden slots on keyboard bars 6–8 and deletes its `FCT:` macros. Then disable or delete the addon (and its three module folders) and restart. The controller config is cleaned up on logout, so the game is fully native.
 
 ## Troubleshooting
 

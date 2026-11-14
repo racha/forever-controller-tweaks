@@ -21,7 +21,7 @@
 --   _toggle(id)           a touch tap: opens the ring, or closes it when it is the one open;
 --   _close()              hides it; _arm(ref, which, id, i) writes one slot's action on a button.
 -- No action slot is used: the actions fire through direct secure attributes (spell, item, toy, macrotext).
-local _, ns = ...
+local ns = ForeverControllerTweaks
 local Rings = {}
 ns.Rings = Rings
 

@@ -52,7 +52,8 @@ C_Texture = { GetAtlasInfo = function() return { width = 76, height = 75 } end }
 W.trapped = {}
 local function fromPanel()
 	local info = debug.getinfo(3, "Sl")
-	if info and info.source:find("/Panel/", 1, true) then return info.source:match("[^/]+$") .. ":" .. tostring(info.currentline) end
+	-- The core's panel files, and every module file (their tabs are panel code too).
+	if info and (info.source:find("/Panel/", 1, true) or info.source:find("/ForeverControllerTweaks_", 1, true)) then return info.source:match("[^/]+$") .. ":" .. tostring(info.currentline) end
 end
 -- The few reads the panel may make: hiding a leftover tooltip, and SmartNavigation's Pointer for its alpha.
 local ALLOWED = {

@@ -3,7 +3,7 @@
 -- line; the game is read when the keyboard asks for a snapshot, never per frame. Every game value passes plain(): a
 -- secret value (chat and unit names are secret in a messaging lockdown) counts as unknown. Frames are only read
 -- (names, parents, attributes), never written. Nothing here is saved: incoming lines live in memory for three minutes.
-local _, ns = ...
+local ns = ForeverControllerTweaks
 local K = ns.Keyboard
 local P = K.Library
 local C = { rev = 0 }

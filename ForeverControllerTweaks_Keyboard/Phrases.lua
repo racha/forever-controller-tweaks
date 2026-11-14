@@ -2,7 +2,7 @@
 -- reply sets, the shorthand expansions and the intent rules that read incoming chat. Data, plus the merge with the
 -- player's own edits (ForeverControllerTweaksDB.keyboard.phrases), which are stored apart from the defaults so a new
 -- version's lines still arrive.
-local _, ns = ...
+local ns = ForeverControllerTweaks
 local K = ns.Keyboard
 local P = {}
 K.Library = P

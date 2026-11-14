@@ -212,6 +212,22 @@ check(entry("game:targetenemy").payload.text == "/targetenemy", "slash command a
 check(not find(Actions.Catalog(), "game:character"), "missing Blizzard button: no entry")
 check(entry("game:bags").payload.icon == "INV_Misc_Bag_08", "macro icon is the bare icon name")
 
+-- Open chat: our own plain button, clicked like the Blizzard ones; its click opens the chat box (OpenChat("")).
+local chat = entry("game:chat")
+check(chat and chat.category == "Windows" and chat.name == "Open chat" and chat.payload.text == "/click ForeverControllerTweaksOpenChat", "Open chat: a Windows game action clicking our button")
+check(Actions.TextFor("game:chat") == "/click ForeverControllerTweaksOpenChat", "Open chat: the same text for rings and touch buttons")
+local opened = {}
+ChatFrameUtil = { OpenChat = function(text, frame) opened[#opened + 1] = { text, frame } end }
+ForeverControllerTweaksOpenChat.scripts.OnClick(ForeverControllerTweaksOpenChat, "LeftButton")
+check(#opened == 1 and opened[1][1] == "" and opened[1][2] == nil, "the click opens chat on its current chat type")
+ChatFrameUtil = nil
+ChatFrame_OpenChat = function(text) opened[#opened + 1] = { text } end
+ForeverControllerTweaksOpenChat.scripts.OnClick(ForeverControllerTweaksOpenChat, "LeftButton")
+check(#opened == 2 and opened[2][1] == "", "without ChatFrameUtil: the deprecated ChatFrame_OpenChat")
+ChatFrame_OpenChat = nil
+ForeverControllerTweaksOpenChat.scripts.OnClick(ForeverControllerTweaksOpenChat, "LeftButton")
+check(#opened == 2, "neither API: the click does nothing")
+
 -- Registry: Ann makes FCT:Bags, Bob reuses it, it lives while either character uses it.
 check(Actions.Assign(FIRST, entry("game:bags")), "Ann assigns Bags")
 check(#account == 1 and account[1].name == "FCT:Bags" and account[1].icon == "INV_Misc_Bag_08", "macro made")

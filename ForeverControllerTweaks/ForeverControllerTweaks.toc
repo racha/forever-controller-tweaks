@@ -1,6 +1,6 @@
 ## Interface: 16001
 ## Title: Forever Controller Tweaks
-## Notes: Remap bumpers and triggers, put any action on any controller button, and add touch bars. Type /fct.
+## Notes: Remap bumpers and triggers and put any action on any controller button. The Touch, Keyboard and Rings modules add the rest. Type /fct.
 ## Author: HouseLegend
 ## Version: @project-version@
 ## SavedVariables: ForeverControllerTweaksDB
@@ -22,22 +22,11 @@ SlotView.lua
 Face.lua
 Glyphs.lua
 Actions.lua
-Touch.lua
-Rings.lua
 Panel/Templates.xml
 Panel/Shared.lua
 Panel/Window.lua
-Panel/TouchTab.lua
 Panel/Bindings.lua
 Panel/ActionPicker.lua
 Panel/Detect.lua
 Panel/Onboarding.lua
 Panel/Panel.lua
-Keyboard/Engine.lua
-Keyboard/Phrases.lua
-Keyboard/Context.lua
-Keyboard/Suggest.lua
-Keyboard/View.lua
-Keyboard/Settings.lua
-Rings/View.lua
-Panel/RingsTab.lua

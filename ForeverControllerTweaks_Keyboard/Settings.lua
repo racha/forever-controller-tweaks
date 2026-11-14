@@ -3,7 +3,7 @@
 -- layout and scale on the left, the settings and the button rows on the right. A on a button row takes the next
 -- press (swapping with the action that had it), X restores that row's default. Saves to
 -- ForeverControllerTweaksDB.keyboard through K.Settings.
-local _, ns = ...
+local ns = ForeverControllerTweaks
 local UI, K = ns.UI, ns.Keyboard
 local L = UI.L
 
@@ -166,8 +166,8 @@ end
 
 local function prompts(region)
 	if capture then return {} end
-	if region and region.actions then return { { "PAD1", T.CHANGE }, { "PAD3", T.DEFAULT }, { "PAD4", L.MORE }, { "PADLSHOULDER", L.TOUCH }, { "PAD2", L.CLOSE } } end
-	return { { "PAD1", L.SELECT }, { "PAD4", L.MORE }, { "PADLSHOULDER", L.TOUCH }, { "PAD2", L.CLOSE } }
+	if region and region.actions then return { { "PAD1", T.CHANGE }, { "PAD3", T.DEFAULT }, { "PAD4", L.MORE }, UI.TabPrompt("keyboard", -1), { "PAD2", L.CLOSE } } end
+	return { { "PAD1", L.SELECT }, { "PAD4", L.MORE }, UI.TabPrompt("keyboard", -1), { "PAD2", L.CLOSE } }
 end
 
 local function refresh()
@@ -310,5 +310,5 @@ end
 
 S.T = T
 
--- The third side tab (Bindings, Touch, Keyboard); L1/R1 step through them.
-UI.TABS[#UI.TABS + 1] = { "Interface\\Icons\\INV_Letter_15", T.TAB, function() S.Open() end, keyboard = true }
+-- A side tab after Bindings and Touch (Bindings, Touch, Keyboard, Rings, of those loaded); L1/R1 step through them.
+UI.AddTab({ "Interface\\Icons\\INV_Letter_15", T.TAB, function() S.Open() end, keyboard = true, order = 3, prompt = T.TAB })

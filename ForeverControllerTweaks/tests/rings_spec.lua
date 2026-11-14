@@ -224,8 +224,14 @@ ns.SlotView = { New = function(parent)
 	function view:SetSlot(slot, icon) self.slot, self.fallback = slot, icon end
 	return view
 end }
-for _, file in ipairs({ "Face.lua", "Actions.lua", "Touch.lua", "Rings.lua" }) do loadAddonFile(file) end
+for _, file in ipairs({ "Face.lua", "Actions.lua" }) do loadAddonFile(file) end
 ns.Fire("ADDON_LOADED", "ForeverControllerTweaks")
+-- Modules as the game loads them: their own addon name and private table; they read the core's namespace global.
+local function loadModule(module, file) assert(loadfile(here .. "/../../ForeverControllerTweaks_" .. module .. "/" .. file .. ".lua"))("ForeverControllerTweaks_" .. module, {}) end
+loadModule("Touch", "Touch")
+loadModule("Rings", "Rings")
+ns.Fire("ADDON_LOADED", "ForeverControllerTweaks_Touch")
+ns.Fire("ADDON_LOADED", "ForeverControllerTweaks_Rings")
 ns.Fire("PLAYER_ENTERING_WORLD")
 
 local checks = 0
@@ -266,6 +272,7 @@ check(same(attrs("mount:random"), { "macro", "macrotext", "/cast Summon Random F
 check(same(attrs("set:1"), { "macro", "macrotext", "/equipset PvP" }), "attributes: an equipment set")
 check(same(attrs("macro:My Macro"), { "macro", "macrotext", "/cast Fireball\n/say hi" }), "attributes: the player's macro body")
 check(same(attrs("game:sit"), { "macro", "macrotext", "/sit" }), "attributes: a game action")
+check(same(attrs("game:chat"), { "macro", "macrotext", "/click ForeverControllerTweaksOpenChat" }), "attributes: Open chat clicks our button")
 check(same(attrs("face:jump"), { "macro", "macrotext", "/click TopButton8 LeftButton 1\n/click TopButton8 LeftButton" }), "attributes: a face action clicks down and up")
 check(same(attrs("addon:CLICK MyAddonButton:LeftButton"), { "macro", "macrotext", "/click MyAddonButton LeftButton 1\n/click MyAddonButton LeftButton" }), "attributes: an addon's CLICK binding")
 check(#attrs("addon:MYADDON_LUA") == 0 and Actions.Find("addon:MYADDON_LUA").disabled, "attributes: an addon's Lua binding can't fire")

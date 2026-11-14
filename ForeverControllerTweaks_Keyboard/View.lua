@@ -4,7 +4,7 @@
 -- Input: the frame has EnableGamePadButton / EnableGamePadStick and SetPropagateKeyboardInput(false) set once at
 -- creation, out of combat (they are restricted in combat), so showing and hiding it never changes input settings:
 -- a shown keyboard takes the pad, a hidden one takes nothing and the sticks move the character again.
-local addonName, ns = ...
+local ns = ForeverControllerTweaks
 local UI, K = ns.UI, ns.Keyboard
 local L = UI.L
 
@@ -13,7 +13,8 @@ K.View = V
 
 local T = {
 	SHIFT = "Shift", SYMBOLS = "Symbols", CHOOSE = "Choose", INSERT = "Insert", CORRECTION = "Correction",
-	SECURE = "This command needs Enter on a real keyboard.", SLASH = "Slash commands need a real keyboard.", DENIED = "Typing here needs a real keyboard: the game blocks addons from this box.", SPACE = "Space", SEND = "Send", ERASE = "Erase", CLOSE = "Close", CURSOR = "Cursor",
+	SECURE = "This command needs Enter on a real keyboard.", SLASH = "Only channel switches (/s, /p, /g, /w ...): other commands need a real keyboard.",
+	WHISPER_FIRST = "Start a whisper on an empty line: /w, then the name.", CHANNEL = "Channel: %s", DENIED = "Typing here needs a real keyboard: the game blocks addons from this box.", SPACE = "Space", SEND = "Send", ERASE = "Erase", CLOSE = "Close", CURSOR = "Cursor",
 	-- The tab's heading and its line when there are no rows, by the kind of list Suggest returned.
 	HEAD = { phrases = "Quick phrases · %s", words = "Words", items = "Items", names = "Names", searches = "Recent searches", none = "" },
 	EMPTY = { phrases = "", words = "Type a word to see suggestions", items = "No matching item", names = "No matching name", searches = "No recent searches", none = "" },
@@ -40,8 +41,9 @@ local charset, set, keyFocus, armed, shiftHeld, symbolsHeld = "lower", nil, nil,
 local WORDS = { kind = "words" }
 local suggestions, head, context, rowFocus, correction, searchJob, searchKey, searchRev = {}, WORDS, nil, nil, nil, nil, nil, nil
 local refreshSuggestions
--- typedAt: when the keyboard last changed the box's text or pressed its Enter; told: boxes whose refusal was said.
-local typedAt, told = 0, setmetatable({}, { __mode = "k" })
+-- typedAt: when the keyboard last changed the box's text or pressed its Enter; told: boxes whose refusal was said;
+-- sent: the box a message was just sent from, kept closed until it loses the focus; tipRow: the row with the tooltip.
+local typedAt, told, sent, tipRow = 0, setmetatable({}, { __mode = "k" }), nil, nil
 local repeatAction, repeatAt, statusUntil, statusText, lastInput, cachedText = nil, 0, 0, T.SECURE, nil, nil
 local mirror, mode = false, "right"
 
@@ -155,6 +157,9 @@ local function buildTab()
 		row.tag = row:CreateFontString(nil, "OVERLAY", "GameFontDisableSmall")
 		row.tag:SetPoint("TOPRIGHT", 0, -5)
 		row.text:SetPoint("RIGHT", row.tag, "LEFT", -6, 0)
+		row:EnableMouse(true)
+		row:SetScript("OnEnter", function(self) V.Tip(self) end)
+		row:SetScript("OnLeave", function() V.Tip() end)
 		inner.rows[i] = row
 	end
 	inner.hints = {}
@@ -297,8 +302,12 @@ end
 ---------------------------------------------------------------------------------------------------------------------
 -- Drawing
 
+-- A command key that is not a channel switch in this client is dimmed in a chat box: it would be refused.
+local function dimmed(value) return box ~= nil and box.GetAttribute ~= nil and box:GetAttribute("chatType") ~= nil and #value > 1 and value:sub(1, 1) == "/" and not K.SwitchKind(value) end
+
 local function keyLabel(key, value, state, compactHidden)
 	local marker = K.Marker(value)
+	key.label:SetAlpha(dimmed(value) and 0.35 or 1)
 	key.label:SetShown(not marker and not compactHidden)
 	key.icon:SetShown(marker ~= nil and not compactHidden)
 	if marker then return setMarker(key.icon, marker, state == "idle" and 14 or 16) end
@@ -413,6 +422,7 @@ local function drawTab()
 	local offset = rowFocus and rowFocus > ROWS and rowFocus - ROWS or 0
 	for i, row in ipairs(inner.rows) do
 		local item = suggestions[i + offset]
+		row.item = item
 		row:SetShown(item ~= nil)
 		if item then
 			local focused = rowFocus == i + offset
@@ -425,6 +435,24 @@ local function drawTab()
 		end
 	end
 	for _, hint in ipairs(inner.hints) do if hint.action then hint:SetCode(settings.buttons[hint.action]) end end
+	V.Tip()
+end
+
+-- The full line of a row cut short by the tab's width, in the addon's tooltip, beside the tab away from the disc:
+-- for the row under the mouse, else the focused row. Rows that fit get none.
+function V.Tip(hovered)
+	local rows = frame.tab.inner.rows
+	local row = hovered
+	if not row then for _, each in ipairs(rows) do if each.item and each.item == suggestions[rowFocus or 0] then row = each end end end
+	local item, label = row and row:IsShown() and row.item, row and row.text
+	if not (item and label.IsTruncated and label:IsTruncated()) then
+		if tipRow then UI.HideTooltip(tipRow) end
+		tipRow = nil
+		return
+	end
+	tipRow = row
+	local channel = item.channel and string.format(T.CHANNEL, K.Suggest.ChannelName(item.channel))
+	UI.Tooltip(row, { title = item.tag ~= "" and item.tag or item.category, lines = { item.text, channel }, side = mirror and "left" or "right" })
 end
 
 local FOOT = { { "space", T.SPACE }, { "send", T.SEND }, { "erase", T.ERASE }, { "close", T.CLOSE }, { "shift", T.SHIFT }, { "symbols", T.SYMBOLS }, { "left", T.CURSOR, "right" } }
@@ -546,17 +574,17 @@ local function note(text)
 	drawTab()
 end
 
--- A chat box parses a text that opens with "/" as a slash command, inside whatever call changed the text or pressed
--- Enter (ChatFrameEditBox.lua OnTextChanged -> ParseText -> ProcessChatType, and the slash handlers on Enter). Run
--- from our call that is addon code, and the game blocks what it reaches (C_Discord.IsUserOAuthed, the chat-type
--- switch, protected commands). So the keyboard never leaves such a text in a chat box, and never sends one.
-local function command(text) return text:sub(1, 1) == "/" and box.GetAttribute ~= nil and box:GetAttribute("chatType") ~= nil end
+-- A chat box runs a line that opens with "/" inside our call (K.Slash says how): the keyboard leaves one in a chat
+-- box, or sends one, only when it is a channel switch. Other boxes parse nothing.
+local function chat() return box.GetAttribute ~= nil and box:GetAttribute("chatType") ~= nil end
+local function command(text, sending) return chat() and K.Slash(text, sending) == "refused" end
 
+-- cur nil: the end of the box's text once it has taken the change (a chat box drops a channel switch from it).
 local function setText(text, cur)
 	if command(text) then return note(T.SLASH) end
 	typedAt = GetTime()
 	box:SetText(text)
-	box:SetCursorPosition(cur)
+	box:SetCursorPosition(cur or #(box:GetText() or ""))
 end
 
 local function insert(text)
@@ -571,8 +599,12 @@ local function flash(key) key.flash:SetAlpha(1) key.flashAt = GetTime() end
 local function typeKey(j)
 	local value = set and K.CHARSETS[charset][set][j]
 	if not value then return end
-	insert(K.InsertText(value))
 	flash(frame.sets[set].keys[j])
+	if not (chat() and #value > 1 and value:sub(1, 1) == "/") then return insert(K.InsertText(value)) end
+	if not K.SwitchKind(value) then return note(T.SLASH) end
+	local line = K.PutSwitch(boxText(), value)
+	if not line then return note(T.WHISPER_FIRST) end
+	setText(line)
 end
 
 local function erase()
@@ -587,12 +619,13 @@ local function moveCursor(step)
 	box:SetCursorPosition(step < 0 and K.Left(text, cur) or K.Right(text, cur))
 end
 
--- Send: the box's own Enter, synchronously inside this button press. A secure command (/cast, /use, /target, ...)
--- is refused: run from addon code it would be blocked, so it stays in the box for a real Enter.
+-- Send: the box's own Enter, synchronously inside this button press, then the keyboard closes; it opens on that box
+-- again only after the box lost the focus and got it back. A refused line (a command other than a channel switch,
+-- a secure command) stays, and the keyboard stays open with the note.
 function V.Send()
 	local text = box:GetText() or ""
 	local secure = text:match("^(/%S+)")
-	if command(text) then return note(T.SLASH) end
+	if command(text, true) then return note(T.SLASH) end
 	if secure and IsSecureCmd and IsSecureCmd(secure) then return note(T.SECURE) end
 	cachedText, typedAt = text, GetTime()
 	local sentIn = K.Context.Snapshot(box)
@@ -602,7 +635,8 @@ function V.Send()
 		K.Suggest.Sent(settings, cachedText, sentIn)
 	end
 	cachedText = nil
-	flash(frame.hubKeys[2])
+	sent = box
+	V.Hide()
 end
 
 function V.Close()
@@ -612,11 +646,13 @@ function V.Close()
 end
 
 -- R1: the focused row (row 1 when none), put in the box the way Suggest.Apply says: a word replaces the word under
--- the cursor, a line the whole text, a phrase goes in at the cursor; a hint row is not taken. The rows are
+-- the cursor, a line the whole text, a phrase goes in at the cursor, a switch row types its channel command (the box
+-- switches); a hint row is not taken. The rows are
 -- asked for again at once, so R1 pressed again takes the next word: a sentence builds press by press.
 local function insertRow()
 	local item = suggestions[rowFocus or 1]
 	if not item or item.mode == "hint" then return end
+	if item.mode == "switch" and not chat() then return end
 	setText(K.Suggest.Apply(item, boxText()))
 	K.Suggest.Accept(settings, item, suggestions, context)
 	rowFocus = nil
@@ -701,12 +737,18 @@ end
 
 ---------------------------------------------------------------------------------------------------------------------
 -- Suggestions: Keyboard/Suggest.lua ranks the rows for the text, the cursor and the situation
--- (Keyboard/Context.lua). They are asked for again only when one of those changes; when only the situation did, the
--- row the player is on stays focused. The word search behind them still runs in a coroutine, 2 ms a frame.
+-- (Keyboard/Context.lua) and the box's channel. They are asked for again only when one of those changes; when only
+-- the situation or the channel did, the row the player is on stays focused. The word search behind them still runs in a coroutine, 2 ms a frame.
+
+-- The box's channel, read: the chat box switches it itself (its own button, or a typed /p), and the list follows.
+local function channelOf()
+	if not chat() then return "" end
+	return tostring(box:GetAttribute("chatType")) .. "\0" .. tostring(box:GetAttribute("tellTarget")) .. "\0" .. tostring(box:GetAttribute("channelTarget"))
+end
 
 function refreshSuggestions()
 	local text, cur = boxText()
-	local keyNow, rev = text .. "\0" .. cur, K.Context.rev
+	local keyNow, rev = text .. "\0" .. cur, K.Context.rev .. "\0" .. channelOf()
 	if keyNow == searchKey and rev == searchRev then return end
 	local held = keyNow == searchKey and suggestions[rowFocus or 0]
 	searchKey, searchRev, rowFocus, correction, searchJob = keyNow, rev, nil, nil, nil
@@ -743,6 +785,8 @@ end
 
 function V.Hide()
 	box, boxRect, chatRect = nil, nil, nil
+	if tipRow then UI.HideTooltip(tipRow) end
+	tipRow = nil
 	if frame and frame:IsShown() then
 		frame:Hide()
 		sound(SOUNDKIT.GAMEPAD_RADIAL_MENU_CLOSE)
@@ -817,10 +861,12 @@ local function refuse(edit)
 	V.Hide()
 end
 
--- A blocked action within BLOCK_WINDOW of our changing the box: its handlers reach code the game keeps from
--- addons. The box joins the denied ones; the next Observe closes the keyboard.
+-- A blocked action within BLOCK_WINDOW of our changing the box (or sending from it, which closes the keyboard): its
+-- handlers reach code the game keeps from addons. The box joins the denied ones; the next Observe closes the
+-- keyboard. The core or this module may be blamed.
 local function onBlocked(addon)
-	if addon == addonName and box and GetTime() - typedAt <= BLOCK_WINDOW then K.Context.Deny(box, settings) end
+	local edited = box or sent
+	if type(addon) == "string" and addon:find("^ForeverControllerTweaks") and edited and GetTime() - typedAt <= BLOCK_WINDOW then K.Context.Deny(edited, settings) end
 end
 
 -- Runs while the Gamepad UI is on and the keyboard is enabled.
@@ -829,7 +875,8 @@ function V.Observe()
 	if not (settings and frame) then return end
 	if not (settings.enabled and ns.Active()) then return V.Hide() end
 	local focus = GetCurrentKeyBoardFocus()
-	if not V.Valid(focus) then return V.Hide() end
+	if sent and focus ~= sent then sent = nil end
+	if not V.Valid(focus) or focus == sent then return V.Hide() end
 	if focus ~= box and settings.open == "controller" and lastInput ~= "pad" and not box then return end
 	if K.Context.Denied(focus, settings) then return refuse(focus) end
 	if focus ~= box then return open(focus) end

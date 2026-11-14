@@ -1,4 +1,5 @@
-# On a v* tag (v1.0.0, v1.0.0-beta.2): build ForeverControllerTweaks-<version>.zip with the BigWigs packager,
+# On a v* tag (v1.0.0, v1.0.0-beta.2): build ForeverControllerTweaks-<version>.zip with the BigWigs packager: the core
+# folder and the Touch, Keyboard and Rings module folders (.pkgmeta move-folders), each TOC's @project-version@ filled in;
 # create the GitHub release with it, and upload it to CurseForge when the CF_API_KEY secret is set and to Wago
 # (addons.wago.io, which lists WoW Forever 1.60.1) when the WAGO_API_TOKEN secret is set and the TOC has '## X-Wago-ID'.
 # The packager reads '## Interface: 16001' as WoW Forever (game version 1.60.1) and the CurseForge
@@ -25,13 +26,18 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Check placeholders and changelog
+      - name: Check placeholders, modules and changelog
         run: |
           toc=ForeverControllerTweaks/ForeverControllerTweaks.toc
           if grep -nE 'GITHUB_OWNE[R]|CURSEFORGE_PROJECT_I[D]' "$toc"; then
             echo "::error file=$toc::replace the placeholders above before releasing"
             exit 1
           fi
+          for module in Touch Keyboard Rings; do
+            folder="ForeverControllerTweaks_$module"
+            grep -q "^  ForeverControllerTweaks/$folder: $folder" .pkgmeta || { echo "::error file=.pkgmeta::$folder is not in move-folders"; exit 1; }
+            grep -q '^## Group: ForeverControllerTweaks' "$folder/$folder.toc" || { echo "::error file=$folder/$folder.toc::no Group line"; exit 1; }
+          done
           version="${GITHUB_REF_NAME#v}"
           heading=$(grep -m1 -E "^## ${version//./\\.}( |$)" CHANGELOG.md) || { echo "::error file=CHANGELOG.md::no '## $version' heading"; exit 1; }
           case "$heading" in *nreleased*|*YYYY*) echo "::error file=CHANGELOG.md::'$heading' needs the release date"; exit 1 ;; esac

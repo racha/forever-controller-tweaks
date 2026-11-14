@@ -21,8 +21,9 @@ jobs:
           luaVersion: ${{ matrix.lua }}
 
       - name: Syntax
-        run: find ForeverControllerTweaks -name '*.lua' -exec luac -p {} +
+        run: find ForeverControllerTweaks ForeverControllerTweaks_Touch ForeverControllerTweaks_Keyboard ForeverControllerTweaks_Rings -name '*.lua' -exec luac -p {} +
 
+      # The module specs (keyboard, suggest, touch, rings, modules) load the module folders from tests/ too.
       - name: Specs
         run: |
           status=0

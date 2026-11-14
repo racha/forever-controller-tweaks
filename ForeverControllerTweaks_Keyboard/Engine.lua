@@ -1,7 +1,7 @@
 -- Forever Controller Tweaks keyboard engine (design/keyboard.md): charsets, stick sectors, UTF-8 safe editing on
 -- (text, byte cursor), the word list and its ranking, quick phrases and placement. No frames: Keyboard/View.lua draws
 -- and drives it, tests/keyboard_spec.lua runs it under plain Lua.
-local _, ns = ...
+local ns = ForeverControllerTweaks
 local K = {}
 ns.Keyboard = K
 
@@ -40,6 +40,87 @@ function K.InsertText(key)
 end
 
 function K.Marker(key) return tonumber(key:match("^{rt(%d)}$")) end
+
+-- Slash commands in a chat box. The box parses a line that opens with "/" inside whatever call changed it once a
+-- space follows the command, and on Enter (Blizzard_ChatFrameBase/Shared/ChatFrameEditBox.lua ParseText :218). From
+-- our call that runs as addon code. For a chat type's own command it only switches the box's channel (HandleChatType
+-- :192, ProcessChatType :145: SetChatType, SetTellTarget, SetText, UpdateHeader; the whisper target lookup uses
+-- C_AutoComplete, unrestricted), so those are allowed. GUILD_DISCORD's branch calls C_Discord.IsUserOAuthed (:180),
+-- which the game restricts, and every other command (an emote, a secure or an addon's command) runs its handler on
+-- Enter: those are refused.
+local SWITCHES = { "SAY", "YELL", "EMOTE", "PARTY", "RAID", "RAID_WARNING", "INSTANCE_CHAT", "GUILD", "OFFICER", "SMART_WHISPER", "WHISPER", "REPLY" }
+local switches, shortest
+
+local function aliasesOf(kind)
+	local list, i = {}, 1
+	while type(_G["SLASH_" .. kind .. i]) == "string" do
+		list[#list + 1] = _G["SLASH_" .. kind .. i]:upper()
+		i = i + 1
+	end
+	return list
+end
+
+-- The client's own aliases (/s, /say, /p, ...), read once from its SLASH_<TYPE><n> strings; a Discord alias is never
+-- a switch, even if it shares a name.
+local function aliases()
+	if switches then return switches end
+	switches, shortest = {}, {}
+	for _, kind in ipairs(SWITCHES) do
+		for _, alias in ipairs(aliasesOf(kind)) do
+			switches[alias] = kind
+			local best = shortest[kind]
+			if not best or #alias < #best then shortest[kind] = alias end
+		end
+	end
+	for _, alias in ipairs(aliasesOf("GUILD_DISCORD")) do switches[alias] = false end
+	return switches
+end
+
+local function channels()
+	local constants = Constants and Constants.ChatFrameConstants
+	return constants and tonumber(constants.MaxChatChannels) or 20
+end
+
+-- The chat type a keyboard key switches to (/p PARTY, /raid RAID, ...), or nil when the key is not a channel switch
+-- in this client (/ready, an alias the client doesn't have).
+function K.SwitchKind(key)
+	if #key < 2 or key:sub(1, 1) ~= "/" then return end
+	return aliases()[key:upper()] or nil
+end
+
+-- A channel key picked in a chat box: its command goes at the start of the line, in place of a command already
+-- there, so the box switches at once and keeps the message (ChatFrameEditBox.lua ProcessChatType: SetChatType, then
+-- SetText of what follows). A whisper key needs a name first, so it takes an empty line only: false otherwise.
+function K.PutSwitch(text, key)
+	local rest = text:gsub("^%s+", "")
+	if rest:sub(1, 1) == "/" then rest = rest:gsub("^%S*%s*", "") end
+	local kind = K.SwitchKind(key)
+	if (kind == "WHISPER" or kind == "SMART_WHISPER") and rest ~= "" then return false end
+	return key .. " " .. rest
+end
+
+-- What a chat box would make of a line: "text" (no command), "typing" (a command with nothing after it yet: the box
+-- parses nothing while typing), "switch" (a channel switch), or "refused". sending: the line is about to be sent, so
+-- a bare command counts as complete.
+function K.Slash(text, sending)
+	if text:sub(1, 1) ~= "/" then return "text" end
+	if not sending and not text:find("%s") then return "typing" end
+	local command = text:match("^(/%S*)"):upper()
+	local number = tonumber(command:match("^/(%d+)$"))
+	if number then return number >= 1 and number <= channels() and "switch" or "refused" end
+	return aliases()[command] and "switch" or "refused"
+end
+
+-- The command that switches a chat box to a channel ({ kind, target, id }), with its space; nil when there is none
+-- (a Battle.net whisper has no name to type). A whisper uses the smart whisper's alias when the client has one.
+function K.SwitchCommand(channel)
+	local kind, target, id = channel.kind, channel.target, channel.id
+	if kind == "CHANNEL" then return id and id >= 1 and id <= channels() and "/" .. id .. " " or nil end
+	local known = aliases()
+	local alias = kind == "WHISPER" and (shortest.SMART_WHISPER or shortest.WHISPER) or shortest[kind]
+	if not (alias and known[alias]) or kind == "WHISPER" and not target then return end
+	return alias:lower() .. " " .. (kind == "WHISPER" and target .. " " or "")
+end
 
 local function angle(x, y) return math.deg(math.atan2 and math.atan2(x, y) or math.atan(x, y)) % 360 end
 

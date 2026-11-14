@@ -181,8 +181,12 @@ ns.SlotView = { New = function(parent)
 	function view:SetShape(shape) self.shape = shape end
 	return view
 end }
-for _, file in ipairs({ "Face.lua", "Actions.lua", "Touch.lua" }) do assert(loadfile(dir .. "/" .. file))("ForeverControllerTweaks", ns) end
+for _, file in ipairs({ "Face.lua", "Actions.lua" }) do assert(loadfile(dir .. "/" .. file))("ForeverControllerTweaks", ns) end
 ns.Fire("ADDON_LOADED", "ForeverControllerTweaks")
+-- A module file as the game loads it: its own addon name and private table; it reads the core's namespace global.
+local function loadModule(file) assert(loadfile(here .. "/../../ForeverControllerTweaks_Touch/" .. file .. ".lua"))("ForeverControllerTweaks_Touch", {}) end
+loadModule("Touch")
+ns.Fire("ADDON_LOADED", "ForeverControllerTweaks_Touch")
 ns.db.options.debug = true
 ns.Fire("PLAYER_ENTERING_WORLD")
 

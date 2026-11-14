@@ -23,7 +23,8 @@ Forever Controller Tweaks builds on WoW Forever's own Gamepad UI instead of repl
 - **Touch bars.** Two bars on the left and right edges of the screen for tapping spells, made for Steam Link on a phone or tablet. Each button has an action per bar (top, left, right, bottom), following your modifiers. Per side, choose how many buttons, their size, position, shape (circle or square) and whether empty buttons show, and when the bars show. They're off until you turn them on.
 - **Glyphs that match.** The bar hints, class prompts, targeting markers and on-screen legend show the buttons you actually press, in Xbox, PlayStation or Nintendo style. With both targeting roles on one side, the targeting marker splits into a friendly and a hostile half.
 - **Any controller.** If the game doesn't recognise your pad, pick its layout (PlayStation, Xbox or Switch) from a card, or press each button once to teach it.
-- **Controller-first settings.** Four tabs (Bindings, Touch, Keyboard, Rings) in Forever's own look, driven entirely with the D-pad, with the controller drawn in the middle so you see which button you're editing. Triangle opens **More** on every screen.
+- **Modules you can turn off.** Touch bars, the keyboard and rings are separate modules, listed under Forever Controller Tweaks in the AddOns list. Turn off the ones you don't use; their settings stay saved.
+- **Controller-first settings.** Four tabs (Bindings, Touch, Keyboard, Rings: one per module that's on) in Forever's own look, driven entirely with the D-pad, with the controller drawn in the middle so you see which button you're editing. Triangle opens **More** on every screen.
 - **Leaves no trace.** Logging out or disabling the addon puts the game's controller setup back to default.
 
 ## Screenshots
@@ -44,14 +45,16 @@ Forever Controller Tweaks builds on WoW Forever's own Gamepad UI instead of repl
 
 **Wago app:** search for **Forever Controller Tweaks** on [Wago][wago].
 
-**GitHub Releases:** download `ForeverControllerTweaks-<version>.zip` from [Releases][releases] and unzip it into WoW Forever's AddOns folder.
+**GitHub Releases:** download `ForeverControllerTweaks-<version>.zip` from [Releases][releases] and unzip it into WoW Forever's AddOns folder. It holds four folders.
 
-**Manual:** copy the `ForeverControllerTweaks` folder into the AddOns folder:
+**Manual:** copy all four folders into the AddOns folder: `ForeverControllerTweaks` (the addon) and its modules `ForeverControllerTweaks_Touch`, `ForeverControllerTweaks_Keyboard` and `ForeverControllerTweaks_Rings`.
 
 - Windows: `World of Warcraft\_forever_\Interface\AddOns\`
 - macOS: `/Applications/World of Warcraft/_forever_/Interface/AddOns/`
 
-Restart the game completely (not just `/reload`), and turn on **Forever Controller Tweaks** in the AddOns list.
+Restart the game completely (not just `/reload`), and turn on **Forever Controller Tweaks** in the AddOns list. The Touch, Keyboard and Rings modules are listed under it, on by default: untick any you don't want, then reload. A module needs the main addon; the main addon works without any module.
+
+Updating from 1.1 or earlier: install the new version over the old one. Your settings, rings, keyboard words and touch bars carry over.
 
 ## Requirements
 
@@ -118,12 +121,12 @@ More detail, including how to report a controller, is in [docs/controllers.md](d
 - **Controller setup needs a mouse or keyboard** for Skip, Back, Save and Cancel, because it records every controller button you press.
 - In a vehicle, or while a pet or possess bar replaces a bar, the face buttons keep their native actions.
 - The addon never changes the game's own gamepad options (CVars). Settings such as swapping the target modifiers stay in the game's Options.
-- **The keyboard can't type everywhere.** The game blocks addons from typing into a few boxes, such as the Options search, the Group Finder's boxes and spellbook search. There the keyboard stays closed and says so; use a real keyboard. Slash commands (anything starting with `/` in chat) also need a real keyboard.
+- **The keyboard can't type everywhere.** The game blocks addons from typing into a few boxes, such as the Options search, the Group Finder's boxes and spellbook search. There the keyboard stays closed and says so; use a real keyboard. Slash commands other than channel switches (`/s`, `/p`, `/g`, `/w` …) need a real keyboard.
 - English only.
 
 ## Uninstalling
 
-Type `/fct release` first. It empties the addon's hidden slots on keyboard bars 6–8 and deletes its `FCT:` macros, so nothing is left in your action bars or macro list. (A `/reload` before uninstalling puts them back.) Then disable or delete the addon. Logging out with the addon disabled already puts the game's controller setup back to default.
+Type `/fct release` first. It empties the addon's hidden slots on keyboard bars 6–8 and deletes its `FCT:` macros, so nothing is left in your action bars or macro list. (A `/reload` before uninstalling puts them back.) Then disable or delete the addon and its three module folders. Logging out with the addon disabled already puts the game's controller setup back to default.
 
 ## FAQ
 

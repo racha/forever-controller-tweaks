@@ -10,7 +10,7 @@
 -- Set / SetSide, LIMITS, Entry / SetEntry (with a layer when Touch takes layers), Layer, SlotsUsed;
 -- FCT_LAYOUT_CHANGED "touch". A Touch build without sides or layers gets one shared settings list and the top-bar
 -- cell only.
-local _, ns = ...
+local ns = ForeverControllerTweaks
 local UI = ns.UI
 local L = UI.L
 
@@ -149,7 +149,7 @@ local function fillRow(row)
 	local layer = shownLayer()
 	local entry = entryOf(row.side, row.index, layer)
 	row.name:SetText(entry and entry.name or L.TOUCH_EMPTY)
-	row.name:SetFontObject(entry and "GameFontNormal" or "GameFontDisable")
+	row.name:SetFontObject(entry and not UI.EntryOff(entry) and "GameFontNormal" or "GameFontDisable")
 	row.sub:SetText(subText(row, layer))
 	row.marker:SetRole(nil)
 	for _, cell in ipairs(row.cells) do
@@ -158,6 +158,7 @@ local function fillRow(row)
 		cell.icon:SetPoint("TOPLEFT", 3, -3)
 		cell.icon:SetPoint("BOTTOMRIGHT", -3, 3)
 		cell.icon:SetTexture(cellEntry and cellEntry.icon or nil)
+		cell.icon:SetDesaturated(UI.EntryOff(cellEntry) ~= nil)
 		cell.icon:SetShown(cellEntry ~= nil)
 		cell.bg:SetAlpha(usable(cell) and 1 or 0.35)
 	end
@@ -173,6 +174,7 @@ local function cellTip(cell)
 	end
 	local _, total, full = slots()
 	if full and not entry then lines[#lines + 1] = string.format(L.TOUCH_FULL, total) end
+	lines[#lines + 1] = UI.EntryOff(entry)
 	return { title = entry and entry.name or L.TOUCH_EMPTY, lines = lines, actions = { { "PAD1", L.CHOOSE_ACTION }, { "PAD3", L.CLEAR_SLOT } }, side = row.side }
 end
 
@@ -209,6 +211,7 @@ local function drawPreview(c)
 			local entry = entryOf(side, i, layer)
 			button.icon:SetAllPoints()
 			button.icon:SetTexture(entry and entry.icon or nil)
+			button.icon:SetDesaturated(UI.EntryOff(entry) ~= nil)
 			button.icon:SetShown(entry ~= nil)
 			UI.Bindings.SetCellFocus(button, false)
 			button:Show()
@@ -447,10 +450,10 @@ function T.Prompts(region)
 	if spec then
 		local options, labels = spec.options, L.TOUCH_CHOICES[spec[1]]
 		local less, more = options and labels[options[1]] or L.STEP_LESS, options and labels[options[2]] or L.STEP_MORE
-		return { { "PADDLEFT", less }, { "PADDRIGHT", more }, { "PAD4", L.MORE }, { "PADLSHOULDER", L.BINDINGS }, { "PAD2", L.CLOSE } }
+		return { { "PADDLEFT", less }, { "PADDRIGHT", more }, { "PAD4", L.MORE }, UI.TabPrompt("touch", -1), { "PAD2", L.CLOSE } }
 	end
-	if not (region and region.layer) then return { { "PAD1", L.SELECT }, { "PAD4", L.MORE }, { "PADLSHOULDER", L.BINDINGS }, { "PAD2", L.CLOSE } } end
-	return { { "PAD1", L.SELECT }, { "PAD3", L.CLEAR_SLOT }, { "PAD4", L.MORE }, { "PADLSHOULDER", L.BINDINGS }, { "PAD2", L.CLOSE } }
+	if not (region and region.layer) then return { { "PAD1", L.SELECT }, { "PAD4", L.MORE }, UI.TabPrompt("touch", -1), { "PAD2", L.CLOSE } } end
+	return { { "PAD1", L.SELECT }, { "PAD3", L.CLEAR_SLOT }, { "PAD4", L.MORE }, UI.TabPrompt("touch", -1), { "PAD2", L.CLOSE } }
 end
 
 function T.Open()
@@ -460,8 +463,8 @@ function T.Open()
 	UI.Show(window)
 end
 
--- The second side tab (Bindings, Touch); L1/R1 step through them.
-UI.TABS[#UI.TABS + 1] = { "Interface\\Icons\\Spell_Holy_LayOnHands", L.TOUCH_TAB, function() T.Open() end, touch = true }
+-- A side tab after Bindings (Bindings, Touch, Keyboard, Rings, of those loaded); L1/R1 step through them.
+UI.AddTab({ "Interface\\Icons\\Spell_Holy_LayOnHands", L.TOUCH_TAB, function() T.Open() end, touch = true, order = 2, prompt = L.TOUCH })
 
 local function redraw() if window and window:IsShown() then window:Refresh() end end
 ns.On("FCT_LAYOUT_CHANGED", redraw)

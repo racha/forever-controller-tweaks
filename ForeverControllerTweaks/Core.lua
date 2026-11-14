@@ -1,8 +1,10 @@
 -- Forever Controller Tweaks core: namespace, SavedVariables, events and messages, the pad-free job queue, logging, /fct.
 --
--- Core API for the other files (all on the addon namespace `ns`):
+-- Core API for the other files (all on the addon namespace `ns`, also the global ForeverControllerTweaks, which the
+-- Touch, Keyboard and Rings modules read as their `ns`: separate addons don't share the private one):
 --   ns.db                          ForeverControllerTweaksDB, ready from ADDON_LOADED on (FCT_READY fires then).
 --   ns.On(event, fn)               fn(...) on a WoW event, or on an internal message (any name starting FCT_).
+--                                  FCT_READY registered once ns.db is ready runs fn at once (a module loads after it).
 --   ns.Fire(msg, ...)              sends an internal message.
 --   ns.whenPadFree(what, fn, opts)
 --                                  runs fn once only the core gamepad binding set is active (no chat box or Blizzard
@@ -50,6 +52,7 @@
 --                                  closes its windows, Face re-applies, Glyphs re-evaluate, detection is cancelled),
 --                                  2. Remap.ApplyNow("combat"). Everything in it may still write protected state.
 local addonName, ns = ...
+ForeverControllerTweaks = ns
 
 local VERSION, DEBUG_CAP = 2, 500
 local PREFIX = "|cff33ff99Controller Tweaks|r "
@@ -57,7 +60,7 @@ local PREFIX = "|cff33ff99Controller Tweaks|r "
 ns.commands = {}
 ns.panelOpen = false
 
-local handlers = {}
+local handlers, run = {}, nil
 local eventFrame = CreateFrame("Frame")
 eventFrame:SetScript("OnEvent", function(_, event, ...) ns.Fire(event, ...) end)
 
@@ -68,6 +71,7 @@ function ns.On(event, fn)
 	end
 	local list = handlers[event]
 	list[#list + 1] = fn
+	if event == "FCT_READY" and ns.db then run(event, fn) end
 end
 
 function ns.log(msg) print(PREFIX .. msg) end
@@ -75,15 +79,17 @@ function ns.log(msg) print(PREFIX .. msg) end
 -- One listener's error must not stop the rest: combat start runs the remap after its listeners.
 local NONE, errorTold = {}, {}
 
+function run(msg, fn, ...)
+	local ok, err = pcall(fn, ...)
+	if ok then return end
+
+	ns.debug("%s listener error: %s", msg, tostring(err))
+	if not errorTold[fn] then ns.log("an error in " .. msg .. " was skipped — please /reload and report: " .. tostring(err)) end
+	errorTold[fn] = true
+end
+
 function ns.Fire(msg, ...)
-	for _, fn in ipairs(handlers[msg] or NONE) do
-		local ok, err = pcall(fn, ...)
-		if not ok then
-			ns.debug("%s listener error: %s", msg, tostring(err))
-			if not errorTold[fn] then ns.log("an error in " .. msg .. " was skipped — please /reload and report: " .. tostring(err)) end
-			errorTold[fn] = true
-		end
-	end
+	for _, fn in ipairs(handlers[msg] or NONE) do run(msg, fn, ...) end
 end
 
 function ns.debug(fmt, ...)
@@ -208,7 +214,8 @@ local blockedTold
 
 function ns.OnBlocked(event, addon, func)
 	ns.debug("%s addon=%s func=%s combat=%s", tostring(event), tostring(addon), tostring(func), tostring(InCombatLockdown()))
-	if addon ~= addonName or blockedTold then return end
+	-- The modules (ForeverControllerTweaks_Touch, ...) are ours too.
+	if type(addon) ~= "string" or addon:sub(1, #addonName) ~= addonName or blockedTold then return end
 
 	blockedTold = true
 	ns.log("Blizzard blocked " .. tostring(func) .. " — please /reload and report")

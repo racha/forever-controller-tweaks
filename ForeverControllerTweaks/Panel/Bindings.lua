@@ -166,7 +166,9 @@ local function cellTip(cell)
 	local choose = cell.slot and GetCursorInfo() and L.PLACE_HELD or L.CHOOSE_ACTION
 	local actions = { { "PAD1", choose }, { "PAD3", L.CLEAR_SLOT } }
 	if paddle then actions[3] = { "PAD4", L.PADDLE_ROLE } end
-	return { title = boundName(cell) or L.EMPTY, lines = { layerLine(cell.code, cell.layer), kind }, actions = actions, side = cell.row.left and "left" or "right" }
+	local lines = { layerLine(cell.code, cell.layer), kind }
+	lines[3] = UI.EntryOff(cell.entry)
+	return { title = boundName(cell) or L.EMPTY, lines = lines, actions = actions, side = cell.row.left and "left" or "right" }
 end
 
 local function hideTooltip(cell)
@@ -233,6 +235,7 @@ local function fillCell(cell, faceAction)
 	cell.pos = cell.reserved and UI.CODE_POS[cell.code] or nil
 	cell.slot = not cell.reserved and storageSlot(cell.code, cell.layer) or nil
 	cell.entry = UI.ActionPicker.CellEntry(cell)
+	cell.icon:SetDesaturated(UI.EntryOff(cell.entry) ~= nil)
 	cell.icon:ClearAllPoints()
 	cell.icon:SetTexCoord(0, 1, 0, 1)
 	if cell.entry then
@@ -776,7 +779,7 @@ local function refresh()
 	})
 
 	selector:SetShown(not guided)
-	window.tabs:SetShown(not guided)
+	window.tabs:SetShown(not guided and #UI.TABS > 1)
 	window.tabsLocked = not not guided
 	window.title:SetShown(guided ~= nil)
 	window.hint:SetShown(guided ~= nil)
@@ -948,10 +951,10 @@ function UI.OpenMore(owner, entries, current)
 		{ id = "detectreset", name = L.DETECT_RESET, detail = L.DETECT_RESET_TEXT, run = function() UI.Detect.Reset(owner) end },
 		{ id = "guide", name = L.SETUP_GUIDE, detail = BUTTON_TIPS[1], run = function() UI.Onboarding.Start() end },
 		{ id = "learn", name = L.LEARN, detail = BUTTON_TIPS[2], run = here(function() B.Learn() end) },
-		{ id = "keyboard", name = L.KEYBOARD, detail = L.KEYBOARD_TIP, run = function() ns.Keyboard.SettingsTab.Open() end },
 		{ id = "minimap", name = ns.db.options.minimapIcon == false and L.MINIMAP_SHOW or L.MINIMAP_HIDE, detail = L.MINIMAP_TIP, run = function() UI.ToggleMinimapButton() end },
 		{ id = "reset", name = L.RESET, detail = BUTTON_TIPS[3], run = here(function() B.Reset() end) },
 	}
+	if ns.Keyboard then table.insert(common, 6, { id = "keyboard", name = L.KEYBOARD, detail = L.KEYBOARD_TIP, run = function() ns.Keyboard.SettingsTab.Open() end }) end
 	for _, entry in ipairs(common) do list[#list + 1] = entry end
 	local focus = owner.focus and owner.focus.region or owner
 	Picker.Open({ window = owner, cell = focus, point = { "BOTTOM", owner, "BOTTOM", 0, 24 }, list = { title = L.MORE, entries = list, current = current, onPick = function(entry) entry.run() end } })
@@ -1027,7 +1030,9 @@ function B.SetPage(n)
 end
 
 function B.Prompts()
-	return { { "PAD1", L.SELECT }, { "PAD3", L.CLEAR_SLOT }, { "PAD4", L.MORE }, { "PADRSHOULDER", L.TOUCH }, { "PADRTRIGGER", L.PAGE }, { "PAD2", L.CLOSE } }
+	local list = { { "PAD1", L.SELECT }, { "PAD3", L.CLEAR_SLOT }, { "PAD4", L.MORE }, { "PADRTRIGGER", L.PAGE }, { "PAD2", L.CLOSE } }
+	list[#list + 1] = UI.TabPrompt("bindings", 1)
+	return list
 end
 
 -- facePos: open the action picker on that first-page face slot (onboarding's "Face actions" step).

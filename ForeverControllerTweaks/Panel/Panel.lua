@@ -257,7 +257,7 @@ local function registerSettings()
 	local category, layout = Settings.RegisterVerticalLayoutCategory(L.SETTINGS_TITLE)
 	layout:AddInitializer(CreateSettingsButtonInitializer(L.SETTINGS_OPEN_LABEL, L.SETTINGS_OPEN, nextFrame(UI.Bindings.Open), string.format(L.SETTINGS_OPEN_TIP, UI.ToggleKeyText(nil, true)), true))
 	layout:AddInitializer(CreateSettingsButtonInitializer(L.SETTINGS_SETUP_LABEL, L.SETTINGS_SETUP, nextFrame(UI.Onboarding.Start), L.SETTINGS_SETUP_TIP, true))
-	layout:AddInitializer(CreateSettingsButtonInitializer(L.KEYBOARD, L.KEYBOARD_OPEN, nextFrame(function() ns.Keyboard.SettingsTab.Open() end), L.KEYBOARD_TIP, true))
+	if ns.Keyboard then layout:AddInitializer(CreateSettingsButtonInitializer(L.KEYBOARD, L.KEYBOARD_OPEN, nextFrame(function() ns.Keyboard.SettingsTab.Open() end), L.KEYBOARD_TIP, true)) end
 	Settings.RegisterAddOnCategory(category)
 end
 

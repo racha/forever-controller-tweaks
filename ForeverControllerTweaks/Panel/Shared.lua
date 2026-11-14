@@ -57,6 +57,7 @@ UI.L = {
 	TOUCH_SUB_LAYER = "%s · button %d · %s bar",
 	TOUCH_SIDE_TIP = "Which bar the settings below change.",
 	TAB_BINDINGS = "Bindings",
+	RINGS_OFF = "The Rings module is off: this button does nothing until you turn it on in the AddOns list.",
 	LEARN_BUTTON = "button %d",
 	LEARN_AXIS = "axis %d",
 	STEP_LESS = "Decrease",
@@ -444,10 +445,30 @@ end
 
 function UI.OpenWays() return string.format(L.OPEN_WAYS, UI.ToggleKeyText()) end
 
--- The side tabs every settings window shares; Touch, Keyboard and Rings add theirs after Bindings.
+-- The side tabs every settings window shares: { icon, title, open, <id> = true, order, prompt = footer label }. The
+-- Touch, Keyboard and Rings modules add theirs after Bindings with UI.AddTab, in order whatever order they load in.
 UI.TABS = {
-	{ "Interface\\Icons\\INV_Misc_Book_09", L.TAB_BINDINGS, function() UI.Bindings.Open() end },
+	{ "Interface\\Icons\\INV_Misc_Book_09", L.TAB_BINDINGS, function() UI.Bindings.Open() end, bindings = true, order = 1, prompt = L.BINDINGS },
 }
+
+function UI.AddTab(spec)
+	local i = #UI.TABS + 1
+	while UI.TABS[i - 1].order > spec.order do i = i - 1 end
+	table.insert(UI.TABS, i, spec)
+end
+
+-- The footer prompt naming the tab beside the one flagged id: L1 for offset -1, R1 for 1; nil at an end.
+function UI.TabPrompt(id, offset)
+	for i, spec in ipairs(UI.TABS) do
+		local other = spec[id] and UI.TABS[i + offset]
+		if other then return { offset < 0 and "PADLSHOULDER" or "PADRSHOULDER", other.prompt } end
+	end
+end
+
+-- Why a stored entry can't run now (its module is off), else nil: the panel greys it and says so.
+function UI.EntryOff(entry)
+	if entry and not ns.Rings and tostring(entry.id):find("^ring:") then return L.RINGS_OFF end
+end
 
 function UI.PresetLabel(name)
 	if name == "native" then return L.PRESET_NATIVE end

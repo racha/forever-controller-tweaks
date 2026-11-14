@@ -1,0 +1,15 @@
+## Interface: 16001
+## Title: Forever Controller Tweaks: Rings
+## Notes: Action rings: hold a button, aim with the stick, release to use. Needs Forever Controller Tweaks.
+## Author: HouseLegend
+## Version: @project-version@
+## Dependencies: ForeverControllerTweaks
+## Group: ForeverControllerTweaks
+## IconTexture: Interface\AddOns\ForeverControllerTweaks\Art\icon
+## Category: User Interface
+## X-License: MIT
+## X-Website: https://racha.github.io/forever-controller-tweaks/
+
+Rings.lua
+View.lua
+RingsTab.lua

@@ -1,0 +1,18 @@
+## Interface: 16001
+## Title: Forever Controller Tweaks: Keyboard
+## Notes: An on-screen keyboard for chat and text boxes, with word suggestions. Needs Forever Controller Tweaks.
+## Author: HouseLegend
+## Version: @project-version@
+## Dependencies: ForeverControllerTweaks
+## Group: ForeverControllerTweaks
+## IconTexture: Interface\AddOns\ForeverControllerTweaks\Art\icon
+## Category: User Interface
+## X-License: MIT
+## X-Website: https://racha.github.io/forever-controller-tweaks/
+
+Engine.lua
+Phrases.lua
+Context.lua
+Suggest.lua
+View.lua
+Settings.lua

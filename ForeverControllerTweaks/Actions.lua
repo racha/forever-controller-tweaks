@@ -36,6 +36,14 @@ local RANDOM_MOUNT_ACTION, RANDOM_MOUNT_SPELL = 268435455, 150544
 
 Actions.CATEGORIES = { "Spells", "Items", "Mounts", "Macros", "Movement", "Targeting", "Combat", "Windows", "Misc", "AddOns", "Rings" }
 
+-- Open chat: no macro command opens the chat box and restricted code can't run the OPENCHAT binding, so the entry
+-- clicks this plain button. Opening chat isn't protected; the box opens on its current chat type, as Enter does.
+local openChat = CreateFrame("Button", "ForeverControllerTweaksOpenChat", UIParent)
+openChat:SetScript("OnClick", function()
+	local open = ChatFrameUtil and ChatFrameUtil.OpenChat or ChatFrame_OpenChat
+	if open then open("") end
+end)
+
 -- Game commands. short = macro name after "FCT:" (macro names hold 16 characters). button = a Blizzard button
 -- whose existence is checked at build time. press = when the button acts: "up" (default, plain buttons) or "both"
 -- (action buttons act on down or up per the ActionButtonUseKeyDown CVar, so both clicks are sent; one acts).
@@ -85,6 +93,7 @@ local GAME = {
 	{ "Windows", "calendar", "Calendar", "INV_Misc_Note_01", button = "GameTimeFrame", short = "Calendar" },
 	{ "Windows", "shop", "Shop", "INV_Misc_Coin_01", button = "StoreMicroButton", short = "Shop" },
 	{ "Windows", "gamemenu", "Game menu", "INV_Misc_Gear_01", button = "MainMenuMicroButton", short = "GameMenu" },
+	{ "Windows", "chat", "Open chat", "INV_Letter_15", button = "ForeverControllerTweaksOpenChat", short = "Chat" },
 
 	{ "Misc", "dismount", "Dismount", "Ability_Mount_RidingHorse", text = "/dismount", short = "Dismount" },
 	{ "Misc", "leavevehicle", "Leave vehicle", "Spell_ChargeNegative", text = "/leavevehicle", short = "LeaveVehicle" },

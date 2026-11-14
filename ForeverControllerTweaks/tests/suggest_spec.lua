@@ -4,6 +4,12 @@ local here = (arg and arg[0] or ""):match("^(.*)[/\\]") or "."
 -- The game, as a table the stubs read. Scenarios change it and fire the events the client would. Its clock only
 -- runs forward, a long step between scenarios, as the game's does.
 local SECRET = {}
+-- The client's chat-type aliases (GlobalStrings), as the keyboard reads them.
+SLASH_SAY1, SLASH_SAY2, SLASH_YELL1, SLASH_YELL2, SLASH_EMOTE1, SLASH_EMOTE2 = "/s", "/say", "/y", "/yell", "/e", "/me"
+SLASH_PARTY1, SLASH_PARTY2, SLASH_RAID1, SLASH_RAID2, SLASH_RAID_WARNING1, SLASH_INSTANCE_CHAT1, SLASH_INSTANCE_CHAT2 = "/p", "/party", "/ra", "/raid", "/rw", "/i", "/instance"
+SLASH_GUILD1, SLASH_GUILD2, SLASH_OFFICER1, SLASH_REPLY1, SLASH_REPLY2 = "/g", "/guild", "/o", "/r", "/reply"
+SLASH_SMART_WHISPER1, SLASH_SMART_WHISPER2, SLASH_WHISPER1 = "/w", "/whisper", "/tell"
+SLASH_GUILD_DISCORD1, SLASH_GUILD_DISCORD2 = "/gd", "/guilddiscord"
 local world
 local function fresh()
 	world = {
@@ -82,7 +88,10 @@ local handlers = {}
 local ns = { Active = function() return true end, db = { keyboard = { enabled = true, suggestions = true } } }
 ns.On = function(event, fn) handlers[event] = handlers[event] or {} table.insert(handlers[event], fn) end
 local function fire(event, ...) for _, fn in ipairs(handlers[event] or {}) do fn(...) end end
-for _, file in ipairs({ "Engine", "Phrases", "Context", "Suggest" }) do assert(loadfile(here .. "/../Keyboard/" .. file .. ".lua"))("ForeverControllerTweaks", ns) end
+ForeverControllerTweaks = ns
+-- A module file as the game loads it: its own addon name and private table; it reads the core's namespace global.
+local function loadModule(file) assert(loadfile(here .. "/../../ForeverControllerTweaks_Keyboard/" .. file .. ".lua"))("ForeverControllerTweaks_Keyboard", {}) end
+for _, file in ipairs({ "Engine", "Phrases", "Context", "Suggest" }) do loadModule(file) end
 local K = ns.Keyboard
 local P, C, S = K.Library, K.Context, K.Suggest
 
@@ -141,11 +150,12 @@ fire("READY_CHECK_FINISHED")
 settings = scene({ resting = true, zone = "Stormwind City", subzone = "Trade District" })
 fire("CHAT_MSG_WHISPER", "inv?", "Aria-Stormrage")
 rows = list(settings)
-local hint, hintAt = find(rows, "Reply to Aria: switch the chat to Whisper first")
-assert(countOf(rows, "Reply") == 0 and hint and hint.mode == "hint" and countOf(rows, "Hint") == 1, "on say: a hint, no reply rows. " .. show(rows))
+local hint, hintAt = find(rows, "Reply to Aria: switch to Whisper")
+assert(countOf(rows, "Reply") == 0 and hint and hint.mode == "switch" and hint.tag == "/w" and countOf(rows, "Hint") == 1, "on say: a switch row, no reply rows. " .. show(rows))
 assert(hintAt == math.min(#rows, S.FILL) and rows[1].mode == "phrase", "the hint is last on the first page; row 1 can be taken")
-local text, cur = S.Apply(hint, "hi", 2)
-assert(text == "hi" and cur == 2, "a hint is not text")
+local text, cur = S.Apply(hint, "", 0)
+assert(text == "/w Aria-Stormrage " and cur == #text and K.Slash(text) == "switch", "R1 on it types the whisper's own command: " .. text)
+assert(S.Apply(hint, " hi", 3) == "/w Aria-Stormrage hi", "ahead of what is typed")
 local toSender = chatBox("WHISPER", "Aria")
 rows = list(settings, "", toSender)
 assert(rows[1].text == "Sure, inviting!" and rows[1].tag == "Reply" and rows[2].text == "Inviting now" and countOf(rows, "Hint") == 0, show(rows))
@@ -261,7 +271,7 @@ fire("CHAT_MSG_PARTY_LEADER", "ready?", "Aria-Realm")
 fire("CHAT_MSG_PARTY", "where are you", "Cid-Realm")
 rows = list(settings)
 assert(rows[1].text == "Ready" and rows[2].text == "In Sentinel Hill" and countOf(rows, "Reply") == 2, "on party: one reply to each party line. " .. show(rows))
-assert(find(rows, "Reply to Bob: switch the chat to Say first").mode == "hint" and not find(rows, "Yes please, invite me"), "the better reply is for say: a hint")
+assert(find(rows, "Reply to Bob: switch to Say").command == "/s " and not find(rows, "Yes please, invite me"), "the better reply is for say: a hint")
 rows = list(settings, "", SAY)
 assert(rows[1].text == "Yes please, invite me" and rows[1].channel.kind == "SAY" and not find(rows, "Ready") and countOf(rows, "Hint") == 0, "on say: Bob's replies, no hint for the weaker ones. " .. show(rows))
 S.Sent(settings, "Ready", C.Snapshot(chatBox("PARTY")))
@@ -276,7 +286,7 @@ settings = scene({ resting = true, zone = "Ironforge" })
 fire("CHAT_MSG_CHANNEL", "LF healer for Deadmines", "Borin-Realm", "", "4. LookingForGroup", "", "", 26, 4)
 fire("CHAT_MSG_CHANNEL", "LF tank for Deadmines", "Durak-Realm", "", "4. LookingForGroup", "", "", 26, 4)
 rows = list(settings)
-assert(find(rows, "Reply to Borin: switch the chat to Whisper first") and countOf(rows, "Reply") == 0, "a public call is answered in a whisper: a hint until the box is there. " .. show(rows))
+assert(find(rows, "Reply to Borin: switch to Whisper") and countOf(rows, "Reply") == 0, "a public call is answered in a whisper: a hint until the box is there. " .. show(rows))
 rows = list(settings, "", chatBox("WHISPER", "Borin-Realm"))
 assert(rows[1].text == "I can heal" and rows[1].channel.target == "Borin-Realm", show(rows))
 for _, row in ipairs(rows) do assert(row.text ~= "I can tank", "a priest is not offered to tank") end
@@ -307,9 +317,9 @@ assert(find(rows, "DPS here") and not find(rows, "Meet at {nowhere}") and not fi
 local function offered(changes, line, box) return find(list(scene(changes), "", box), line) end
 local GROUPED = { group = true, size = 3 }
 assert(offered(GROUPED, "Wait for me", chatBox("PARTY")).channel.kind == "PARTY" and not offered(GROUPED, "Wait for me", SAY) and not offered(GROUPED, "Wait for me", chatBox("GUILD")))
-assert(offered(GROUPED, "Group lines: switch the chat to Party first", SAY).mode == "hint", "on say in a party: the hint names the channel")
+assert(offered(GROUPED, "Group lines: switch to Party", SAY).command == "/p ", "on say in a party: the switch row types /p")
 assert(offered({ group = true, raid = true, size = 12 }, "Wait for me", chatBox("RAID")) and not offered({ group = true, raid = true, size = 12 }, "Wait for me", chatBox("PARTY")))
-assert(offered({ group = true, lfgGroup = true, size = 5 }, "Wait for me", chatBox("INSTANCE_CHAT")) and offered({ group = true, lfgGroup = true, size = 5 }, "Group lines: switch the chat to Instance first", SAY))
+assert(offered({ group = true, lfgGroup = true, size = 5 }, "Wait for me", chatBox("INSTANCE_CHAT")) and offered({ group = true, lfgGroup = true, size = 5 }, "Group lines: switch to Instance", SAY))
 assert(not offered({}, "Wait for me", chatBox("PARTY")), "no group: no group lines")
 assert(offered({ resting = true, guild = true }, "Hello guild!", chatBox("GUILD")) and not offered({ resting = true, guild = true }, "Hello guild!", SAY) and not offered({ resting = true }, "Hello guild!", chatBox("GUILD")))
 assert(offered({ quest = 166, group = true, size = 2 }, "Anyone doing " .. GetQuestLink(166) .. "?", chatBox("PARTY")), "a quest line belongs to the group when there is one")
@@ -329,7 +339,7 @@ settings = scene({ units = world.units })
 fire("TRADE_SHOW")
 rows = list(settings, "", chatBox("WHISPER", "Borin"))
 assert(rows[1].category == "Trade" and rows[1].channel.target == "Borin", show(rows))
-assert(find(list(settings), "Trade lines: switch the chat to Whisper first"), "on say: the hint")
+assert(find(list(settings), "Trade lines: switch to Whisper"), "on say: the hint")
 fire("TRADE_CLOSED")
 assert(countOf(list(settings, "", chatBox("WHISPER", "Borin")), "Trade") == 0 and countOf(list(settings), "Hint") == 0)
 
@@ -341,7 +351,7 @@ assert(text == "ok On my way" and cur == #text, text)
 assert(S.Apply({ text = "On my way", mode = "line" }, "on my w", 7) == "On my way")
 assert(not P.Add(K.Settings({}), "anywhere", "/dance") and not P.Add(K.Settings({}), "anywhere", "/p hello"), "a slash command can't be added as a phrase")
 for key, lines in pairs(P.DEFAULTS) do for _, line in ipairs(lines) do assert(P.Text(line):sub(1, 1) ~= "/" and line.via ~= "command", "no command lines: " .. key) end end
--- No row ever puts a slash command in the box, on any channel, empty or typed.
+-- No row puts a slash command in the box but a switch row, and that one is always a channel switch.
 local busy = { group = true, size = 3, guild = true, resting = true, quest = 166, units = friend }
 for _, kind in ipairs({ "SAY", "PARTY", "GUILD", "WHISPER", "CHANNEL" }) do
 	settings = scene(busy)
@@ -351,7 +361,8 @@ for _, kind in ipairs({ "SAY", "PARTY", "GUILD", "WHISPER", "CHANNEL" }) do
 	local where = chatBox(kind, kind == "WHISPER" and "Aria-Stormrage" or nil, kind == "CHANNEL" and 4 or nil)
 	for _, typed in ipairs({ "", "lf", "hello ", "inv", "wts", "can you " }) do
 		for _, row in ipairs(list(settings, typed, where, {})) do
-			assert(S.Apply(row, typed, #typed):sub(1, 1) ~= "/" and row.prefix == nil, kind .. " '" .. typed .. "': " .. row.text)
+			local put = S.Apply(row, typed, #typed)
+			assert(put:sub(1, 1) ~= "/" or row.mode == "switch" and K.Slash(put) == "switch", kind .. " '" .. typed .. "': " .. row.text)
 		end
 	end
 end
@@ -474,7 +485,7 @@ settings = scene({ quest = 166, objectives = OBJECTIVES })
 rows = list(settings, "", chatBox("CHANNEL", nil, 4))
 local solo = find(rows, "Anyone want to group for " .. QUEST .. "? I'm at 4/8")
 assert(solo and solo.tag == "Quest" and solo.channel.id == 4 and countOf(rows, "Quest") == 2 and not find(rows, "Need 4 more Defias Pillager"), "alone: the call for a group, on the LFG channel: " .. show(rows))
-assert(not find(list(settings), solo.text) and find(list(settings), "Quest lines: switch the chat to channel 4 first"), "on say: a hint")
+assert(not find(list(settings), solo.text) and find(list(settings), "Quest lines: switch to channel 4"), "on say: a hint")
 world.channels = {}
 fire("CHANNEL_UI_UPDATE")
 assert(find(list(settings), solo.text).channel == nil, "no LFG channel joined: any channel")
@@ -595,7 +606,7 @@ for _, row in ipairs(rows) do assert(not row.channel or row.channel.kind == "WHI
 assert(countOf(rows, "Group") == 0 and countOf(list(settings, "", SAY), "Whisper") == 0, "group lines stay out; whisper lines stay out of say")
 fire("READY_CHECK", "Leader-Realm", 30)
 rows = list(settings, "", toAria)
-assert(rows[1].text == "Sure, inviting!" and not find(rows, "Ready") and find(rows, "Ready lines: switch the chat to Party first").mode == "hint", "a ready check while whispering: " .. show(rows))
+assert(rows[1].text == "Sure, inviting!" and not find(rows, "Ready") and find(rows, "Ready lines: switch to Party").command == "/p ", "a ready check while whispering: " .. show(rows))
 
 -- Next word: the seed predicts on a fresh install; the last two words beat the last one; what the player sends
 -- takes over.
@@ -635,7 +646,7 @@ assert(rows[1].text == "world" and rows[1].mode == "word", "a learned next word 
 
 print("suggest_spec: engine ok")
 
--- The view (Keyboard/View.lua) on a small frame stub: every widget method (a capitalised name) is a no-op unless
+-- The view (ForeverControllerTweaks_Keyboard/View.lua) on a small frame stub: every widget method (a capitalised name) is a no-op unless
 -- listed; other fields stay nil.
 local focus, enters = nil, 0
 local Obj = {}
@@ -685,7 +696,7 @@ end
 scene(DUNGEON)
 ns.db = { keyboard = { open = "always" } }
 ns.UI = { ART = "", L = {}, CODE = {}, Glyph = function(parent) return new("Frame", parent) end }
-assert(loadfile(here .. "/../Keyboard/View.lua"))("ForeverControllerTweaks", ns)
+loadModule("View")
 local V = K.View
 fire("PLAYER_LOGIN")
 local edit = newChat("SAY")
@@ -694,10 +705,14 @@ V.Observe()
 V.Tick()
 local state = V.State()
 local last = state.suggestions[#state.suggestions]
-assert(last.mode == "hint" and last.text == "Dungeon lines: switch the chat to Party first" and state.suggestions[1].category == "Anywhere", "on say in a dungeon party: " .. show(state.suggestions))
+assert(last.mode == "switch" and last.text == "Dungeon lines: switch to Party" and state.suggestions[1].category == "Anywhere", "on say in a dungeon party: " .. show(state.suggestions))
 for _ = 1, #state.suggestions do V.Press("PADDDOWN") end
 V.Press("PADRSHOULDER")
-assert(V.State().row == #state.suggestions and edit.text == "", "the hint row can be focused, never taken")
+assert(edit.text == "/p ", "R1 on the switch row types the party's command; the chat box makes it its channel: " .. edit.text)
+edit.text, edit.cursor = "", 0
+function edit:GetAttribute(key) return key == "chatType" and "PARTY" or nil end
+V.Tick()
+assert(V.State().suggestions[1].category == "Dungeon", "the list follows the box's channel at once: " .. show(V.State().suggestions))
 edit = newChat("PARTY")
 focus = edit
 V.Observe()
@@ -726,6 +741,15 @@ V.Observe()
 edit:SetText("pull the big one")
 V.Press("PAD2")
 assert(enters == 1 and saved.suggest.grams.pull.the == 1 and saved.suggest.lines["pull the big one"].via == "group", "Send teaches the line, with where it was sent")
+assert(not V.Frame():IsShown() and V.Box() == nil, "Send closes the keyboard")
+V.Observe()
+V.Observe()
+assert(not V.Frame():IsShown(), "the same box still focused: it stays closed, even with Open: Always")
+focus = nil
+V.Observe()
+focus = edit
+V.Observe()
+assert(V.Frame():IsShown() and V.Box() == edit, "the box lost the focus and got it back: it opens")
 edit:SetText("pull ")
 V.Tick()
 state = V.State()
@@ -760,47 +784,174 @@ edit:SetText("12")
 V.Tick()
 assert(#V.State().suggestions == 0 and V.State().head.kind == "none" and V.State().charset == "numbers", "a numeric box: digits, no suggestions")
 
--- A chat box parses a text that opens with "/" inside our call: the keyboard never leaves one there or sends one.
+-- A chat box runs a line that opens with "/" inside our call: only channel switches are typed or sent.
+assert(K.Slash("hello") == "text" and K.Slash("/") == "typing" and K.Slash("/da") == "typing" and K.Slash("/dance") == "typing", "a command still being typed")
+for _, line in ipairs({ "/s ", "/say hi", "/y ", "/p hello", "/P hello", "/party x", "/ra ", "/raid go", "/rw pull", "/i hi", "/g ", "/o hi", "/w ", "/w Aria hi", "/whisper Aria-Realm hi", "/tell Aria hi", "/r hi", "/e waves", "/1 hi", "/20 x" }) do
+	assert(K.Slash(line) == "switch" and K.Slash(line, true) == "switch", "a channel switch: " .. line)
+end
+for _, line in ipairs({ "/gd ", "/guilddiscord hi", "/dance ", "/cast x", "/reload ", "/readycheck ", "/fct ", "/0 hi", "/21 hi", "/ ", "/run x" }) do
+	assert(K.Slash(line) == "refused", "refused once complete: " .. line)
+end
+assert(K.Slash("/reload", true) == "refused" and K.Slash("/p", true) == "switch" and K.Slash("/gd", true) == "refused", "on Send a bare command counts as complete")
+assert(K.SwitchCommand({ kind = "PARTY" }) == "/p " and K.SwitchCommand({ kind = "WHISPER", target = "Aria-Realm" }) == "/w Aria-Realm " and K.SwitchCommand({ kind = "CHANNEL", id = 4 }) == "/4 ")
+assert(K.SwitchCommand({ kind = "INSTANCE_CHAT" }) == "/i " and K.SwitchCommand({ kind = "RAID" }) == "/ra " and K.SwitchCommand({ kind = "BN_WHISPER" }) == nil and K.SwitchCommand({ kind = "WHISPER" }) == nil)
+assert(SLASH_GUILD_DISCORD1 == "/gd" and SLASH_PARTY1 == "/p" and hash_ChatTypeInfoList == nil, "the client's alias strings are only read; no hash table is made or written")
+
+-- A chat box that parses the way Blizzard's does while typed into (ProcessChatType): a channel switch followed by a
+-- space becomes the box's chat type and leaves the text after it.
+local TYPES = { ["/S"] = "SAY", ["/P"] = "PARTY", ["/RA"] = "RAID", ["/RAID"] = "RAID", ["/RW"] = "RAID_WARNING", ["/I"] = "INSTANCE_CHAT", ["/G"] = "GUILD", ["/Y"] = "YELL", ["/E"] = "EMOTE", ["/R"] = "REPLY" }
+local function blizzardChat(kind)
+	local made, attrs = newChat(), { chatType = kind }
+	function made:GetAttribute(key) return attrs[key] end
+	local function parse(self)
+		local command, msg = self.text:match("^(/%S+)%s+(.*)$")
+		local switch = command and TYPES[command:upper()]
+		if switch then attrs.chatType, self.text = switch, msg end
+		local name, rest = self.text:match("^/[Ww]%s+(%S+)%s+(.*)$")
+		if name then attrs.chatType, attrs.tellTarget, self.text = "WHISPER", name, rest end
+		self.cursor = math.min(self.cursor, #self.text)
+	end
+	function made:SetText(value) self.text, self.cursor = value, #value parse(self) end
+	function made:Insert(value)
+		self.text, self.cursor = self.text:sub(1, self.cursor) .. value .. self.text:sub(self.cursor + 1), self.cursor + #value
+		parse(self)
+	end
+	return made, attrs
+end
+
+-- The keyboard's channel keys switch at once: the command goes at the start of the line and the box takes it.
+local switched, switchedAttrs = blizzardChat("SAY")
+focus = switched
+V.Observe()
+ns.UI.CODE.PAD4 = "FT"
+local function pick(set, key)
+	V.Press("PADLSHOULDER")
+	V.Press("PADLTRIGGER")
+	V.Stick("Left", set[1], set[2])
+	V.Stick("Right", key[1], key[2])
+	V.Stick("Right", 0, 0)
+	V.Release("PADLSHOULDER")
+	V.Release("PADLTRIGGER")
+	V.Stick("Left", 0, 0)
+end
+local NORTH, NE, EAST, RIGHT, BOTTOM = { 0, 1 }, { 0.7, 0.7 }, { 1, 0 }, { 0.6, 0 }, { 0, -0.6 }
+pick(NORTH, RIGHT)
+assert(switchedAttrs.chatType == "PARTY" and switched.text == "", "/p on an empty line: the chat is on Party, the line empty. " .. switched.text)
+switched:Insert("hello")
+pick(NORTH, { -0.6, 0 })
+assert(switchedAttrs.chatType == "GUILD" and switched.text == "hello" and switched.cursor == 5, "/g with hello typed: Guild, and hello stays. " .. switched.text)
+switched.cursor = 2
+pick(NE, { 0, 0.6 })
+assert(switchedAttrs.chatType == "YELL" and switched.text == "hello", "the command goes at the start wherever the cursor is")
+pick(NE, RIGHT)
+assert(switchedAttrs.chatType == "YELL" and switched.text == "hello" and V.State().set == nil, "/w on a line with text: refused with the note, nothing changes")
+switched.text, switched.cursor = "", 0
+pick(NE, RIGHT)
+assert(switched.text == "/w " and switchedAttrs.chatType == "YELL", "/w on an empty line waits for the name")
+switched:Insert("Aria hi")
+assert(switchedAttrs.chatType == "WHISPER" and switchedAttrs.tellTarget == "Aria" and switched.text == "hi")
+pick(EAST, { 0, -0.6 })
+assert(K.CHARSETS.symbols[3][3] == "%t" and switched.text == "hi%t", "the %t key is plain text")
+switched.text, switched.cursor = "", 0
+pick(EAST, { -0.6, 0 })
+assert(K.CHARSETS.symbols[3][4] == "/ready" and switched.text == "" and not K.SwitchKind("/ready"), "/ready is not a channel switch: refused")
+assert(K.SwitchKind("/p") == "PARTY" and K.SwitchKind("/raid") == "RAID" and K.SwitchKind("/rw") == "RAID_WARNING" and K.SwitchKind("/i") == "INSTANCE_CHAT")
+assert(K.SwitchKind("/gd") == nil and K.SwitchKind("/") == nil and K.SwitchKind("a") == nil, "a Discord alias is never a channel key")
+assert(K.PutSwitch("/w Ari", "/p") == "/p Ari" and K.PutSwitch("/w ", "/p") == "/p " and K.PutSwitch("  hi there", "/s") == "/s hi there" and K.PutSwitch("hi", "/w") == false)
+
 edit = newChat("SAY")
 focus = edit
 V.Observe()
-ns.UI.CODE.PAD4 = "FT"
-V.Press("PADLTRIGGER")
-V.Stick("Left", 0, -1)
-assert(V.State().charset == "numbers" and K.CHARSETS.numbers[5][1] == "/")
-V.Press("PAD4")
-assert(edit.text == "", "a slash as the first character of a chat line is refused")
+local function typeKeys(keys)
+	for _, key in ipairs(keys) do
+		if key == " " then V.Press("PAD1") else edit:Insert(key) end
+	end
+end
 V.Press("PADLSHOULDER")
+V.Press("PADLTRIGGER")
 V.Stick("Left", 0, 1)
-assert(V.State().charset == "symbols" and K.CHARSETS.symbols[1][1] == "/s")
-V.Press("PAD4")
-assert(edit.text == "", "so are the command keys (/s, /p, ...) there")
+assert(V.State().charset == "symbols" and K.CHARSETS.symbols[1][2] == "/p")
+V.Stick("Right", 0.6, 0)
+V.Stick("Right", 0, 0)
+assert(edit.text == "/p ", "the /p key types a party switch: " .. edit.text)
 V.Release("PADLSHOULDER")
-edit:SetText("5")
-V.Stick("Left", 0, -1)
-V.Press("PAD4")
-assert(edit.text == "5/", "a slash inside a line is plain text")
 V.Release("PADLTRIGGER")
 V.Stick("Left", 0, 0)
-edit.text, edit.cursor = "x/dance", 1
-V.Press("PAD3")
-V.Release("PAD3")
-assert(edit.text == "x/dance", "erasing down to a leading slash is refused too")
-edit.text, edit.cursor = "/dance", 6
+typeKeys({ "h", "e", "l", "l", "o" })
 local sends = enters
 V.Press("PAD2")
-assert(enters == sends and edit.text == "/dance", "a command typed on a real keyboard is not sent by the pad")
-V.Press("PAD1")
-assert(edit.text == "/dance", "nor touched: a space would have the box parse it in our call")
+assert(enters == sends + 1, "/p hello is sent through the box's own Enter: Blizzard switches and sends")
+focus = nil
+V.Observe()
+focus = edit
+V.Observe()
+for _, line in ipairs({ "/s", "/y", "/g", "/w Name", "/r", "/1" }) do
+	edit.text, edit.cursor = line, #line
+	V.Press("PAD1")
+	assert(edit.text == line .. " ", "the space after " .. line .. " is typed")
+end
+for _, line in ipairs({ "/gd", "/dance", "/reload" }) do
+	edit.text, edit.cursor = line, #line
+	V.Press("PAD1")
+	assert(edit.text == line, "the space that would run " .. line .. " is refused")
+end
+for _, line in ipairs({ "/dance", "/cast x", "/reload", "/gd hi" }) do
+	edit.text, edit.cursor = line, #line
+	sends = enters
+	V.Press("PAD2")
+	assert(enters == sends and edit.text == line, "not sent: " .. line)
+end
+edit.text, edit.cursor = "x/dance now", 1
+V.Press("PAD3")
+V.Release("PAD3")
+assert(edit.text == "x/dance now", "erasing down to a refused command is refused")
+edit.text, edit.cursor = "x/p now", 1
+V.Press("PAD3")
+V.Release("PAD3")
+assert(edit.text == "/p now", "erasing down to a switch is fine")
 local other = newChat()
 focus = other
 V.Observe()
-V.Press("PADLTRIGGER")
-V.Stick("Left", 0, -1)
+other.text, other.cursor = "/dance", 6
+V.Press("PAD1")
+assert(other.text == "/dance ", "a box that is not chat takes any slash: nothing parses it")
+
+-- A row cut short by the tab's width shows its full line in the addon's tooltip while focused or hovered.
+local tips = {}
+ns.UI.Tooltip = function(owner, spec) tips.owner, tips.spec = owner, spec end
+ns.UI.HideTooltip = function(owner) if not owner or tips.owner == owner then tips.owner, tips.spec = nil, nil end end
+local party = newChat("PARTY")
+focus = party
+V.Observe()
+V.Tick()
+local rowsDrawn, cut = V.Frame().tab.inner.rows, nil
+local LONG_LINE = "Ready when you are"
+for _, row in ipairs(rowsDrawn) do row.text.IsTruncated = function(self) return self.text == LONG_LINE end end
+for i, item in ipairs(V.State().suggestions) do if item.text == LONG_LINE then cut = i end end
+assert(cut and cut > 1, "a long row and a short first row: " .. show(V.State().suggestions))
+V.Press("PADDDOWN")
+assert(tips.spec == nil, "a row that fits: no tooltip")
+for _ = 2, cut do V.Press("PADDDOWN") end
+local long = V.State().suggestions[cut]
+assert(tips.spec and tips.spec.lines[1] == long.text and tips.owner == rowsDrawn[cut] and tips.spec.side == "right", "focused and cut: the full line, beside the tab")
+assert(tips.spec.title == long.category and tips.spec.lines[2] == "Channel: Party", "with its category and channel")
+V.Press("PADDUP")
+assert(tips.spec == nil, "focus moves to a row that fits: hidden")
+rowsDrawn[cut].scripts.OnEnter(rowsDrawn[cut])
+assert(tips.spec and tips.spec.lines[1] == long.text, "hovered with the mouse: shown")
+rowsDrawn[cut].scripts.OnLeave(rowsDrawn[cut])
+assert(tips.spec == nil, "and gone when the mouse leaves")
+V.Press("PADDDOWN")
+assert(tips.spec)
+party:Insert("x")
+V.Tick()
+assert(tips.spec == nil, "the list refreshes: hidden")
+party.text, party.cursor = "", 0
+V.Tick()
+for _ = 1, cut do V.Press("PADDDOWN") end
+assert(tips.spec)
 V.Press("PAD4")
-V.Release("PADLTRIGGER")
-V.Stick("Left", 0, 0)
-assert(other.text == "/", "a box that is not chat takes a slash: nothing parses it")
+assert(tips.spec == nil and not V.Frame():IsShown(), "the keyboard closes: hidden")
 
 -- Boxes the game blocks addons from typing into: the keyboard stays closed and says why, once per box.
 local notes = {}
@@ -853,7 +1004,9 @@ V.Press("PAD2")
 fire("ADDON_ACTION_FORBIDDEN", "ForeverControllerTweaks", "Protected()")
 assert(not opens(popupEdit) and saved.blocked[1] == "staticpopup1editbox SOME_DIALOG", "Send counts too; a dialog's box is learned for that dialog")
 dialog.which = "ADD_FRIEND"
-assert(opens(popupEdit), "the same box under another dialog still works")
+focus = nil
+V.Observe()
+assert(opens(popupEdit), "the same box under another dialog (shown again, focused again) still works")
 for i = 1, C.BLOCKED + 5 do C.Deny(inside(nil, "Box" .. i), saved) end
 assert(#saved.blocked == C.BLOCKED and saved.blocked[1] == "box" .. (C.BLOCKED + 5), "the saved list is capped")
 local nameless = newChat()

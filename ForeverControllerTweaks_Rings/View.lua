@@ -11,7 +11,7 @@
 -- nothing. The game reports one physical stick under several names (Right / Camera / Look, Left / Movement). When a
 -- held ring closes, Rings.HoldStick keeps the aiming stick from the game until it is back in the middle, so the
 -- character doesn't walk off (or the camera swing) on the release.
-local _, ns = ...
+local ns = ForeverControllerTweaks
 local Rings, UI = ns.Rings, ns.UI
 local L = UI.L
 

@@ -352,11 +352,18 @@ local function setup()
 		header:WrapScript(router, "OnClick", ROUTER_SNIPPET)
 		header:SetAttribute("ps-router" .. i, router:GetName())
 		SecureHandlerSetFrameRef(header, "router" .. i, router)
-		-- The ring arms the router by name: RunAttribute can't carry a frame handle.
-		if ns.Rings then
-			SecureHandlerSetFrameRef(router, "rings", ns.Rings.Frame())
-			SecureHandlerSetFrameRef(ns.Rings.Frame(), router:GetName(), router)
-		end
+	end
+end
+
+-- The ring arms the router by name: RunAttribute can't carry a frame handle. On the first apply with the Rings
+-- module loaded, which may come after setup: an apply can run while the core loads, before any module.
+local ringsLinked
+local function linkRings()
+	if ringsLinked or not ns.Rings then return end
+	ringsLinked = true
+	for _, router in ipairs(routers) do
+		SecureHandlerSetFrameRef(router, "rings", ns.Rings.Frame())
+		SecureHandlerSetFrameRef(ns.Rings.Frame(), router:GetName(), router)
 	end
 end
 
@@ -604,6 +611,7 @@ end
 -- ignorePanel: combat is starting and the settings screen closes in the same frame.
 local function applyNow(ignorePanel)
 	setup()
+	linkRings()
 	syncDebug()
 
 	local face, actionBars = Layout.Face(), bars()

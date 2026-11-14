@@ -2,7 +2,7 @@
 -- the left (a row per ring, then New ring), the selected ring drawn in the middle as it shows in game, its slot count
 -- and Rename / Icon / Delete under it. A on a slot opens the action picker for it, X clears it; X on a ring renames it.
 -- Rename hides the window and asks in a small box of ours, so the on-screen keyboard (or a real one) types the name.
-local _, ns = ...
+local ns = ForeverControllerTweaks
 local UI, Rings = ns.UI, ns.Rings
 local L = UI.L
 
@@ -10,7 +10,7 @@ local S = {}
 Rings.SettingsTab = S
 
 local STRINGS = {
-	RINGS_TAB = "Rings", RINGS_TITLE = "Controller Tweaks · Rings", RINGS_PREV = "Keyboard",
+	RINGS_TAB = "Rings", RINGS_TITLE = "Controller Tweaks · Rings",
 	RINGS_HINT = "Radial menus of actions. Put \"Open ring\" on any button in Bindings or Touch: hold it, aim with the right stick, release.",
 	RINGS_LIST = "Your rings", RINGS_COUNT = "Rings %d / %d", RINGS_NEW = "New ring", RINGS_NEW_TIP = "A new ring with 8 empty slots.",
 	RINGS_NONE = "No rings yet. Make one with New ring.", RINGS_EDIT = "Edit slots",
@@ -445,7 +445,7 @@ local function slotTip(i)
 end
 
 local function prompts(region)
-	local more, tab, close = { "PAD4", L.MORE }, { "PADLSHOULDER", L.RINGS_PREV }, { "PAD2", L.CLOSE }
+	local more, tab, close = { "PAD4", L.MORE }, UI.TabPrompt("rings", -1), { "PAD2", L.CLOSE }
 	if region and region.slot then return { { "PAD1", L.CHOOSE_ACTION }, { "PAD3", L.CLEAR_SLOT }, more, tab, close } end
 	if region and region.id then return { { "PAD1", L.RINGS_EDIT }, { "PAD3", L.RINGS_RENAME }, more, tab, close } end
 	return { { "PAD1", L.SELECT }, more, tab, close }
@@ -647,5 +647,5 @@ end
 
 function ns.commands.rings() S.Open() end
 
--- The fourth side tab (Bindings, Touch, Keyboard, Rings); L1/R1 step through them.
-UI.TABS[#UI.TABS + 1] = { "Interface\\Icons\\INV_Jewelry_Ring_03", L.RINGS_TAB, function() S.Open() end, rings = true }
+-- The last side tab (Bindings, Touch, Keyboard, Rings, of those loaded); L1/R1 step through them.
+UI.AddTab({ "Interface\\Icons\\INV_Jewelry_Ring_03", L.RINGS_TAB, function() S.Open() end, rings = true, order = 4, prompt = L.RINGS_TAB })

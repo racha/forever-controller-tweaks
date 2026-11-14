@@ -4,7 +4,7 @@
 -- lines that continue it; a finished word gets the next word. A search box gets item names and recent searches, a
 -- name box people. Every chat line carries its category and channel. Pure Lua on a context table
 -- (Keyboard/Context.lua) and the saved store: no frames, no game calls, the same input always gives the same list.
-local _, ns = ...
+local ns = ForeverControllerTweaks
 local K = ns.Keyboard
 local P = K.Library
 local S = {}
@@ -27,9 +27,13 @@ local SEARCHES = { bag = true, auction = true, search = true }
 -- Fields whose rows never come from the word list: the view skips its word search there.
 S.LOOKUP = { numeric = true, bag = true, auction = true, name = true }
 local ROLE = { tank = "tank", healer = "healer", damage = "DPS" }
--- A hint row: the best line is for another channel, which only the chat's own controls may switch to.
-S.HINT_REPLY, S.HINT_LINES = "Reply to %s: switch the chat to %s first", "%s lines: switch the chat to %s first"
-local CHANNEL_NAME = { WHISPER = "Whisper", BN_WHISPER = "Whisper", PARTY = "Party", RAID = "Raid", INSTANCE_CHAT = "Instance", GUILD = "Guild", SAY = "Say" }
+-- The switch row: the best line is for another channel. R1 types that channel's own command (/w Aria, /p), which the
+-- chat box turns into its channel; with no such command it is a hint only.
+S.HINT_REPLY, S.HINT_LINES = "Reply to %s: switch to %s", "%s lines: switch to %s"
+S.HINT_REPLY_ONLY, S.HINT_LINES_ONLY = "Reply to %s: switch the chat to %s first", "%s lines: switch the chat to %s first"
+local CHANNEL_NAME
+function S.ChannelName(channel) return CHANNEL_NAME[channel.kind] or "Channel " .. tostring(channel.id) end
+CHANNEL_NAME = { WHISPER = "Whisper", BN_WHISPER = "Whisper", PARTY = "Party", RAID = "Raid", INSTANCE_CHAT = "Instance", GUILD = "Guild", SAY = "Say" }
 local GROUP_KINDS = { PARTY = true, RAID = true, INSTANCE_CHAT = true }
 local WHISPERS = { WHISPER = true, BN_WHISPER = true }
 -- How a learned line travels: the channel it was sent on, as a via.
@@ -504,12 +508,17 @@ local function lookup(text, sources)
 	return rows
 end
 
--- The one row that can't be taken: it says which channel the best line needs. It sits last on the first page, so
--- row 1 stays a line R1 can insert.
+-- The switch row: which channel the best line needs. R1 on it types that channel's command (mode "switch"), or, when
+-- the channel has none (a Battle.net whisper), nothing (mode "hint"). It sits last on the first page, so row 1
+-- stays a line.
 local function hintRow(elsewhere)
 	local channel, from = elsewhere.channel, elsewhere.from
-	local name = CHANNEL_NAME[channel.kind] or "channel " .. tostring(channel.id)
-	return { text = from and S.HINT_REPLY:format(from, name) or S.HINT_LINES:format(elsewhere.tag, name), mode = "hint", category = "Hint", tag = "", channel = channel, score = elsewhere.score }
+	local name, command = CHANNEL_NAME[channel.kind] or "channel " .. tostring(channel.id), K.SwitchCommand(channel)
+	local reply, lines = command and S.HINT_REPLY or S.HINT_REPLY_ONLY, command and S.HINT_LINES or S.HINT_LINES_ONLY
+	return {
+		text = from and reply:format(from, name) or lines:format(elsewhere.tag, name), mode = command and "switch" or "hint", command = command,
+		category = "Hint", tag = command and command:match("^(%S+)") or "", channel = channel, score = elsewhere.score,
+	}
 end
 
 local HEADS = { words = { kind = "words" }, items = { kind = "items" }, names = { kind = "names" }, searches = { kind = "searches" }, none = { kind = "none" } }
@@ -582,13 +591,18 @@ end
 ---------------------------------------------------------------------------------------------------------------------
 -- Inserting, and learning from what the player does.
 
--- The box after a row is taken: the new text and byte cursor. Only the row's own words go in, never a command.
+-- The box after a row is taken: the new text and byte cursor. A row puts in its own words; only a switch row puts in
+-- a command, a channel switch, ahead of what is typed.
 -- A word replaces the word under the cursor; a next word goes in at the cursor with a space after it ("?" closes
 -- up to the word before); a line replaces the text, or only the sentence it continues when that isn't the first; a
 -- phrase does the same in an empty box and otherwise goes in at the cursor; a hint changes nothing.
 function S.Apply(item, text, cur)
 	local mode, value, start = item.mode, item.text, item.start or 1
 	if mode == "hint" then return text, cur end
+	if mode == "switch" then
+		local line = item.command .. text:gsub("^%s+", "")
+		return line, #line
+	end
 	if mode == "word" then
 		local _, first, last = K.WordAt(text, cur)
 		if not first then return text, cur end

@@ -1,0 +1,14 @@
+## Interface: 16001
+## Title: Forever Controller Tweaks: Touch
+## Notes: Touch bars: buttons on the screen edges to tap on a touch screen (Steam Link). Needs Forever Controller Tweaks.
+## Author: HouseLegend
+## Version: @project-version@
+## Dependencies: ForeverControllerTweaks
+## Group: ForeverControllerTweaks
+## IconTexture: Interface\AddOns\ForeverControllerTweaks\Art\icon
+## Category: User Interface
+## X-License: MIT
+## X-Website: https://racha.github.io/forever-controller-tweaks/
+
+Touch.lua
+TouchTab.lua

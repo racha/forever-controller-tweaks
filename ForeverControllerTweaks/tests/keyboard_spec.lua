@@ -1,7 +1,10 @@
 -- Plain-Lua checks for the keyboard: lua tests/keyboard_spec.lua
 local here = (arg and arg[0] or ""):match("^(.*)[/\\]") or "."
 local ns = {}
-assert(loadfile(here .. "/../Keyboard/Engine.lua"))("ForeverControllerTweaks", ns)
+ForeverControllerTweaks = ns
+-- A module file as the game loads it: its own addon name and private table; it reads the core's namespace global.
+local function loadModule(file) assert(loadfile(here .. "/../../ForeverControllerTweaks_Keyboard/" .. file .. ".lua"))("ForeverControllerTweaks_Keyboard", {}) end
+loadModule("Engine")
 local K = ns.Keyboard
 
 -- Sectors: the left stick picks one of 8 sets clockwise from north past 0.5; the right stick one of 4 keys past 0.15.
@@ -261,7 +264,7 @@ local function fire(event) for _, fn in ipairs(handlers[event] or {}) do fn() en
 ns.Active = function() return true end
 ns.db = { keyboard = { open = "always" } }
 ns.UI = { ART = "", L = {}, CODE = { PAD1 = "FB", PAD2 = "FR", PAD3 = "FL", PAD4 = "FT" }, Glyph = function(parent) return new("Frame", parent) end }
-for _, file in ipairs({ "Phrases", "Context", "Suggest", "View" }) do assert(loadfile(here .. "/../Keyboard/" .. file .. ".lua"))("ForeverControllerTweaks", ns) end
+for _, file in ipairs({ "Phrases", "Context", "Suggest", "View" }) do loadModule(file) end
 local V = K.View
 
 -- Loaded in combat (a /reload): nothing is created until combat ends.

@@ -1,8 +1,12 @@
 package-as: ForeverControllerTweaks
 
-# The addon lives in ForeverControllerTweaks/ inside the repo; it becomes the top of the zip.
+# The core and its modules sit side by side at the repo root; each becomes a folder at the top of the one zip (the
+# packager copies the LICENSE into each). Core first: its move empties the package folder into ForeverControllerTweaks/.
 move-folders:
   ForeverControllerTweaks/ForeverControllerTweaks: ForeverControllerTweaks
+  ForeverControllerTweaks/ForeverControllerTweaks_Touch: ForeverControllerTweaks_Touch
+  ForeverControllerTweaks/ForeverControllerTweaks_Keyboard: ForeverControllerTweaks_Keyboard
+  ForeverControllerTweaks/ForeverControllerTweaks_Rings: ForeverControllerTweaks_Rings
 
 manual-changelog:
   filename: CHANGELOG.md
