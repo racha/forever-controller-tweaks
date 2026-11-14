@@ -88,7 +88,7 @@ Every face and D-pad cell, on every bar, can hold:
 
 - spells and pet spells, items, toys, mounts and equipment sets;
 - your macros;
-- game actions: Bags, Map, **Open chat** (opens the chat box, like Enter on a keyboard; with the Keyboard module the on-screen keyboard opens with it), Target nearest enemy, Extra action and more;
+- game actions: Bags, Map, **Toggle FPS**, Target nearest enemy, Extra action and more;
 - **Jump, Interact, Back and Inspect**. Interact keeps hold-to-loot, and Jump keeps swim up and stop;
 - key bindings from other addons, from the **AddOns** category (for example WellMet);
 - **Open ring** for any of your [action rings](#rings).

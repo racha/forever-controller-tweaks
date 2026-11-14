@@ -14,7 +14,7 @@ K.View = V
 local T = {
 	SHIFT = "Shift", SYMBOLS = "Symbols", CHOOSE = "Choose", INSERT = "Insert", CORRECTION = "Correction",
 	SECURE = "This command needs Enter on a real keyboard.", SLASH = "Only channel switches (/s, /p, /g, /w ...): other commands need a real keyboard.",
-	WHISPER_FIRST = "Start a whisper on an empty line: /w, then the name.", CHANNEL = "Channel: %s", DENIED = "Typing here needs a real keyboard: the game blocks addons from this box.", SPACE = "Space", SEND = "Send", ERASE = "Erase", CLOSE = "Close", CURSOR = "Cursor",
+	WHISPER_FIRST = "Start a whisper on an empty line: /w, then the name.", STYLE = "Chat Style is Classic: close the keyboard and press A to send, or set Chat Style to IM.", CHANNEL = "Channel: %s", DENIED = "Typing here needs a real keyboard: the game blocks addons from this box.", SPACE = "Space", SEND = "Send", ERASE = "Erase", CLOSE = "Close", CURSOR = "Cursor",
 	-- The tab's heading and its line when there are no rows, by the kind of list Suggest returned.
 	HEAD = { phrases = "Quick phrases · %s", words = "Words", items = "Items", names = "Names", searches = "Recent searches", none = "" },
 	EMPTY = { phrases = "", words = "Type a word to see suggestions", items = "No matching item", names = "No matching name", searches = "No recent searches", none = "" },
@@ -42,8 +42,9 @@ local WORDS = { kind = "words" }
 local suggestions, head, context, rowFocus, correction, searchJob, searchKey, searchRev = {}, WORDS, nil, nil, nil, nil, nil, nil
 local refreshSuggestions
 -- typedAt: when the keyboard last changed the box's text or pressed its Enter; told: boxes whose refusal was said;
--- sent: the box a message was just sent from, kept closed until it loses the focus; tipRow: the row with the tooltip.
-local typedAt, told, sent, tipRow = 0, setmetatable({}, { __mode = "k" }), nil, nil
+-- sent: the box a message was just sent from (or a chat box closed), kept closed until it loses the focus; tipRow:
+-- the row with the tooltip; scroll: the rows above the first one shown; passing: a press went on to the game (passBack).
+local typedAt, told, sent, tipRow, scroll, passing = 0, setmetatable({}, { __mode = "k" }), nil, nil, 0, false
 local repeatAction, repeatAt, statusUntil, statusText, lastInput, cachedText = nil, 0, 0, T.SECURE, nil, nil
 local mirror, mode = false, "right"
 
@@ -162,6 +163,14 @@ local function buildTab()
 		row:SetScript("OnLeave", function() V.Tip() end)
 		inner.rows[i] = row
 	end
+	inner.up = inner:CreateTexture(nil, "OVERLAY")
+	inner.up:SetAtlas("minimal-scrollbar-arrow-top", true)
+	inner.up:SetPoint("BOTTOMRIGHT", inner, "TOPRIGHT", -2, -56)
+	inner.down = inner:CreateTexture(nil, "OVERLAY")
+	inner.down:SetAtlas("minimal-scrollbar-arrow-bottom", true)
+	inner.down:SetPoint("TOPRIGHT", -2, -(60 + ROWS * 20))
+	tab:EnableMouseWheel(true)
+	tab:SetScript("OnMouseWheel", function(_, delta) V.Scroll(-delta) end)
 	inner.hints = {}
 	local x = 0
 	for i, part in ipairs({ "prev", "next", T.CHOOSE, "insert", T.INSERT }) do
@@ -418,24 +427,36 @@ local function drawTab()
 	inner.head:SetFontObject(status and "GameFontRedSmall" or "GameFontNormal")
 	inner.head:SetText(status and statusText or string.format(T.HEAD[head.kind], head.place))
 
-	inner.empty:SetText(#suggestions == 0 and T.EMPTY[head.kind] or "")
-	local offset = rowFocus and rowFocus > ROWS and rowFocus - ROWS or 0
+	local count = #suggestions
+	inner.empty:SetText(count == 0 and T.EMPTY[head.kind] or "")
+	if rowFocus then scroll = math.max(math.min(scroll, rowFocus - 1), rowFocus - ROWS) end
+	scroll = math.max(0, math.min(scroll, count - ROWS))
 	for i, row in ipairs(inner.rows) do
-		local item = suggestions[i + offset]
+		local item = suggestions[i + scroll]
 		row.item = item
 		row:SetShown(item ~= nil)
 		if item then
-			local focused = rowFocus == i + offset
+			local focused = rowFocus == i + scroll
 			row.hl:SetShown(focused)
 			row.text:SetText(item.text)
 			row.text:SetTextColor(unpack(focused and GOLD or item.mode == "hint" and GREY or WHITE))
-			local isFix = correction == i + offset
+			local isFix = correction == i + scroll
 			row.tag:SetFontObject(isFix and "GameFontGreenSmall" or "GameFontDisableSmall")
 			row.tag:SetText(isFix and T.CORRECTION or item.tag)
 		end
 	end
+	inner.up:SetShown(scroll > 0)
+	inner.down:SetShown(scroll + ROWS < count)
 	for _, hint in ipairs(inner.hints) do if hint.action then hint:SetCode(settings.buttons[hint.action]) end end
 	V.Tip()
+end
+
+-- The mouse wheel: the rows move; a focused row stays among the shown ones.
+function V.Scroll(step)
+	if not box then return end
+	scroll = math.max(0, math.min(scroll + step, #suggestions - ROWS))
+	if rowFocus then rowFocus = math.max(scroll + 1, math.min(rowFocus, scroll + ROWS)) end
+	drawTab()
 end
 
 -- The full line of a row cut short by the tab's width, in the addon's tooltip, beside the tab away from the disc:
@@ -619,30 +640,60 @@ local function moveCursor(step)
 	box:SetCursorPosition(step < 0 and K.Left(text, cur) or K.Right(text, cur))
 end
 
--- Send: the box's own Enter, synchronously inside this button press, then the keyboard closes; it opens on that box
+-- Our code never ends a box's focus, nor runs its Enter or Escape (which end it): focus-lost handlers drive the
+-- Gamepad UI's binding stack and frame manager in our call, and the game then blocks its own calls. Bag search:
+-- OnEnterPressed = EditBox_ClearFocus (InputBoxTemplates.xml:252) -> the OnEditFocusLost hook (ContainerFrame.lua:3420)
+-- -> footer HideAndDeactivateBindings (PromptedBindingFooter.lua:380) -> InputBindingManager:RemoveSet (:174-191) ->
+-- CheckCoreBindingActive -> UpdateActionBarFocusedState (MainActionBarFrame.lua:672, :57) -> SetPreferredGamepadInteractTarget
+-- (:373). Chat: OnEditFocusLost -> ClearGamepadFocus -> FrameHidden (ChatFrameEditBox.lua:417-423).
+-- The game's own B ends it as Blizzard code: out of combat, a press of B goes on to it while the Gamepad UI works on
+-- this box: SmartNavigation on its chat frame (B = AttemptClose, SmartNavigation.lua:241), or the frame manager on the
+-- box itself (its footer's Back, ContainerFrame.lua:3398).
+local function passBack(key)
+	local nav, fcm = SmartNavigation, GamepadMode and GamepadMode.FrameControlsManager
+	local info, focused, chatFrame = nav and nav.bindingActive and nav.activeInfo, fcm and fcm.isUIFocused and fcm.focusedFrame, box.chatFrame
+	local owned = chat() and info and chatFrame and info.frame == chatFrame or not chat() and focused == box
+	if key ~= (GAMEPAD_FACE_RIGHT or "PAD2") or shiftHeld or symbolsHeld or InCombatLockdown() or not owned then return false end
+	passing = true
+	frame:SetPropagateKeyboardInput(true)
+	return true
+end
+
+-- Once the passed press is through our frame takes the pad again (PLAYER_REGEN_DISABLED still comes before combat).
+local function takeBack()
+	if not passing or InCombatLockdown() then return end
+	passing = false
+	frame:SetPropagateKeyboardInput(false)
+end
+
+-- Send: a chat box's own Enter, synchronously inside this button press (with Chat Style IM it only clears the line:
+-- ClearChat, ChatFrameEditBox.lua:561-568; Classic hides the box, which ends its focus, so it is refused); other
+-- boxes keep their text. Then the keyboard closes, and on B the box's focus goes too (passBack); it opens on that box
 -- again only after the box lost the focus and got it back. A refused line (a command other than a channel switch,
 -- a secure command) stays, and the keyboard stays open with the note.
-function V.Send()
-	local text = box:GetText() or ""
+function V.Send(key)
+	local text, talk = box:GetText() or "", chat()
 	local secure = text:match("^(/%S+)")
 	if command(text, true) then return note(T.SLASH) end
 	if secure and IsSecureCmd and IsSecureCmd(secure) then return note(T.SECURE) end
+	if talk and GetCVar("chatStyle") ~= "im" then return note(T.STYLE) end
 	cachedText, typedAt = text, GetTime()
 	local sentIn = K.Context.Snapshot(box)
-	run(box, "OnEnterPressed")
+	if talk then run(box, "OnEnterPressed") end
 	if cachedText ~= "" then
 		K.Learn(settings.dictionary, cachedText)
 		K.Suggest.Sent(settings, cachedText, sentIn)
 	end
 	cachedText = nil
 	sent = box
-	V.Hide()
+	if not passBack(key) then V.Hide() end
 end
 
-function V.Close()
-	local edit = box
-	if edit then run(edit, "OnEscapePressed") end
-	V.Hide()
+-- Close: the keyboard closes and the box keeps its text; on B its focus goes too (passBack), else it keeps the focus
+-- until B or a tap elsewhere.
+function V.Close(key)
+	sent = box
+	if not passBack(key) then V.Hide() end
 end
 
 -- R1: the focused row (row 1 when none), put in the box the way Suggest.Apply says: a word replaces the word under
@@ -650,7 +701,7 @@ end
 -- switches); a hint row is not taken. The rows are
 -- asked for again at once, so R1 pressed again takes the next word: a sentence builds press by press.
 local function insertRow()
-	local item = suggestions[rowFocus or 1]
+	local item = suggestions[rowFocus or scroll + 1]
 	if not item or item.mode == "hint" then return end
 	if item.mode == "switch" and not chat() then return end
 	setText(K.Suggest.Apply(item, boxText()))
@@ -661,7 +712,7 @@ end
 
 local function stepRow(step)
 	if #suggestions == 0 then return end
-	rowFocus = ((rowFocus or (step > 0 and 0 or 1)) - 1 + step) % #suggestions + 1
+	rowFocus = ((rowFocus or scroll + (step > 0 and 0 or 1)) - 1 + step) % #suggestions + 1
 	drawTab()
 end
 
@@ -681,10 +732,10 @@ function V.Press(key)
 		insert(" ")
 		flash(frame.hubKeys[3])
 	elseif action == "send" then
-		return V.Send()
+		return V.Send(key)
 	elseif action == "close" then
 		flash(frame.hubKeys[1])
-		return V.Close()
+		return V.Close(key)
 	elseif action == "shift" or action == "symbols" then
 		if action == "shift" then shiftHeld = true else symbolsHeld = true end
 		charset = charsetNow()
@@ -751,7 +802,7 @@ function refreshSuggestions()
 	local keyNow, rev = text .. "\0" .. cur, K.Context.rev .. "\0" .. channelOf()
 	if keyNow == searchKey and rev == searchRev then return end
 	local held = keyNow == searchKey and suggestions[rowFocus or 0]
-	searchKey, searchRev, rowFocus, correction, searchJob = keyNow, rev, nil, nil, nil
+	searchKey, searchRev, rowFocus, correction, searchJob, scroll = keyNow, rev, nil, nil, nil, 0
 	context = K.Context.Snapshot(box)
 	local word = K.WordAt(text, cur)
 	if not word or #word < 2 or K.Suggest.LOOKUP[context.field] then
@@ -784,6 +835,7 @@ end
 -- Open, close, per frame
 
 function V.Hide()
+	takeBack()
 	box, boxRect, chatRect = nil, nil, nil
 	if tipRow then UI.HideTooltip(tipRow) end
 	tipRow = nil
@@ -838,7 +890,7 @@ end
 local function open(edit)
 	local was = box
 	box, boxRect = edit, rectOf(edit)
-	set, keyFocus, searchKey, rowFocus, head, suggestions = nil, nil, nil, nil, WORDS, {}
+	set, keyFocus, searchKey, rowFocus, head, suggestions, scroll = nil, nil, nil, nil, WORDS, {}, 0
 	K.Context.Focus(edit)
 	shiftHeld, symbolsHeld = false, false
 	charset = charsetNow()
@@ -869,6 +921,13 @@ local function onBlocked(addon)
 	if type(addon) == "string" and addon:find("^ForeverControllerTweaks") and edited and GetTime() - typedAt <= BLOCK_WINDOW then K.Context.Deny(edited, settings) end
 end
 
+-- A tap on the screen (Steam Link sends touches as mouse clicks) counts as the controller while our touch bars are on.
+local function touchBars()
+	local Touch = ns.Touch
+	local config = Touch and Touch.Config and Touch.Config()
+	return config and config.enabled and config.show ~= "never"
+end
+
 -- Runs while the Gamepad UI is on and the keyboard is enabled.
 function V.Observe()
 	settings = db()
@@ -877,7 +936,7 @@ function V.Observe()
 	local focus = GetCurrentKeyBoardFocus()
 	if sent and focus ~= sent then sent = nil end
 	if not V.Valid(focus) or focus == sent then return V.Hide() end
-	if focus ~= box and settings.open == "controller" and lastInput ~= "pad" and not box then return end
+	if focus ~= box and settings.open == "controller" and not box and not (lastInput == "pad" or lastInput == "mouse" and touchBars()) then return end
 	if K.Context.Denied(focus, settings) then return refuse(focus) end
 	if focus ~= box then return open(focus) end
 	-- Placed again when the box or its chat frame moves or resizes.
@@ -916,12 +975,17 @@ V.NewKey, V.StyleKey, V.KeyLabel = newKey, styleKey, keyLabel
 
 function V.Frame() return frame end
 function V.Box() return box end
-function V.State() return { charset = charset, set = set, key = keyFocus, row = rowFocus, head = head, suggestions = suggestions, correction = correction, mode = mode, mirror = mirror } end
+function V.State() return { charset = charset, set = set, key = keyFocus, row = rowFocus, scroll = scroll, head = head, suggestions = suggestions, correction = correction, mode = mode, mirror = mirror } end
 
 ns.On("PLAYER_LOGIN", V.Init)
 ns.On("ADDON_ACTION_BLOCKED", onBlocked)
 ns.On("ADDON_ACTION_FORBIDDEN", onBlocked)
 ns.On("PLAYER_REGEN_ENABLED", V.Init)
+ns.On("PLAYER_REGEN_DISABLED", takeBack)
+ns.On("FCT_READY", function()
+	local s = db()
+	if s then K.Context.Forget(s) end
+end)
 ns.On("PLAYER_LOGOUT", function()
 	local s = db()
 	if not s then return end

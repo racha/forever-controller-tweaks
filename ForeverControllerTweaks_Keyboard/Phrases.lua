@@ -24,6 +24,12 @@ P.SITUATIONS = {
 	{ id = "duel", tag = "Duel", weight = 0.9, via = "reply", urgent = true },
 	{ id = "roll", tag = "Loot", weight = 0.85, via = "group", urgent = true },
 	{ id = "proposal", tag = "Queue", weight = 0.85, urgent = true },
+	{ id = "bosskill", tag = "Boss", weight = 0.85, via = "group", urgent = true },
+	{ id = "wipe", tag = "Wipe", weight = 0.85, via = "group", urgent = true },
+	{ id = "levelup", tag = "Level", weight = 0.8, via = "auto", urgent = true },
+	{ id = "achievement", tag = "Achievement", weight = 0.75, via = "auto", urgent = true },
+	{ id = "looted", tag = "Loot", weight = 0.7, via = "auto", urgent = true },
+	{ id = "buffed", tag = "Buff", weight = 0.7, via = "reply", urgent = true },
 	{ id = "dead", tag = "Dead", weight = 0.8, via = "auto" },
 	{ id = "combat", tag = "Combat", weight = 0.75, via = "auto" },
 	{ id = "newgroup", tag = "Group", weight = 0.7, via = "group" },
@@ -49,7 +55,9 @@ P.SITUATIONS = {
 -- that names a passing state such as lowMana or vendor, also lifts the line). Tokens: {target}
 -- {friend} {enemy} {npc} {from} {zone} {subzone} {instance} {quest} {objective} {progress} {left} {class}
 -- {role} {player} {level} {time} ({objective} {progress} {left}: the tracked quest's first unfinished objective, its
--- "3/8" and what is still missing); a
+-- "3/8" and what is still missing) {spec} {myrole} {ilvl} {spot} {coords} (the player's specialization, known role,
+-- equipped item level, subzone or zone, map position), and from what just happened {level} {achievement} {item}
+-- {buff}; a
 -- line with a token that can't be filled is skipped. field ("chat" | "whisper") keeps a line to that kind of field.
 -- Keys: a situation id, "reply.<intent>", "short.<typed word>", or "typing": lines offered only as the continuation
 -- of what is being typed.
@@ -62,7 +70,13 @@ P.DEFAULTS = {
 	duel = { "Good luck!", "Not now, sorry", "Good duel!" },
 	roll = { "Anyone need this?", "Need for main spec", "Grats!", "Passing" },
 	proposal = { "Queue popped, be right back", "Dungeon time, talk later" },
-	dead = { "Res please", { "Can someone res me?", need = "grouped" }, "I'm dead, running back", "Releasing", { "Wipe, run back", need = "grouped" } },
+	bosskill = { "gg", "Nice one all", "Grats!" },
+	wipe = { "Wipe, run back", "What went wrong?", "Again?" },
+	levelup = { "Ding {level}!", "Level {level}, finally!" },
+	achievement = { "Got {achievement}!" },
+	looted = { "Finally got {item}!" },
+	buffed = { { "Thanks for the {buff}, {from}!", via = "say" }, "Thanks for the {buff}!" },
+	dead = { "Res please", { "Can someone res me?", need = "grouped" }, "I'm dead, running back", "Releasing", { "Wipe, run back", need = "wiped" } },
 	combat = {
 		"Help!", { "Heal please", no = "healer" }, { "Out of mana!", need = "lowMana" }, "Run!", { "Kill {enemy} first", need = "grouped" },
 		{ "Need help with {enemy}!", need = "solo", via = "say" }, "Adds incoming",
@@ -108,7 +122,11 @@ P.DEFAULTS = {
 	["reply.invite_offer"] = { "Yes please, invite me", "Sure, one sec", "No thanks, I'm good" },
 	["reply.invite_ask"] = { "Sure, inviting!", "Inviting now", "Group is full, sorry" },
 	["reply.ready_ask"] = { "Ready", "One sec", { "Need mana", need = "lowMana" } },
-	["reply.where"] = { "In {subzone}", "In {zone}", "On my way", "Coming to you" },
+	["reply.where"] = { "{spot}, near {coords}", "In {subzone}", "In {zone}", "On my way", "Coming to you" },
+	["reply.stats_ask"] = { "{level} {spec} {class}", "Level {level} {class}" },
+	["reply.role_ask"] = { "{myrole}, {spec} {class}", "{myrole}" },
+	["reply.progress_ask"] = { { "Done, turning in", need = "questDone" }, "{progress} {objective}", "Still need {objective}" },
+	["reply.gear_ask"] = { "Item level {ilvl}" },
 	["reply.greet"] = { "Hey!", "Hello {from}!", "Hi, how are you?" },
 	["reply.thanks"] = { "No problem!", "You're welcome", "Anytime!" },
 	["reply.bye"] = { "GG, thanks all!", "Thanks for the run!", "See you!", { "Good night!", need = "night" } },
@@ -198,7 +216,7 @@ P.QUESTIONS = { can = true, where = true, anyone = true, who = true, what = true
 
 -- Intent rules for an incoming line, tried in order. A rule matches when one of its has substrings is in the
 -- lowercased line, or one of its any words is a whole word (and, when given, one of its with words too, in a line
--- of at most max words). question needs a "?". Only the first matching rule of a group counts. scope: who the
+-- of at most max words), and none of its unless words is. question needs a "?". Only the first matching rule of a group counts. scope: who the
 -- line must be for: "direct" (a whisper or a line naming the player), "group" (also party / raid / instance chat; the
 -- default) or "public" (any channel). need / class gate the rule on the player (flags as for lines). to = "sender"
 -- answers a public line in a whisper.
@@ -208,8 +226,14 @@ P.INTENTS = {
 	{ id = "invite_offer", group = "invite", score = 1, has = { "want an inv", "want inv", "want a inv", "wanna join", "want to join", "need a group", "join us", "want invite", "want an invite" } },
 	{ id = "invite_ask", group = "invite", score = 1, max = 3, any = { "inv", "invite", "invy" }, has = { "invite me", "inv me", "inv pls", "inv plz", "inv please", "invite pls", "invite please", "get an inv", "can i join", "room for" } },
 	{ id = "ready_ask", group = "ready", score = 1, has = { "everyone ready", "all ready", "you ready", "u ready", "ready check" } },
-	{ id = "ready_ask", group = "ready", score = 1, question = true, max = 4, any = { "ready", "rdy", "r" } },
-	{ id = "where", score = 0.9, has = { "where are you", "where r u", "where are u", "where u at", "where you at", "wya" } },
+	{ id = "ready_ask", group = "ready", score = 1, question = true, max = 4, any = { "ready", "rdy", "r" }, unless = { "where", "what", "how", "wya" } },
+	{ id = "where", group = "where", score = 0.9, has = { "where are you", "where r u", "where are u", "where u at", "where you at", "wya" } },
+	{ id = "where", group = "where", score = 0.9, question = true, max = 3, any = { "loc", "location", "coords" } },
+	{ id = "stats_ask", group = "stats", score = 1, has = { "what lvl", "what level", "what class", "what spec", "which spec", "ur spec", "your spec", "ur lvl", "your lvl", "ur level", "your level" } },
+	{ id = "stats_ask", group = "stats", score = 1, question = true, max = 2, any = { "lvl", "level", "spec", "class" } },
+	{ id = "role_ask", score = 1, has = { "what role", "which role", "ur role", "your role", "tank or heal", "tank or dps", "heal or dps", "healer or dps", "dps or heal", "dps or tank" } },
+	{ id = "progress_ask", score = 0.9, has = { "how far", "done yet", "how many left", "how many more", "you done", "u done", "finished yet" } },
+	{ id = "gear_ask", score = 0.8, any = { "ilvl", "gs", "gearscore" }, has = { "item level", "gear score" } },
 	{ id = "lf_healer", score = 0.9, scope = "public", to = "sender", need = "canHeal", any = { "healer", "heals", "heal", "healz" }, with = LF },
 	{ id = "lf_tank", score = 0.9, scope = "public", to = "sender", need = "canTank", any = { "tank", "tanks" }, with = LF },
 	{ id = "lf_dps", score = 0.7, scope = "public", to = "sender", need = "solo", any = { "dps", "dd", "damage" }, with = LF },

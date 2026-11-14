@@ -508,6 +508,10 @@ assert(ns.Face.SetCellEntry("FR", "T", nil))
 ns.db.chars["Ann-Realm"].cells["054c/0ce6"].FT = { T = { id = "spell:999", name = "Forgotten", kind = "spell" } }
 ns.Fire("PLAYER_ENTERING_WORLD")
 check(not W.bindings.PAD4 and lastDebug():find("top entry spell:999 unavailable", 1, true), "unavailable entry logged, key native")
+-- Open chat was removed (1.2.1): a cell saved with it stays saved, routes nothing and errors nothing.
+ns.db.chars["Ann-Realm"].cells["054c/0ce6"].FT = { T = { id = "game:chat", name = "Open chat", kind = "game" } }
+ns.Fire("PLAYER_ENTERING_WORLD")
+check(not W.bindings.PAD4 and lastDebug():find("top entry game:chat unavailable", 1, true) and ns.Face.CellEntry("FT", "T").id == "game:chat", "removed Open chat: kept, key native")
 ns.db.chars["Ann-Realm"].cells["054c/0ce6"].FT = nil
 assert(ns.Face.SetCellEntry("FT", "T", { id = "spell:133", name = "Fireball" }))
 

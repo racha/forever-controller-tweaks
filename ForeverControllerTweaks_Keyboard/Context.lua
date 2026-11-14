@@ -11,9 +11,12 @@ K.Context = C
 
 C.INBOX, C.HEARD_TTL, C.NEARBY_TTL, C.NPC_CAP, C.TEXT_MAX = 8, 180, 30, 40, 160
 C.WHISPERERS, C.ITEMS, C.FRIENDS, C.GUILD, C.BLOCKED, C.QUEST_WAIT = 10, 200, 200, 300, 30, 0.5
+-- What just happened: how long its lines last, the least item quality worth a line, and buffs: the shortest worth
+-- thanks (a heal over time is not), and how long before the same caster's same buff is thanked again.
+C.REACT_TTL, C.LOOT_QUALITY, C.BUFF_MIN, C.THANKS_WAIT = 60, 3, 120, 300
 local HEALS = { PRIEST = true, DRUID = true, PALADIN = true, SHAMAN = true }
 local TANKS = { WARRIOR = true, DRUID = true, PALADIN = true }
-local ROLES = { TANK = "tank", HEALER = "healer" }
+local ROLES = { TANK = "tank", HEALER = "healer", DAMAGER = "damage" }
 local GROUP_KINDS = { PARTY = true, RAID = true, INSTANCE_CHAT = true }
 -- Who a rule's line must be for, against who a heard line was for: a rule reaches its own scope and every closer one.
 local REACH = { direct = 1, group = 2, public = 3 }
@@ -52,6 +55,13 @@ local function api(name, ...)
 end
 
 local function filled(value) if type(value) == "string" and value ~= "" then return value end end
+
+-- A call that may be missing or fail on this client: its first five results, each plain.
+local function try(fn, ...)
+	local ok, a, b, c, d, e = pcall(fn, ...)
+	if not ok then return nil end
+	return plain(a), plain(b), plain(c), plain(d), plain(e)
+end
 
 -- rev changes whenever the suggestions could: an open keyboard compares it and asks again.
 local function bump() C.rev = C.rev + 1 end
@@ -94,8 +104,27 @@ function READ.group(s)
 	s.group = raid and "raid" or grouped and "party" or "none"
 	s.groupChannel = grouped and (api("IsInGroup", LE_PARTY_CATEGORY_INSTANCE or 2) and "INSTANCE_CHAT" or raid and "RAID" or "PARTY") or nil
 	s.size, s.leader = api("GetNumGroupMembers") or 0, api("UnitIsGroupLeader", "player") and true or false
-	s.role = ROLES[api("UnitGroupRolesAssigned", "player")] or "damage"
+	s.assigned = ROLES[api("UnitGroupRolesAssigned", "player")]
+	s.role = s.assigned or "damage"
 	if not grouped then s.joinedAt = nil end
+end
+
+-- The specialization's name and role, else the talent tree with the most points (its tab info is name, icon, points
+-- on an older client, id, name, description, icon, points on a newer one).
+local function specOf()
+	local info = C_SpecializationInfo or {}
+	local index = try(info.GetSpecialization or GetSpecialization)
+	if type(index) == "number" and index > 0 then
+		local _, name, _, _, role = try(info.GetSpecializationInfo or GetSpecializationInfo, index)
+		if filled(name) then return name, ROLES[role] end
+	end
+	local best, most = nil, 0
+	for i = 1, tonumber(try(GetNumTalentTabs)) or 0 do
+		local a, b, c, _, e = try(GetTalentTabInfo, i)
+		local name, points = filled(a) or filled(b), tonumber(filled(a) and c or e) or 0
+		if name and points > most then best, most = name, points end
+	end
+	return best
 end
 
 function READ.self(s)
@@ -104,6 +133,9 @@ function READ.self(s)
 	s.guild, s.combat = api("IsInGuild") and true or false, api("UnitAffectingCombat", "player") and true or false
 	s.dead = api("UnitIsDeadOrGhost", "player") and true or false
 	s.canHeal, s.canTank, s.canRes = HEALS[s.class] or false, TANKS[s.class] or false, HEALS[s.class] or false
+	s.spec, s.specRole = specOf()
+	local _, equipped = try(GetAverageItemLevel)
+	s.ilvl = type(equipped) == "number" and equipped > 0 and math.floor(equipped) or nil
 end
 
 function READ.target(s) s.target = unit("target") end
@@ -215,6 +247,28 @@ local function timeOfDay()
 	return hour < 5 and "night" or hour < 12 and "morning" or hour < 18 and "afternoon" or hour < 23 and "evening" or "night"
 end
 
+-- The player's map position as "39, 55", read only while someone asked where they are.
+local function coords()
+	local map = C_Map or {}
+	local id = try(map.GetBestMapForUnit, "player")
+	local position = id and try(map.GetPlayerMapPosition, id, "player")
+	local x, y
+	if type(position) == "table" and position.GetXY then x, y = try(position.GetXY, position) else x, y = try(GetPlayerMapPosition, "player") end
+	if type(x) == "number" and type(y) == "number" and (x > 0 or y > 0) then return math.floor(x * 100 + 0.5) .. ", " .. math.floor(y * 100 + 0.5) end
+end
+
+local function asked(inbox, id) for _, msg in ipairs(inbox) do if msg.intents[id] then return true end end end
+
+-- Everyone in the group dead or a ghost: a wipe, even with no boss.
+local function wiped(s)
+	local prefix = s.group == "raid" and "raid" or "party"
+	for i = 1, s.group == "raid" and s.size or 4 do
+		local token = prefix .. i
+		if api("UnitExists", token) and not api("UnitIsUnit", token, "player") and not api("UnitIsDeadOrGhost", token) then return false end
+	end
+	return true
+end
+
 local function low(current, most, part) return current ~= nil and most ~= nil and most > 0 and current / most < part end
 
 -- The lowercased names of a box and its parents, nearest first.
@@ -279,17 +333,28 @@ function C.Denied(box, settings)
 	return denied
 end
 
+-- Chat is a supported box: a block seen while typing there (ChatFrame1EditBox, ...) is never blamed on it.
+local function chatKey(key) return (key .. " "):find("^chatframe%d+editbox ") ~= nil end
+
 -- The game blocked an action right after the keyboard changed this box's text: never type into it again. Its key
 -- is saved (the newest C.BLOCKED); a box with no name anywhere in its parents is remembered for the session only.
 function C.Deny(box, settings)
 	local parent = box.GetParent and box:GetParent()
 	local which = parent and plain(parent.which) or false
 	local key = keyOf(box, which)
+	if chatKey(key) then return end
 	verdicts[box] = { which = which, denied = true }
 	if key == "" or listed(settings, key) then return end
 	settings.blocked = type(settings.blocked) == "table" and settings.blocked or {}
 	table.insert(settings.blocked, 1, key)
 	settings.blocked[C.BLOCKED + 1] = nil
+end
+
+-- Chat boxes saved by an older version, which could deny them, are dropped.
+function C.Forget(settings)
+	local saved = settings.blocked
+	if type(saved) ~= "table" then return end
+	for i = #saved, 1, -1 do if type(saved[i]) == "string" and chatKey(saved[i]) then table.remove(saved, i) end end
 end
 
 -- The box that took the focus: its field is worked out once, here. "chat" becomes "whisper" in a snapshot while the
@@ -310,6 +375,8 @@ function C.Snapshot(box)
 	end
 	for i = #s.inbox, 1, -1 do if now - s.inbox[i].at > C.HEARD_TTL then table.remove(s.inbox, i) end end
 	for kind, prompt in pairs(s.prompts) do if now - prompt.at > prompt.ttl then s.prompts[kind] = nil end end
+	s.coords = asked(s.inbox, "where") and coords() or nil
+	s.wiped = s.dead and s.group ~= "none" and wiped(s)
 
 	local target = s.target
 	s.now, s.day = now, math.floor((time or os.time)() / 86400)
@@ -322,9 +389,10 @@ function C.Snapshot(box)
 	return s
 end
 
--- A prompt waiting on the player (ready check, loot roll, resurrect, trade, duel, invite, summon, queue pop).
-function C.Prompt(kind, from, ttl)
-	state.prompts[kind] = { at = GetTime(), from = filled(plain(from)), ttl = tonumber(plain(ttl)) or 60 }
+-- A prompt waiting on the player (ready check, loot roll, resurrect, trade, duel, invite, summon, queue pop), or
+-- something that just happened (a level, a boss, a drop, a buff). fills: token values only it knows ({ level = 18 }).
+function C.Prompt(kind, from, ttl, fills)
+	state.prompts[kind] = { at = GetTime(), from = filled(plain(from)), ttl = tonumber(plain(ttl)) or 60, fills = fills }
 	bump()
 end
 
@@ -337,7 +405,7 @@ end
 local function anyOf(list, words) for _, word in ipairs(list) do if words[word] then return true end end end
 
 local function matches(rule, lower, words, count, question)
-	if rule.question and not question then return false end
+	if rule.question and not question or rule.unless and anyOf(rule.unless, words) then return false end
 	for _, part in ipairs(rule.has or {}) do if lower:find(part, 1, true) then return true end end
 	if not rule.any then return not rule.has end
 	return not (rule.max and count > rule.max) and anyOf(rule.any, words) and (not rule.with or anyOf(rule.with, words))
@@ -410,6 +478,8 @@ for _, event in ipairs({ "GROUP_ROSTER_UPDATE", "FRIENDLIST_UPDATE", "GUILD_ROST
 ns.On("BAG_UPDATE_DELAYED", function() dirty.items = true end)
 ns.On("GROUP_ROSTER_UPDATE", function() dirty.quest = true end)
 for _, event in ipairs({ "PLAYER_REGEN_DISABLED", "PLAYER_REGEN_ENABLED", "PLAYER_DEAD", "PLAYER_LEVEL_UP", "PLAYER_GUILD_UPDATE" }) do ns.On(event, function() mark("self") end) end
+-- Events another client may not have: registering an unknown one is an error there.
+for _, event in ipairs({ "PLAYER_EQUIPMENT_CHANGED", "PLAYER_TALENT_UPDATE", "CHARACTER_POINTS_CHANGED", "PLAYER_SPECIALIZATION_CHANGED" }) do pcall(ns.On, event, function() mark("self") end) end
 for _, event in ipairs({ "LFG_UPDATE", "LFG_LIST_ACTIVE_ENTRY_UPDATE" }) do ns.On(event, function() mark("lfg") end) end
 ns.On("PLAYER_TARGET_CHANGED", function() mark("target") end)
 ns.On("SUPER_TRACKING_CHANGED", function() mark("quest") end)
@@ -457,6 +527,67 @@ ns.On("TRADE_SHOW", function() C.Prompt("trade", api("UnitName", "NPC"), 300) en
 ns.On("TRADE_CLOSED", function() C.Clear("trade") end)
 ns.On("LFG_PROPOSAL_SHOW", function() C.Prompt("proposal", nil, 40) end)
 for _, event in ipairs({ "LFG_PROPOSAL_FAILED", "LFG_PROPOSAL_SUCCEEDED" }) do ns.On(event, function() C.Clear("proposal") end) end
+
+-- What just happened. A handler only files a prompt: no frame, no chat box.
+ns.On("PLAYER_LEVEL_UP", function(level) C.Prompt("levelup", nil, C.REACT_TTL, { level = tonumber(plain(level)) }) end)
+pcall(ns.On, "ACHIEVEMENT_EARNED", function(id)
+	local _, name = try(GetAchievementInfo, plain(id))
+	if filled(name) then C.Prompt("achievement", nil, C.REACT_TTL, { achievement = name }) end
+end)
+
+local function encounter(won)
+	C.Clear(won and "wipe" or "bosskill")
+	C.Prompt(won and "bosskill" or "wipe", nil, C.REACT_TTL)
+end
+local hasEncounters = pcall(ns.On, "ENCOUNTER_END", function(_, _, _, _, success)
+	local result = plain(success)
+	if result ~= nil then encounter(result == 1) end
+end)
+if not hasEncounters then pcall(ns.On, "BOSS_KILL", function() encounter(true) end) end
+
+-- Loot lines are the player's own when they open the way this client's own-loot strings do ("You receive loot: ").
+local OWN_LOOT = { "LOOT_ITEM_SELF", "LOOT_ITEM_SELF_MULTIPLE", "LOOT_ITEM_PUSHED_SELF", "LOOT_ITEM_PUSHED_SELF_MULTIPLE" }
+local function ownLoot(text)
+	for _, key in ipairs(OWN_LOOT) do
+		local lead = type(_G[key]) == "string" and _G[key]:match("^(.-)%%")
+		if filled(lead) and text:sub(1, #lead) == lead then return true end
+	end
+end
+
+ns.On("CHAT_MSG_LOOT", function(text)
+	text = plain(text)
+	local link = type(text) == "string" and listening() and ownLoot(text) and text:match("|c[^|]*|Hitem:.-|h|r")
+	local name = link and filled(link:match("%[(.-)%]"))
+	if not name then return end
+	local item = C_Item or {}
+	local quality = tonumber(try(item.GetItemQualityByID, link)) or tonumber((select(3, try(item.GetItemInfo or GetItemInfo, link)))) or tonumber(link:match("|cnIQ(%d+)"))
+	if quality and quality >= C.LOOT_QUALITY then C.Prompt("looted", nil, C.REACT_TTL, { item = name }) end
+end)
+
+-- A lasting buff another player put on the player: thanks, once per caster and buff every C.THANKS_WAIT.
+local thanked = {}
+local function buffed(aura, now)
+	local source, name, duration = plain(aura.sourceUnit), filled(plain(aura.name)), plain(aura.duration)
+	if not (plain(aura.isHelpful) and name and type(source) == "string" and type(duration) == "number" and duration >= C.BUFF_MIN) then return end
+	if not api("UnitIsPlayer", source) or api("UnitIsUnit", source, "player") then return end
+	local caster, realm = api("UnitName", source)
+	local key = caster and caster .. "\0" .. name
+	if not key or now - (thanked[key] or -C.THANKS_WAIT) < C.THANKS_WAIT then return end
+	for seen, at in pairs(thanked) do if now - at >= C.THANKS_WAIT then thanked[seen] = nil end end
+	thanked[key] = now
+	C.Prompt("buffed", filled(realm) and caster .. "-" .. realm or caster, C.REACT_TTL, { buff = name })
+end
+
+ns.On("UNIT_AURA", function(token, info)
+	local added = token == "player" and type(plain(info)) == "table" and plain(info.addedAuras)
+	if type(added) ~= "table" or not listening() then return end
+	local auras, now = C_UnitAuras or {}, GetTime()
+	for _, entry in ipairs(added) do
+		entry = plain(entry)
+		local aura = type(entry) == "table" and (try(auras.GetAuraDataByAuraInstanceID, "player", plain(entry.auraInstanceID)) or entry)
+		if type(aura) == "table" then buffed(aura, now) end
+	end
+end)
 
 ns.On("MERCHANT_SHOW", function() met("vendor") end)
 ns.On("TRAINER_SHOW", function() met("trainer") end)

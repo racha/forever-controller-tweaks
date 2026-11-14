@@ -113,7 +113,14 @@ local function scene(changes)
 end
 -- The chat box as the player would have it: on the group's channel when grouped, else on say.
 local function home() return chatBox(world.lfgGroup and "INSTANCE_CHAT" or world.raid and "RAID" or world.group and "PARTY" or "SAY") end
-local function list(settings, text, box, results) return S.List(settings, C.Snapshot(box or home()), text or "", #(text or ""), results) end
+local function full(settings, text, box, results) return S.List(settings, C.Snapshot(box or home()), text or "", #(text or ""), results) end
+-- An empty box's first page (S.MAX rows), which the checks below are about; full() has the rows under it too.
+local function list(settings, text, box, results)
+	local rows, head, fix = full(settings, text, box, results)
+	if (text or ""):match("^%s*$") then for i = #rows, S.MAX + 1, -1 do rows[i] = nil end end
+	return rows, head, fix
+end
+local function top(rows, n) return { (unpack or table.unpack)(rows, 1, math.min(n, #rows)) } end
 local function show(rows)
 	local out = {}
 	for i, row in ipairs(rows) do out[i] = row.text .. " [" .. row.tag .. "]" end
@@ -134,6 +141,8 @@ local rows, head = list(settings)
 assert(rows[1].text == "Ready" and rows[1].category == "Ready" and rows[1].tag == "Ready" and rows[1].channel.kind == "PARTY", show(rows))
 assert(rows[2].category == "Ready" and rows[3].category == "Dungeon" and rows[3].channel.kind == "PARTY", show(rows))
 assert(head.kind == "phrases" and head.place == "The Deadmines" and #rows <= S.MAX and #rows >= S.FILL, show(rows))
+local all = full(settings)
+assert(#all > S.MAX and #all <= S.SCROLL and show(top(all, S.FILL)) == "Ready [Ready] | Not ready, one sec [Ready] | Ready when you are [Dungeon] | Wait, I'm behind [Dungeon] | On my way [Group] | Wait for me [Group]", "under the first page the rest of the pool: " .. show(all))
 world.now = world.now + 31
 assert(countOf(list(settings), "Ready") == 0, "the ready check's lines go when it times out")
 fire("READY_CHECK", "Leader-Realm", 30)
@@ -183,7 +192,7 @@ settings = scene({ quest = 166 })
 rows = list(settings)
 assert(countOf(rows, "Quest") == 2 and rows[1].text:find("|Hquest:166", 1, true), show(rows))
 S.PER_TAG = 1
-assert(countOf(list(settings), "Quest") <= S.QUEST_MAX and countOf(list(settings), "Anywhere") == 2, "the fill pass doubles a category, never past the quest cap")
+assert(countOf(full(settings), "Quest") <= S.QUEST_MAX and countOf(top(list(settings), S.FILL), "Anywhere") == 2, "the fill pass doubles a category, never past the quest cap")
 S.PER_TAG = 2
 world.quest = 0
 fire("SUPER_TRACKING_CHANGED")
@@ -242,7 +251,7 @@ assert(not find(list(settings), "need a quick mana break"), "a dungeon line stay
 
 -- Ranking and diversity: best first, two a category, no near-duplicates, the same list every time.
 settings = scene({ combat = true, mana = 10, group = true, size = 3, guild = true, units = { player = { name = "Tester", level = 24 }, target = { name = "Defias Pillager", hostile = true, level = 25 } } })
-rows = list(settings)
+rows = top(list(settings), S.FILL)
 assert(rows[1].text == "Out of mana!" and rows[2].text == "Help!" and rows[1].tag == "Combat", "what fits the moment leads its category: " .. show(rows))
 local perTag, seen = {}, {}
 for i, row in ipairs(rows) do
@@ -253,7 +262,7 @@ for i, row in ipairs(rows) do
 end
 assert(perTag.Combat == 2 and perTag.Group == 2 and perTag.Anywhere == 2 and #rows == 6, show(rows))
 assert(find(rows, "Need mana, one moment").category == "Group", "the same line from two situations shows once")
-assert(show(list(settings)) == show(rows), "deterministic")
+assert(show(top(list(settings), S.FILL)) == show(rows), "deterministic")
 world.mana = SECRET
 assert(not find(list(settings), "Out of mana!"), "a secret power value is unknown, not low")
 
@@ -269,7 +278,7 @@ assert(#C.state.inbox == 0, "secret lines, small talk, public lines not for the 
 fire("CHAT_MSG_SAY", "hey tester, wanna join us?", "Bob-Realm")
 fire("CHAT_MSG_PARTY_LEADER", "ready?", "Aria-Realm")
 fire("CHAT_MSG_PARTY", "where are you", "Cid-Realm")
-rows = list(settings)
+rows = top(list(settings), S.FILL)
 assert(rows[1].text == "Ready" and rows[2].text == "In Sentinel Hill" and countOf(rows, "Reply") == 2, "on party: one reply to each party line. " .. show(rows))
 assert(find(rows, "Reply to Bob: switch to Say").command == "/s " and not find(rows, "Yes please, invite me"), "the better reply is for say: a hint")
 rows = list(settings, "", SAY)
@@ -600,7 +609,7 @@ settings = scene({ group = true, size = 5 })
 fire("CHAT_MSG_WHISPER", "inv?", "Aria-Stormrage")
 fire("CHAT_MSG_PARTY", "ready?", "Bob-Realm")
 local toAria = chatBox("WHISPER", "Aria-Stormrage")
-rows = list(settings, "", toAria)
+rows = top(list(settings, "", toAria), S.FILL)
 assert(rows[1].text == "Sure, inviting!" and countOf(rows, "Reply") == 2 and countOf(rows, "Whisper") == 2 and not find(rows, "Ready"), show(rows))
 for _, row in ipairs(rows) do assert(not row.channel or row.channel.kind == "WHISPER", "nothing leaves the whisper: " .. row.text) end
 assert(countOf(rows, "Group") == 0 and countOf(list(settings, "", SAY), "Whisper") == 0, "group lines stay out; whisper lines stay out of say")
@@ -644,6 +653,153 @@ assert(list(settings, "i ne", SAY, K.Rank(settings.dictionary, "ne"))[1].text ==
 rows = list(settings, "hello wor", SAY, {})
 assert(rows[1].text == "world" and rows[1].mode == "word", "a learned next word completes while it is typed: " .. show(rows))
 
+-- Real answers: a question the game can answer gets the answer first, on the channel it came on. A secret value
+-- (or a missing API) gives no answer row.
+C_SpecializationInfo = { GetSpecialization = function() return world.spec and 2 end, GetSpecializationInfo = function() return 257, world.spec.name, "", 0, world.spec.role end }
+function GetAverageItemLevel() return world.ilvl, world.ilvl end
+C_Map = { GetBestMapForUnit = function() return world.map and 1456 end, GetPlayerMapPosition = function() local map = world.map return { GetXY = function() return map[1], map[2] end } end }
+function UnitExists(unit) return world.units[unit] ~= nil end
+function UnitIsDeadOrGhost(unit) if unit == "player" then return world.dead end return world.units[unit] and world.units[unit].dead end
+local HOLY = { name = "Holy", role = "HEALER" }
+local function asked(changes, line, kind, sender, box)
+	local answers = scene(changes)
+	fire(kind or "CHAT_MSG_WHISPER", line, sender or "Aria-Stormrage")
+	return list(answers, "", box or chatBox("WHISPER", "Aria-Stormrage"))
+end
+local function priestless(rows) for _, row in ipairs(rows) do if row.text:find("Priest") then return false end end return true end
+rows = asked({ spec = HOLY }, "what lvl?")
+assert(rows[1].text == "24 Holy Priest" and rows[1].tag == "Reply" and rows[1].channel.kind == "WHISPER" and rows[1].channel.target == "Aria-Stormrage" and rows[2].text == "Level 24 Priest", show(rows))
+assert(asked({}, "ur spec?")[1].text == "Level 24 Priest", "no specialization: the class only")
+GetNumTalentTabs, GetTalentTabInfo = function() return 3 end, function(i) return ({ "Discipline", "Holy", "Shadow" })[i], "icon", ({ 0, 5, 21 })[i] end
+assert(asked({}, "what class are you")[1].text == "24 Shadow Priest", "an older client: the talent tree with the most points")
+GetNumTalentTabs, GetTalentTabInfo = nil, nil
+assert(asked({ spec = { name = SECRET } }, "what spec?")[1].text == "Level 24 Priest", "a secret spec name: the class only")
+rows = asked({ spec = HOLY, units = { player = { name = "Tester", level = SECRET, player = true, friend = true } } }, "what lvl?")
+assert(priestless(rows), "a secret level: no answer row. " .. show(rows))
+assert(priestless(asked({ spec = HOLY }, "what lvl?", "CHAT_MSG_SAY", "Bob-Realm", SAY)), "only lines aimed at the player")
+
+local BLUFF = { zone = "Thunder Bluff", subzone = "", resting = true, map = { 0.392, 0.551 } }
+rows = asked(BLUFF, "where r u?")
+assert(rows[1].text == "Thunder Bluff, near 39, 55" and rows[1].channel.kind == "WHISPER", "where, with the map position, not a ready check: " .. show(rows))
+local partyWhere = { group = true, size = 3, zone = "Westfall", subzone = "Sentinel Hill", map = { 0.5, 0.47 } }
+rows = asked(partyWhere, "wya", "CHAT_MSG_PARTY", "Cid-Realm", chatBox("PARTY"))
+assert(rows[1].text == "Sentinel Hill, near 50, 47" and rows[1].channel.kind == "PARTY", "group chat is answered in group chat: " .. show(rows))
+assert(asked(BLUFF, "loc?")[1].text == "Thunder Bluff, near 39, 55")
+rows = asked({ zone = "Thunder Bluff", subzone = "", map = { SECRET, 0.5 } }, "where are you")
+assert(rows[1].text == "In Thunder Bluff" and not find(rows, "Thunder Bluff, near 50, 50"), "a secret position: the zone only. " .. show(rows))
+assert(asked({ zone = "Thunder Bluff", subzone = "" }, "where are you")[1].text == "In Thunder Bluff", "no map API answer: the zone only")
+
+local LEFT = { objective("3/8 Defias Pillager slain", 3, 8) }
+rows = asked({ quest = 166, objectives = LEFT }, "how many left?")
+assert(rows[1].text == "3/8 Defias Pillager" and rows[1].channel.kind == "WHISPER", "the tracked quest's objective: " .. show(rows))
+assert(asked({ quest = 166, objectives = LEFT, questDone = true }, "done yet?")[1].text == "Done, turning in")
+rows = asked({ quest = 166, objectives = { { text = SECRET, finished = false, numFulfilled = SECRET, numRequired = SECRET } } }, "how far are you?")
+assert(not find(rows, "Done, turning in") and not rows[1].text:find("/") and not rows[1].text:find("Still need"), "secret objectives: no answer row. " .. show(rows))
+
+local tankOrHeal = function(changes) return asked(changes, "tank or heal?", "CHAT_MSG_PARTY", "Cid-Realm", chatBox("PARTY")) end
+rows = tankOrHeal({ group = true, size = 3, spec = HOLY, role = "HEALER" })
+assert(rows[1].text == "Healer, Holy Priest" and rows[1].channel.kind == "PARTY", show(rows))
+assert(tankOrHeal({ group = true, size = 3, spec = { name = "Protection", role = "TANK" } })[1].text == "Tank, Protection Priest", "no group role: the spec's")
+assert(tankOrHeal({ group = true, size = 3, role = "DAMAGER" })[1].text == "DPS", "no spec: the group role alone")
+rows = tankOrHeal({ group = true, size = 3, role = SECRET })
+assert(not find(rows, "DPS") and not find(rows, "Healer"), "a secret role and no spec: no answer row. " .. show(rows))
+
+assert(asked({ ilvl = 52.7 }, "what's ur ilvl?")[1].text == "Item level 52")
+assert(not find(asked({ ilvl = SECRET }, "what's ur ilvl?"), "Item level 52"), "a secret item level: no row")
+
+-- Whole lines while typing: from three characters, the player's own lines first, then the situation's, by the
+-- start of each word, forgiving one slip per word past its third letter.
+settings = scene()
+S.Sent(settings, "anyone up for a quick deadmines run", C.Snapshot(SAY))
+rows = list(settings, "any", SAY, {})
+assert(rows[1].text == "anyone up for a quick deadmines run" and rows[1].category == "Yours" and rows[1].mode == "line", show(rows))
+assert(rows[2].mode == "line" and rows[2].category ~= "Yours" and rows[2].text:find("^Anyone"), "then a phrase that fits here: " .. show(rows))
+text, cur = S.Apply(rows[2], "any", 3)
+assert(text == rows[2].text and cur == #text, "R1 replaces the text with the line")
+rows = list(settings, "anyoen", SAY, {})
+assert(rows[1].text == "anyone up for a quick deadmines run" and rows[2].text:find("^Anyone"), "a swapped pair still matches: " .. show(rows))
+for _, typo in ipairs({ "anyne", "anyoone", "anyome" }) do assert(list(settings, typo, SAY, {})[1].category == "Yours", "one missing, extra or wrong letter: " .. typo) end
+rows = list(settings, "an up fo", SAY, {})
+assert(rows[1].text == "for" and rows[2].text == "anyone up for a quick deadmines run", "every word by its start, after the predicted word: " .. show(rows))
+assert(not find(list(settings, "anyxyz", SAY, {}), "anyone up for a quick deadmines run") and not find(list(settings, "amyone", SAY, {}), "anyone up for a quick deadmines run"), "two slips, or one in the first three letters: no match")
+assert(#list(settings, "an", SAY, {}) == 0, "under three characters: no lines")
+rows = list(settings, "anyone ")
+assert(rows[1].mode == "next" and rows[1].text == "up" and rows[5].category == "Yours", "after a space the next word still leads: " .. show(rows))
+S.Sent(settings, "on my way to deadmines", C.Snapshot(SAY))
+rows = list(settings, "on my wa", SAY, {})
+assert(rows[1].text == "way" and rows[1].mode == "word" and rows[2].text == "on my way to deadmines" and rows[2].mode == "line", "a predicted word, then the lines: " .. show(rows))
+S.SCAN = 1
+rows = list(settings, "any", SAY, {})
+assert(#rows == 1 and rows[1].category == "Yours", "the scan stops at S.SCAN lines; the player's own come first: " .. show(rows))
+S.SCAN = 160
+
+-- What just happened: short-lived lines for a level, a boss, a wipe, a drop and a buff.
+settings = scene()
+fire("PLAYER_LEVEL_UP", 25)
+rows = list(settings)
+assert(rows[1].text == "Ding 25!" and rows[1].tag == "Level" and rows[2].text == "Level 25, finally!", show(rows))
+world.now = world.now + C.REACT_TTL + 1
+assert(countOf(list(settings), "Level") == 0, "and it passes")
+GetAchievementInfo = function(id) return id, "Explorer" end
+fire("ACHIEVEMENT_EARNED", 6)
+assert(list(settings)[1].text == "Got Explorer!")
+GetAchievementInfo = nil
+
+settings = scene(DUNGEON)
+fire("ENCOUNTER_END", 1, "Edwin VanCleef", 1, 5, 1)
+rows = list(settings)
+assert(rows[1].text == "gg" and rows[1].tag == "Boss" and rows[1].channel.kind == "PARTY" and find(rows, "Nice one all"), show(rows))
+fire("ENCOUNTER_END", 1, "Edwin VanCleef", 1, 5, 0)
+rows = list(settings)
+assert(rows[1].text == "Wipe, run back" and rows[1].tag == "Wipe" and find(rows, "What went wrong?") and countOf(rows, "Boss") == 0, "a failed pull: " .. show(rows))
+world.now = world.now + C.REACT_TTL + 1
+assert(countOf(list(settings), "Wipe") == 0, "and it passes")
+fire("ENCOUNTER_END", 1, "Edwin VanCleef", 1, 5, SECRET)
+assert(countOf(list(settings), "Boss") == 0 and countOf(list(settings), "Wipe") == 0, "a secret result: nothing")
+
+local fallen = { player = { name = "Tester", level = 24, player = true }, party1 = { name = "Pim", dead = true }, party2 = { name = "Cid", dead = true } }
+rows = list(scene({ group = true, size = 3, dead = true, units = fallen }))
+assert(rows[1].text == "Wipe, run back" and rows[1].tag == "Dead", "everyone dead, no boss: the dead lines lean wipe. " .. show(rows))
+fallen.party2.dead = false
+assert(not find(list(scene({ group = true, size = 3, dead = true, units = fallen })), "Wipe, run back"), "someone standing: no wipe")
+
+LOOT_ITEM_SELF = "You receive loot: %s."
+settings = scene()
+fire("CHAT_MSG_LOOT", "You receive loot: |cnIQ4:|Hitem:5191::|h[Cruel Barb]|h|r.")
+rows = list(settings)
+assert(rows[1].text == "Finally got Cruel Barb!" and rows[1].tag == "Loot", show(rows))
+settings = scene()
+fire("CHAT_MSG_LOOT", "You receive loot: |cnIQ1:|Hitem:2589::|h[Linen Cloth]|h|r.")
+fire("CHAT_MSG_LOOT", "Bob receives loot: |cnIQ4:|Hitem:5191::|h[Cruel Barb]|h|r.")
+assert(countOf(list(settings), "Loot") == 0, "not a common item, not someone else's")
+
+local auras = {}
+C_UnitAuras = { GetAuraDataByAuraInstanceID = function(_, id) return auras[id] end }
+local function buff(aura)
+	auras[7] = aura
+	fire("UNIT_AURA", "player", { addedAuras = { { auraInstanceID = 7 } } })
+end
+local FORT = { name = "Power Word: Fortitude", sourceUnit = "target", isHelpful = true, duration = 1800 }
+local morwen = { player = { name = "Tester", level = 24, player = true }, target = { name = "Morwen", player = true, friend = true } }
+settings = scene({ units = morwen })
+buff(FORT)
+rows = list(settings)
+assert(rows[1].text == "Thanks for the Power Word: Fortitude, Morwen!" and rows[1].tag == "Buff" and rows[1].channel.kind == "SAY", show(rows))
+rows = list(settings, "", chatBox("WHISPER", "Morwen"))
+assert(rows[1].text == "Thanks for the Power Word: Fortitude!" and rows[1].channel.target == "Morwen", "or in a whisper to the caster: " .. show(rows))
+C.Clear("buffed")
+world.now = world.now + C.THANKS_WAIT - 1
+buff(FORT)
+assert(not C.state.prompts.buffed, "the same caster's same buff: once per five minutes")
+world.now = world.now + 1
+buff(FORT)
+assert(C.state.prompts.buffed, "then again")
+C.Clear("buffed")
+for _, other in ipairs({ { name = "Renew", sourceUnit = "target", isHelpful = true, duration = 15 }, { name = "Inner Fire", sourceUnit = "player", isHelpful = true, duration = 600 }, { name = SECRET, sourceUnit = "target", isHelpful = true, duration = 1800 }, { name = "Thorns", sourceUnit = "target", isHelpful = true, duration = SECRET } }) do
+	buff(other)
+	assert(not C.state.prompts.buffed, "no thanks for a short, own or secret buff")
+end
+
 print("suggest_spec: engine ok")
 
 -- The view (ForeverControllerTweaks_Keyboard/View.lua) on a small frame stub: every widget method (a capitalised name) is a no-op unless
@@ -675,7 +831,12 @@ function GetCurrentKeyBoardFocus() return focus end
 function PlaySound() end
 function debugprofilestop() return world.now * 1000 end
 function IsSecureCmd() return false end
-function ExecuteFrameScript(edit, script) if script == "OnEnterPressed" then enters = enters + 1 edit.text, edit.cursor = "", 0 end end
+local chatStyle, scripts = "im", {}
+function GetCVar(name) return name == "chatStyle" and chatStyle or nil end
+function ExecuteFrameScript(edit, script)
+	scripts[#scripts + 1] = script
+	if script == "OnEnterPressed" then enters = enters + 1 edit.text, edit.cursor = "", 0 end
+end
 SOUNDKIT = {}
 
 -- A chat EditBox: text, a byte cursor, and the chat type the client keeps as an attribute.
@@ -704,9 +865,9 @@ focus = edit
 V.Observe()
 V.Tick()
 local state = V.State()
-local last = state.suggestions[#state.suggestions]
-assert(last.mode == "switch" and last.text == "Dungeon lines: switch to Party" and state.suggestions[1].category == "Anywhere", "on say in a dungeon party: " .. show(state.suggestions))
-for _ = 1, #state.suggestions do V.Press("PADDDOWN") end
+local switchRow, switchAt = find(state.suggestions, "Dungeon lines: switch to Party")
+assert(switchRow and switchRow.mode == "switch" and switchAt <= S.FILL and state.suggestions[1].category == "Anywhere", "on say in a dungeon party: " .. show(state.suggestions))
+for _ = 1, switchAt do V.Press("PADDDOWN") end
 V.Press("PADRSHOULDER")
 assert(edit.text == "/p ", "R1 on the switch row types the party's command; the chat box makes it its channel: " .. edit.text)
 edit.text, edit.cursor = "", 0
@@ -760,6 +921,72 @@ edit:SetText("can ")
 V.Tick()
 for _ = 1, 3 do V.Press("PADRSHOULDER") end
 assert(edit.text == "can you help me " and V.State().suggestions[1].mode == "next", "R1 again and again builds a sentence, a space after each word: " .. edit.text)
+
+-- Past the first screen: D-pad down scrolls, arrows show rows above and below, the wheel scrolls too, R1 takes the
+-- focused row wherever it is.
+local scrolled = newChat("PARTY")
+focus = scrolled
+V.Observe()
+V.Tick()
+local tab = V.Frame().tab
+state = V.State()
+assert(#state.suggestions > S.MAX and state.scroll == 0 and not tab.inner.up.shown and tab.inner.down.shown, "a long list: an arrow below only. " .. show(state.suggestions))
+for _ = 1, S.MAX do V.Press("PADDDOWN") end
+assert(V.State().row == S.MAX and V.State().scroll == S.MAX - 6 and tab.inner.rows[6].item == state.suggestions[S.MAX] and tab.inner.up.shown, "down past the last shown row scrolls")
+tab.scripts.OnMouseWheel(tab, 1)
+assert(V.State().scroll == S.MAX - 7 and V.State().row == S.MAX - 1, "the wheel scrolls up; the focus stays on a shown row")
+V.Press("PADRSHOULDER")
+assert(scrolled.text == state.suggestions[S.MAX - 1].text, "R1 takes the scrolled row: " .. scrolled.text)
+
+-- Send and Close leave a chat box only through the game's own B: out of combat, while SmartNavigation works on its
+-- chat frame, the press goes on to that binding; our code never clears the focus.
+local propagate = {}
+V.Frame().SetPropagateKeyboardInput = function(_, on) propagate[#propagate + 1] = on end
+local chatFrame = new("Frame")
+local leaving = newChat("PARTY")
+leaving.chatFrame = chatFrame
+SmartNavigation = { bindingActive = true, activeInfo = { frame = chatFrame } }
+focus = leaving
+V.Observe()
+leaving:SetText("on my way")
+local sends = enters
+V.Press("PAD2")
+assert(enters == sends + 1 and propagate[1] == true and #propagate == 1, "Send on B: sent, and the press goes on to the game's Back")
+focus = nil
+V.Observe()
+assert(not V.Frame():IsShown() and propagate[2] == false, "the focus left by Blizzard's code: closed, the pad is ours again")
+focus = leaving
+V.Observe()
+leaving:SetText("never mind")
+V.Press("PAD4")
+assert(#propagate == 2 and leaving.text == "never mind" and focus == leaving and not V.Frame():IsShown(), "Close on Y: the box keeps its line and the focus")
+V.Observe()
+assert(not V.Frame():IsShown(), "and the keyboard stays closed until the focus leaves")
+focus = nil
+V.Observe()
+focus = leaving
+V.Observe()
+chatStyle = "classic"
+sends = enters
+V.Press("PAD2")
+assert(enters == sends and #propagate == 2 and V.Frame():IsShown() and leaving.text == "never mind", "Chat Style Classic: Enter would hide the box in our call, so Send is refused with a note")
+chatStyle = "im"
+SmartNavigation = nil
+-- Bag search: its Enter is EditBox_ClearFocus, whose focus-lost hook changes the Gamepad UI's bindings. B goes on to
+-- its footer's Back while the frame manager works on the box; nothing of the box runs in our call.
+local bagBox = newChat()
+GamepadMode = { FrameControlsManager = { isUIFocused = true, focusedFrame = bagBox } }
+focus = bagBox
+V.Observe()
+bagBox:SetText("potion")
+local ran = #scripts
+V.Press("PAD2")
+assert(#scripts == ran and propagate[3] == true and bagBox.text == "potion", "bag search Send on B: no Enter in our call, the press goes on to the game's Back")
+focus = nil
+V.Observe()
+assert(propagate[4] == false and not V.Frame():IsShown())
+GamepadMode = nil
+for _, name in ipairs(scripts) do assert(name == "OnEnterPressed", "no box handler but a chat box's Enter ever runs: " .. name) end
 
 -- The field is taken when the box takes the focus: a bag search shows items and runs no word search.
 edit = newChat()
@@ -991,6 +1218,14 @@ assert(opens(addonBox), "another addon's block is not ours")
 fire("ADDON_ACTION_FORBIDDEN", "ForeverControllerTweaks", "Protected()")
 assert(not opens(addonBox) and saved.blocked[1] == "someaddonsearchbox" and #notes == 4, "blocked within a second of typing: learned, closed, said")
 assert(not opens(inside(nil, "SomeAddonSearchBox")) and #notes == 5, "a new frame of that name (after a reload) is denied from the saved list")
+local chatEdit = inside({ GetName = function() return "ChatFrame1" end }, "ChatFrame1EditBox")
+assert(opens(chatEdit))
+V.Press("PAD1")
+fire("ADDON_ACTION_FORBIDDEN", "ForeverControllerTweaks", "Protected()")
+assert(opens(chatEdit) and saved.blocked[1] == "someaddonsearchbox" and #notes == 5, "a chat box is never denied")
+table.insert(saved.blocked, 1, "chatframe3editbox chatframe3 uiparent")
+fire("FCT_READY")
+assert(saved.blocked[1] == "someaddonsearchbox" and #saved.blocked == 1, "a chat box saved by an older version is dropped on load")
 local slow = inside(nil, "SlowBox")
 assert(opens(slow))
 V.Press("PAD1")

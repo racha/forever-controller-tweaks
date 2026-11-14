@@ -227,11 +227,17 @@ for _, name in ipairs({ "EnableGamePadButton", "EnableGamePadStick", "SetPropaga
 end
 unpack = unpack or table.unpack
 UIParent = new("Frame")
-function CreateFrame(kind, _, parent) return new(kind, parent) end
+local made = {}
+function CreateFrame(kind, _, parent)
+	local f = new(kind, parent)
+	made[#made + 1] = f
+	return f
+end
 function GetTime() return now end
 function InCombatLockdown() return combat end
 function GetCurrentKeyBoardFocus() return focus end
 function PlaySound() sounds = sounds + 1 end
+function GetCVar(name) return name == "chatStyle" and "im" or nil end
 function debugprofilestop() return now * 1000 end
 function IsSecureCmd(cmd) return cmd:lower() == "/cast" or cmd:lower() == "/target" end
 function UnitAffectingCombat() return combat end
@@ -326,9 +332,11 @@ V.Press("PAD2")
 assert(enters == 0 and edit.text == "/cast Fireball", "a secure command is not sent")
 edit.text, edit.cursor = "zorbly greetings", 16
 V.Press("PAD2")
-assert(enters == 1 and ns.db.keyboard.dictionary.zorbly == 1, "sent through OnEnterPressed; its words learned")
+assert(enters == 0 and edit.text == "zorbly greetings" and ns.db.keyboard.dictionary.zorbly == 1, "a box that is not chat: its Enter never runs in our call (it ends the focus); its words learned")
 V.Observe()
-assert(not frame:IsShown() and V.Box() == nil, "chat clears focus after Enter: the keyboard closes")
+assert(not frame:IsShown() and V.Box() == nil and focus == edit, "the keyboard closes; the box keeps the focus")
+focus = nil
+V.Observe()
 
 -- Combat: opening, typing and closing change no input settings.
 combat = true
@@ -337,7 +345,9 @@ V.Observe()
 assert(frame:IsShown(), "opens in combat")
 V.Press("PAD1")
 V.Press("PAD4")
-assert(escapes == 1 and not frame:IsShown(), "Close runs OnEscapePressed and hides")
+assert(escapes == 0 and not frame:IsShown() and focus == edit, "Close hides; the box's Escape never runs in our call")
+focus = nil
+V.Observe()
 assert(#inputCalls == created, "no input-setting call after creation")
 combat = false
 
@@ -346,6 +356,18 @@ ns.db.keyboard.open = "controller"
 focus = newBox()
 V.Observe()
 assert(not frame:IsShown(), "controller mode needs a pad press first")
+local tracker
+for _, f in ipairs(made) do if f.scripts.OnEvent then tracker = f end end
+tracker.scripts.OnEvent(tracker, "GLOBAL_MOUSE_DOWN")
+V.Observe()
+assert(not frame:IsShown(), "a tap without the Touch module: still closed")
+ns.Touch = { Config = function() return { enabled = true, show = "never" } end }
+V.Observe()
+assert(not frame:IsShown(), "a tap with the touch bars set to never: still closed")
+ns.Touch.Config = function() return { enabled = true, show = "gamepad" } end
+V.Observe()
+assert(frame:IsShown(), "a tap (a mouse click on Steam Link) with the touch bars on opens it")
+ns.Touch = nil
 ns.db.keyboard.open = "always"
 V.Observe()
 assert(frame:IsShown())

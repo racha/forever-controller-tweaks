@@ -10,9 +10,12 @@ local P = K.Library
 local S = {}
 K.Suggest = S
 
--- At most MAX lines, PER_TAG a category (twice that only to reach FILL lines), QUEST_MAX quest lines always.
-S.MAX, S.FILL, S.PER_TAG, S.QUEST_MAX, S.POOL, S.LEARNED = 8, 6, 2, 2, 200, 20
+-- At most MAX lines, PER_TAG a category (twice that only to reach FILL lines), QUEST_MAX quest lines always; below
+-- them, in an empty chat box, the rest of the pool up to SCROLL rows.
+S.MAX, S.FILL, S.PER_TAG, S.QUEST_MAX, S.POOL, S.LEARNED, S.SCROLL = 8, 6, 2, 2, 200, 20, 40
 S.WORDS, S.NEXT, S.EXPAND, S.COMPLETE = 4, 8, 3, 2
+-- Whole-line completion: from this many typed characters, looking at no more than SCAN lines of the pool.
+S.LINE_FROM, S.SCAN = 3, 160
 S.GRAM_CAP, S.LINE_CAP, S.USAGE_CAP, S.COUNT_MAX, S.LINE_MAX, S.RECENT, S.SEARCH_MAX = 6000, 150, 300, 100, 80, 20, 40
 -- score = context + 1.5 urgency + 0.6 personal + 0.3 recency - 0.03 order (see the design note).
 local W_URGENCY, W_PERSONAL, W_RECENCY, W_ORDER, W_FOLLOWS = 1.5, 0.6, 0.3, 0.03, 1
@@ -41,7 +44,7 @@ local VIA = { PARTY = "group", RAID = "group", INSTANCE_CHAT = "group", GUILD = 
 -- Needs that name a passing state rather than a standing condition: a line that asks for one fits the moment.
 local MOMENT = {
 	lowMana = true, lowHealth = true, elite = true, vendor = true, trainer = true, flight = true, questgiver = true, night = true, questDone = true,
-	questShared = true,
+	questShared = true, wiped = true,
 }
 local BUCKETS = { "battleground", "dungeon", "raid", "city", "group", "world" }
 local LEARN_TOKENS = { "instance", "subzone", "zone", "target" }
@@ -65,6 +68,7 @@ local function flagsOf(ctx)
 		lowMana = ctx.lowMana, lowHealth = ctx.lowHealth, canHeal = ctx.canHeal, canTank = ctx.canTank, canRes = ctx.canRes, guild = ctx.guild,
 		grouped = grouped, solo = not grouped, leader = ctx.leader, resting = ctx.resting, inside = ctx.instance ~= "none", elite = target and target.elite,
 		forming = ctx.group == "party" and ctx.size < 5 and ctx.instance == "none", questDone = quest and quest.done, questShared = quest and quest.shared,
+		wiped = ctx.wiped,
 	}
 	flags[ctx.role or "damage"] = true
 	if npc and npc.kind then flags[npc.kind] = true end
@@ -114,15 +118,17 @@ local function valuesOf(ctx)
 		target = name, friend = target and target.player and target.friendly and not target.self and name,
 		enemy = target and target.hostile and not target.dead and name, npc = npc and npc.name, zone = zone, subzone = subzone ~= zone and subzone,
 		instance = ctx.instanceName, quest = quest and (quest.link or quest.title), class = ctx.className, role = ROLE[ctx.role], player = ctx.me,
-		level = ctx.level, time = ctx.time,
+		level = ctx.level, time = ctx.time, spec = ctx.spec, myrole = ROLE[ctx.assigned or ctx.specRole], ilvl = ctx.ilvl, spot = subzone or zone,
+		coords = ctx.coords,
 	}
 end
 
 -- A line with its tokens filled, or nil when one can't be. A line that opens with a token starts with a capital.
-local function fill(template, values, from)
+-- fills: a prompt's own values, ahead of the situation's.
+local function fill(template, values, from, fills)
 	local missing = false
 	local text = template:gsub("{(%a+)}", function(token)
-		local value = token == "from" and from or values[token]
+		local value = token == "from" and from or fills and fills[token] or values[token]
 		if not value or value == "" then missing = true end
 		return tostring(value)
 	end)
@@ -192,7 +198,7 @@ local function make(env, source, line, order)
 	end
 	if field and field ~= ctx.field then return end
 	local from, thread = msg and (msg.name or msg.from and short(msg.from)), source.thread
-	local text = fill(template, env.values, from)
+	local text = fill(template, env.values, from, msg and msg.fills)
 	if not text or text:sub(1, 1) == "/" then return end
 
 	local channel, elsewhere = route(via, ctx, msg, source.rule), env.elsewhere
@@ -213,12 +219,13 @@ local function offer(env, source, lines)
 	end
 end
 
--- The player's own lines: sent twice or more in this kind of place, or (while typing) starting with what is typed.
+-- The player's own lines: sent twice or more in this kind of place, or (while typing) opening with the first letters
+-- typed, or with a token; completions() decides which of those fit.
 local function offerLearned(env, lines, typed)
 	local ctx, list = env.ctx, {}
-	local bucket = bucketOf(ctx, env.flags)
+	local bucket, lead = bucketOf(ctx, env.flags), typed and (typed:match("^[%w\128-\255']+") or ""):sub(1, 3)
 	for template, entry in pairs(lines) do
-		local fits = typed and template:lower():sub(1, #typed) == typed or not typed and entry.n >= 2 and (entry.sit == bucket or entry.sit == "anywhere")
+		local fits = typed and (template:sub(1, 1) == "{" or template:lower():sub(1, #lead) == lead) or not typed and entry.n >= 2 and (entry.sit == bucket or entry.sit == "anywhere")
 		if fits then list[#list + 1] = template end
 	end
 	table.sort(list, function(a, b)
@@ -236,11 +243,12 @@ local function offerLearned(env, lines, typed)
 end
 
 -- Every line that fits the situation and the box's channel, scored. typed (the sentence so far, lowercase) adds
--- the lines kept for continuing a sentence and the player's own lines that start the way it does.
+-- the lines kept for continuing a sentence and puts the player's own lines that may complete it first in the pool.
 local function gather(settings, ctx, typed)
 	local store, now, saved = S.Store(settings), ctx.now, settings.phrases
 	local flags = flagsOf(ctx)
 	local env = { ctx = ctx, flags = flags, values = valuesOf(ctx), usage = store.usage, pool = {} }
+	if typed then offerLearned(env, store.lines, typed) end
 
 	for _, sit in ipairs(P.SITUATIONS) do
 		local id, prompt, urgency = sit.id, nil, 0
@@ -273,8 +281,7 @@ local function gather(settings, ctx, typed)
 		end
 	end
 
-	if typed then offer(env, { tag = PHRASE_TAG, context = TYPING_WEIGHT }, P.Lines(saved, "typing")) end
-	offerLearned(env, store.lines, typed)
+	if typed then offer(env, { tag = PHRASE_TAG, context = TYPING_WEIGHT }, P.Lines(saved, "typing")) else offerLearned(env, store.lines) end
 	return env
 end
 
@@ -333,6 +340,22 @@ local function choose(pool, most)
 	end
 	table.sort(chosen, byScore)
 	return chosen
+end
+
+-- After the chosen rows, the rest of the pool (sorted by choose) best first, still without near-duplicates or a
+-- third quest line.
+local function more(rows, pool)
+	local quests = 0
+	for _, item in ipairs(rows) do if item.category == QUEST_TAG then quests = quests + 1 end end
+	for _, item in ipairs(pool) do
+		if #rows >= S.SCROLL then break end
+		local quest = item.category == QUEST_TAG
+		if not item.chosen and not (quest and quests >= S.QUEST_MAX) and not duplicate(item, rows) then
+			item.chosen, rows[#rows + 1] = true, item
+			if quest then quests = quests + 1 end
+		end
+	end
+	return rows
 end
 
 ---------------------------------------------------------------------------------------------------------------------
@@ -447,11 +470,11 @@ local function rerank(store, before, typed, results)
 		local key = word:lower()
 		local follow = follows[key] or 0
 		local continues = follow >= 1 and key:sub(1, #lower) == lower
-		ranked[i], seen[key] = { word = word, dist = result.dist, score = continues and -3 - follow or result.score - W_FOLLOWS * math.max(0, follow - 1) }, true
+		ranked[i], seen[key] = { word = word, dist = result.dist, score = continues and -3 - follow or result.score - W_FOLLOWS * math.max(0, follow - 1), predicted = continues }, true
 	end
 	for word, follow in pairs(follows) do
 		if follow >= 1 and #word > #lower and word:sub(1, #lower) == lower and not seen[word] then
-			ranked[#ranked + 1] = { word = typed:match("^%u") and word:sub(1, 1):upper() .. word:sub(2) or word, dist = #word - #lower, score = -3 - follow }
+			ranked[#ranked + 1] = { word = typed:match("^%u") and word:sub(1, 1):upper() .. word:sub(2) or word, dist = #word - #lower, score = -3 - follow, predicted = true }
 		end
 	end
 	table.sort(ranked, function(a, b)
@@ -461,17 +484,54 @@ local function rerank(store, before, typed, results)
 	return ranked
 end
 
--- Lines of the pool that continue the sentence being typed (2 characters or more of it), best first. Taking one
--- replaces the text from where that sentence starts.
-local function continuations(pool, head, taken)
+-- Whether typed from byte j on starts word from byte i on.
+local function rest(word, i, typed, j) return word:sub(i, i + #typed - j) == typed:sub(j) end
+
+-- typed is the start of word, or is after one slip past its third letter: a wrong, missing, extra or swapped letter.
+local function starts(word, typed)
+	if word:sub(1, #typed) == typed then return true end
+	if #typed < 4 or word:sub(1, 3) ~= typed:sub(1, 3) then return false end
+	local at = 4
+	while typed:sub(at, at) == word:sub(at, at) do at = at + 1 end
+	return rest(word, at + 1, typed, at + 1) or rest(word, at + 1, typed, at) or rest(word, at, typed, at + 1)
+		or typed:sub(at, at) == word:sub(at + 1, at + 1) and typed:sub(at + 1, at + 1) == word:sub(at, at) and rest(word, at + 2, typed, at + 2)
+end
+
+-- Every typed word starts the line's word in the same place.
+local function completes(want, text)
+	local at = 1
+	for _, typed in ipairs(want) do
+		local first, last = text:find("[%w\128-\255']+", at)
+		if not first or not starts(text:sub(first, last), typed) then return false end
+		at = last + 1
+	end
+	return true
+end
+
+-- Whole lines for the sentence being typed (S.LINE_FROM characters or more of it): the player's own lines first,
+-- then the situation's, best first, from the first S.SCAN lines of the pool. Taking one replaces the text from where
+-- that sentence starts.
+local function completions(pool, head, taken)
 	local list, typed, start = {}, typedOf(head)
-	if #typed < 2 then return list end
-	table.sort(pool, byScore)
-	for _, item in ipairs(pool) do
+	if #typed < S.LINE_FROM then return list end
+	local want, own, other = tokens(typed), {}, {}
+	for i = 1, math.min(#pool, S.SCAN) do
+		local item = pool[i]
 		local text = readable(item.text)
-		if #list < S.COMPLETE and #text > #typed and text:sub(1, #typed) == typed and not taken[text] then
-			taken[text], item.mode, item.start = true, "line", start
-			list[#list + 1] = item
+		if #text > #typed and not taken[text] and completes(want, text) then
+			local into = item.category == YOURS_TAG and own or other
+			into[#into + 1] = item
+		end
+	end
+	table.sort(own, byScore)
+	table.sort(other, byScore)
+	for _, found in ipairs({ own, other }) do
+		for _, item in ipairs(found) do
+			local text = readable(item.text)
+			if #list < S.COMPLETE and not taken[text] then
+				taken[text], item.mode, item.start = true, "line", start
+				list[#list + 1] = item
+			end
 		end
 	end
 	return list
@@ -523,7 +583,7 @@ end
 
 local HEADS = { words = { kind = "words" }, items = { kind = "items" }, names = { kind = "names" }, searches = { kind = "searches" }, none = { kind = "none" } }
 
-local function plainWords(list, results) for i = 1, math.min(#results, S.WORDS) do list[#list + 1] = { text = results[i].word, mode = "word", category = "Word", tag = "" } end end
+local function plainWords(list, results, first, last) for i = first or 1, math.min(#results, last or S.WORDS) do list[#list + 1] = { text = results[i].word, mode = "word", category = "Word", tag = "" } end end
 
 -- The rows for the tab, by the field (ctx.field) the box is:
 --   chat, whisper   phrases for the situation in an empty box; while typing: shorthand, words, the next word and
@@ -552,15 +612,14 @@ function S.List(settings, ctx, text, cur, results)
 		local env = gather(settings, ctx)
 		local rows, elsewhere = choose(env.pool, S.MAX), env.elsewhere
 		if elsewhere and not (rows[1] and rows[1].score >= elsewhere.score) then table.insert(rows, math.min(#rows + 1, S.FILL), hintRow(elsewhere)) end
-		rows[S.MAX + 1] = nil
-		return rows, { kind = "phrases", place = ctx.instanceName or ctx.zone or "" }
+		return more(rows, env.pool), { kind = "phrases", place = ctx.instanceName or ctx.zone or "" }
 	end
 
 	local word, first = K.WordAt(text, cur)
 	if not word and not prose then return list, head end
 	local taken, env = {}, talk and gather(settings, ctx, (typedOf(text:sub(1, cur))))
 	if not word then
-		local picks, lines = nextWords(store, text:sub(1, cur)), env and continuations(env.pool, text:sub(1, cur), taken) or NONE
+		local picks, lines = nextWords(store, text:sub(1, cur)), env and completions(env.pool, text:sub(1, cur), taken) or NONE
 		append(list, picks, 1, 4)
 		append(list, lines)
 		append(list, picks, 5)
@@ -581,10 +640,14 @@ function S.List(settings, ctx, text, cur, results)
 	end
 	append(list, expansions)
 
+	-- A word the sentence predicts goes ahead of the whole lines; other words come after them.
 	local ranked = rerank(store, text:sub(1, first - 1), word, results or NONE)
-	local fix = #expansions == 0 and K.Correction(settings.dictionary or NONE, word, ranked) and #list + 1 or nil
-	plainWords(list, ranked)
-	if pool then append(list, continuations(pool, text:sub(1, cur), taken)) end
+	local lines = pool and completions(pool, text:sub(1, cur), taken) or NONE
+	local lead = ranked[1] and ranked[1].predicted and 1 or 0
+	local fix = #expansions == 0 and K.Correction(settings.dictionary or NONE, word, ranked) and #list + 1 + (lead == 1 and 0 or #lines) or nil
+	plainWords(list, ranked, 1, lead)
+	append(list, lines)
+	plainWords(list, ranked, lead + 1)
 	return list, head, fix
 end
 

@@ -1,5 +1,23 @@
 # Changelog
 
+## 1.2.1-beta.1 — 2026-11-14
+
+### Fixes
+- Removed **Open chat**: opening chat from an addon broke the Gamepad UI ("blocked from an action" error). Tap the chat box or use the game's own chat key instead.
+- A button that still holds Open chat from 1.2.0 now does nothing and no longer errors. Pick a new action for it.
+- Keyboard: fixed "ForeverControllerTweaks_Keyboard has been blocked" (`SetPreferredGamepadInteractTarget`) after using bag search and closing it. The keyboard no longer presses a box's Enter or Escape itself.
+- Keyboard: **B** after Send or Close leaves the chat box or bag search through the game's own Back, so the box closes too. Close (Y) keeps the box and its text.
+- Keyboard: Send in chat needs Chat Style **IM** (Options → Social). With Classic it says so; close the keyboard and press A to send.
+- Keyboard: tapping a text box on screen (Steam Link) opens the keyboard while your touch bars are on.
+- Keyboard: chat can no longer end up on the "needs a real keyboard" list.
+
+### Added
+- **Toggle FPS** action in the picker's Misc category: shows or hides the game's framerate counter. Works on face, D-pad and paddle buttons, touch buttons and ring slots.
+- **Scrolling suggestions:** the list goes on past the first screen, up to 40 rows. Scroll with the D-pad or the mouse wheel; arrows show when there's more.
+- **Real answers:** when someone asks "what lvl?", "what spec?", "where r u?", "tank or heal?", "how far?" or "ilvl?", the top suggestion is your actual answer: "18 Restoration Shaman", "Thunder Bluff, near 39, 55", "2/3 Kuz's Skull", "Item level 24".
+- **Whole-line completion:** type 3 letters and get full lines, your own sent lines first, then phrases for where you are. One typo per word is forgiven ("anyoen" still finds "anyone").
+- **Reactions:** short-lived lines for what just happened: level up ("Ding 19!"), an achievement, a boss kill ("gg") or wipe ("Wipe, run back"), a rare or better drop, and a buff another player cast on you ("Thanks for the Fortitude!", once per player and buff every 5 minutes).
+
 ## 1.2.0-beta.1 — 2026-11-14
 
 ### Modules

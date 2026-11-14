@@ -212,21 +212,23 @@ check(entry("game:targetenemy").payload.text == "/targetenemy", "slash command a
 check(not find(Actions.Catalog(), "game:character"), "missing Blizzard button: no entry")
 check(entry("game:bags").payload.icon == "INV_Misc_Bag_08", "macro icon is the bare icon name")
 
--- Open chat: our own plain button, clicked like the Blizzard ones; its click opens the chat box (OpenChat("")).
-local chat = entry("game:chat")
-check(chat and chat.category == "Windows" and chat.name == "Open chat" and chat.payload.text == "/click ForeverControllerTweaksOpenChat", "Open chat: a Windows game action clicking our button")
-check(Actions.TextFor("game:chat") == "/click ForeverControllerTweaksOpenChat", "Open chat: the same text for rings and touch buttons")
-local opened = {}
-ChatFrameUtil = { OpenChat = function(text, frame) opened[#opened + 1] = { text, frame } end }
-ForeverControllerTweaksOpenChat.scripts.OnClick(ForeverControllerTweaksOpenChat, "LeftButton")
-check(#opened == 1 and opened[1][1] == "" and opened[1][2] == nil, "the click opens chat on its current chat type")
-ChatFrameUtil = nil
-ChatFrame_OpenChat = function(text) opened[#opened + 1] = { text } end
-ForeverControllerTweaksOpenChat.scripts.OnClick(ForeverControllerTweaksOpenChat, "LeftButton")
-check(#opened == 2 and opened[2][1] == "", "without ChatFrameUtil: the deprecated ChatFrame_OpenChat")
-ChatFrame_OpenChat = nil
-ForeverControllerTweaksOpenChat.scripts.OnClick(ForeverControllerTweaksOpenChat, "LeftButton")
-check(#opened == 2, "neither API: the click does nothing")
+-- Toggle FPS: our own plain button, clicked like the Blizzard ones; FramerateFrame:Toggle, else ToggleFramerate.
+-- Open chat is gone: no entry, no button, and no text for an old saved cell.
+local fps = entry("game:fps")
+check(fps and fps.category == "Misc" and fps.name == "Toggle FPS" and fps.payload.text == "/click ForeverControllerTweaksToggleFPS" and fps.payload.icon == "INV_Misc_PocketWatch_01", "Toggle FPS: a Misc game action clicking our button")
+check(Actions.TextFor("game:fps") == "/click ForeverControllerTweaksToggleFPS", "Toggle FPS: the same text for rings and touch buttons")
+check(not find(Actions.Catalog(), "game:chat") and Actions.TextFor("game:chat") == nil and ForeverControllerTweaksOpenChat == nil, "Open chat removed")
+local toggled = 0
+FramerateFrame = { Toggle = function(self) toggled = toggled + (self == FramerateFrame and 1 or 100) end }
+ForeverControllerTweaksToggleFPS.scripts.OnClick(ForeverControllerTweaksToggleFPS, "LeftButton")
+check(toggled == 1, "the click toggles the framerate frame")
+FramerateFrame = {}
+ToggleFramerate = function() toggled = toggled + 10 end
+ForeverControllerTweaksToggleFPS.scripts.OnClick(ForeverControllerTweaksToggleFPS, "LeftButton")
+check(toggled == 11, "no Toggle method: ToggleFramerate")
+FramerateFrame, ToggleFramerate = nil, nil
+ForeverControllerTweaksToggleFPS.scripts.OnClick(ForeverControllerTweaksToggleFPS, "LeftButton")
+check(toggled == 11, "neither API: the click does nothing")
 
 -- Registry: Ann makes FCT:Bags, Bob reuses it, it lives while either character uses it.
 check(Actions.Assign(FIRST, entry("game:bags")), "Ann assigns Bags")

@@ -36,12 +36,13 @@ local RANDOM_MOUNT_ACTION, RANDOM_MOUNT_SPELL = 268435455, 150544
 
 Actions.CATEGORIES = { "Spells", "Items", "Mounts", "Macros", "Movement", "Targeting", "Combat", "Windows", "Misc", "AddOns", "Rings" }
 
--- Open chat: no macro command opens the chat box and restricted code can't run the OPENCHAT binding, so the entry
--- clicks this plain button. Opening chat isn't protected; the box opens on its current chat type, as Enter does.
-local openChat = CreateFrame("Button", "ForeverControllerTweaksOpenChat", UIParent)
-openChat:SetScript("OnClick", function()
-	local open = ChatFrameUtil and ChatFrameUtil.OpenChat or ChatFrame_OpenChat
-	if open then open("") end
+-- Toggle FPS: no macro command shows the framerate, so the entry clicks this plain button. The framerate frame is a
+-- display only (no gamepad focus, nothing protected). There is no Open chat: opening the chat box from addon code
+-- taints the Gamepad UI's focus stack (the edit box takes gamepad focus).
+local toggleFPS = CreateFrame("Button", "ForeverControllerTweaksToggleFPS", UIParent)
+toggleFPS:SetScript("OnClick", function()
+	if FramerateFrame and FramerateFrame.Toggle then return FramerateFrame:Toggle() end
+	if ToggleFramerate then ToggleFramerate() end
 end)
 
 -- Game commands. short = macro name after "FCT:" (macro names hold 16 characters). button = a Blizzard button
@@ -93,7 +94,6 @@ local GAME = {
 	{ "Windows", "calendar", "Calendar", "INV_Misc_Note_01", button = "GameTimeFrame", short = "Calendar" },
 	{ "Windows", "shop", "Shop", "INV_Misc_Coin_01", button = "StoreMicroButton", short = "Shop" },
 	{ "Windows", "gamemenu", "Game menu", "INV_Misc_Gear_01", button = "MainMenuMicroButton", short = "GameMenu" },
-	{ "Windows", "chat", "Open chat", "INV_Letter_15", button = "ForeverControllerTweaksOpenChat", short = "Chat" },
 
 	{ "Misc", "dismount", "Dismount", "Ability_Mount_RidingHorse", text = "/dismount", short = "Dismount" },
 	{ "Misc", "leavevehicle", "Leave vehicle", "Spell_ChargeNegative", text = "/leavevehicle", short = "LeaveVehicle" },
@@ -103,6 +103,7 @@ local GAME = {
 	{ "Misc", "dance", "Dance", "Spell_Holy_Heal", text = "/dance", short = "Dance" },
 	{ "Misc", "bow", "Bow", "Spell_Holy_Heal", text = "/bow", short = "Bow" },
 	{ "Misc", "hello", "Hello", "Spell_Holy_Heal", text = "/hello", short = "Hello" },
+	{ "Misc", "fps", "Toggle FPS", "INV_Misc_PocketWatch_01", button = "ForeverControllerTweaksToggleFPS", short = "FPS" },
 }
 for i = 0, 8 do
 	local name = i == 0 and "Clear raid marker" or ("Raid marker " .. i)
