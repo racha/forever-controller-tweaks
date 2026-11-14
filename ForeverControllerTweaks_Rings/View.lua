@@ -18,7 +18,7 @@ local L = UI.L
 local View = {}
 Rings.View = View
 
-L.RINGS_AIM = "Aim, release to use. Centre cancels."
+L.RINGS_AIM = "Aim, then let go or press A to use. B cancels."
 L.RINGS_TAP = "Tap a slot to use it, anywhere else to close."
 
 local GEO = Rings.GEO
@@ -258,7 +258,8 @@ display:SetScript("OnUpdate", function(_, elapsed)
 	if id ~= drawn.id or mode ~= drawn.mode or side ~= drawn.side then draw(id, mode, side) end
 	local ring = drawn.ring
 	if not ring then return end
-	if mode == "hold" then focus(stickSlot(ring.count)) end
+	-- Back in the middle, the pick the stick keys kept (Rings.lua _key) stays lit until it fires.
+	if mode == "hold" then focus(stickSlot(ring.count) or frame:GetAttribute("ps-pick")) end
 	if dirty then
 		dirty = false
 		for i = 1, ring.count do if views[i] then drawStates(views[i]) end end

@@ -21,6 +21,8 @@ S.GRAM_CAP, S.LINE_CAP, S.USAGE_CAP, S.COUNT_MAX, S.LINE_MAX, S.RECENT, S.SEARCH
 local W_URGENCY, W_PERSONAL, W_RECENCY, W_ORDER, W_FOLLOWS = 1.5, 0.6, 0.3, 0.03, 1
 local MATCH_BONUS, REPLY_WEIGHT, YOURS_WEIGHT, TYPING_WEIGHT, ALIKE, FRESH_BONUS, FRESH_TIME = 0.15, 0.7, 0.5, 0.3, 0.75, 0.2, 60
 local REPLY_HALF_LIFE, GREET_TIME, RECENCY_DAYS, OWN = 45, 120, 7, 3
+-- The player's quick messages (Settings): above every other line, in the situations' order (anywhere last).
+local OWN_SCORE = 100
 local QUEST_TAG, REPLY_TAG, YOURS_TAG, PHRASE_TAG, NEXT_TAG, ITEM_TAG, RECENT_TAG = "Quest", "Reply", "Yours", "Phrase", "Next", "Item", "Recent"
 -- Fields: chat phrases and replies only where the player talks; the next word also in other free text; a typed
 -- search is remembered for its kind of box.
@@ -203,12 +205,12 @@ local function make(env, source, line, order)
 
 	local channel, elsewhere = route(via, ctx, msg, source.rule), env.elsewhere
 	if channel == false then return end
-	local score = source.context + matched + W_URGENCY * (source.urgency or 0) + habit(env.usage, template, ctx.day) + (source.bonus or 0) - W_ORDER * math.min(order, 10)
+	local score = source.own and source.context - 0.001 * order or source.context + matched + W_URGENCY * (source.urgency or 0) + habit(env.usage, template, ctx.day) + (source.bonus or 0) - W_ORDER * math.min(order, 10)
 	if channel and not onChannel(channel, ctx.box) then
 		if not elsewhere or score > elsewhere.score then env.elsewhere = { score = score, channel = channel, tag = tag, from = thread and from } end
 		return
 	end
-	return { text = text, key = template, category = tag, tag = tag, channel = channel, mode = source.mode or "phrase", thread = thread, score = score }
+	return { text = text, key = template, category = tag, tag = tag, channel = channel, mode = source.mode or "phrase", thread = thread, score = score, own = source.own }
 end
 
 local function offer(env, source, lines)
@@ -250,7 +252,7 @@ local function gather(settings, ctx, typed)
 	local env = { ctx = ctx, flags = flags, values = valuesOf(ctx), usage = store.usage, pool = {} }
 	if typed then offerLearned(env, store.lines, typed) end
 
-	for _, sit in ipairs(P.SITUATIONS) do
+	for rank, sit in ipairs(P.SITUATIONS) do
 		local id, prompt, urgency = sit.id, nil, 0
 		local live = not sit.urgent and ACTIVE[id](ctx, flags)
 		if sit.urgent then
@@ -261,7 +263,8 @@ local function gather(settings, ctx, typed)
 		local moved = sit.fresh and ctx.quest and ctx.quest.changedAt
 		local bonus = moved and FRESH_BONUS * math.max(0, 1 - (now - moved) / FRESH_TIME) or nil
 		if live then
-			offer(env, { tag = sit.tag, context = sit.weight, urgency = urgency, via = sit.via, msg = prompt, field = sit.field, bonus = bonus }, P.Lines(saved, id))
+			offer(env, { tag = sit.tag, context = OWN_SCORE - rank, own = true, via = sit.via, msg = prompt, field = sit.field }, P.Own(saved, id))
+			offer(env, { tag = sit.tag, context = sit.weight, urgency = urgency, via = sit.via, msg = prompt, field = sit.field, bonus = bonus }, P.Builtin(saved, id))
 		end
 	end
 
@@ -331,7 +334,7 @@ local function choose(pool, most)
 			local category, thread = item.category, item.thread
 			local limit = category == QUEST_TAG and math.min(cap, S.QUEST_MAX) or cap
 			local crowded = pass == 1 and threads > 1 and thread and perThread[thread] >= 1
-			if not item.chosen and not crowded and (perTag[category] or 0) < limit and not duplicate(item, chosen) then
+			if not item.chosen and not crowded and (item.own or (perTag[category] or 0) < limit) and not duplicate(item, chosen) then
 				item.chosen, perTag[category] = true, (perTag[category] or 0) + 1
 				if thread then perThread[thread] = perThread[thread] + 1 end
 				chosen[#chosen + 1] = item
@@ -519,7 +522,7 @@ local function completions(pool, head, taken)
 		local item = pool[i]
 		local text = readable(item.text)
 		if #text > #typed and not taken[text] and completes(want, text) then
-			local into = item.category == YOURS_TAG and own or other
+			local into = (item.own or item.category == YOURS_TAG) and own or other
 			into[#into + 1] = item
 		end
 	end

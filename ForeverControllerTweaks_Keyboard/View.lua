@@ -666,6 +666,18 @@ local function takeBack()
 	frame:SetPropagateKeyboardInput(false)
 end
 
+-- Our own boxes (the quick message editor) carry ForeverControllerTweaksSave / ForeverControllerTweaksCancel: Send
+-- and Close call them, our code on our frame, after the keyboard closes. Nothing is learned from them.
+V.OWN = "ForeverControllerTweaks"
+
+local function own(edit, action)
+	local run = rawget(edit, V.OWN .. action)
+	if type(run) ~= "function" then return false end
+	V.Hide()
+	run(edit:GetText() or "")
+	return true
+end
+
 -- Send: a chat box's own Enter, synchronously inside this button press (with Chat Style IM it only clears the line:
 -- ClearChat, ChatFrameEditBox.lua:561-568; Classic hides the box, which ends its focus, so it is refused); other
 -- boxes keep their text. Then the keyboard closes, and on B the box's focus goes too (passBack); it opens on that box
@@ -673,6 +685,7 @@ end
 -- a secure command) stays, and the keyboard stays open with the note.
 function V.Send(key)
 	local text, talk = box:GetText() or "", chat()
+	if own(box, "Save") then return end
 	local secure = text:match("^(/%S+)")
 	if command(text, true) then return note(T.SLASH) end
 	if secure and IsSecureCmd and IsSecureCmd(secure) then return note(T.SECURE) end
@@ -692,6 +705,7 @@ end
 -- Close: the keyboard closes and the box keeps its text; on B its focus goes too (passBack), else it keeps the focus
 -- until B or a tap elsewhere.
 function V.Close(key)
+	if own(box, "Cancel") then return end
 	sent = box
 	if not passBack(key) then V.Hide() end
 end

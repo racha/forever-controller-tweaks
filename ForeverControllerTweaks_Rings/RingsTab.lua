@@ -11,10 +11,10 @@ Rings.SettingsTab = S
 
 local STRINGS = {
 	RINGS_TAB = "Rings", RINGS_TITLE = "Controller Tweaks · Rings",
-	RINGS_HINT = "Radial menus of actions. Put \"Open ring\" on any button in Bindings or Touch: hold it, aim with the right stick, release.",
+	RINGS_HINT = "Radial menus of actions. Put \"Open ring\" on any button in Bindings or Touch: hold it, aim, let go. B cancels.",
 	RINGS_LIST = "Your rings", RINGS_COUNT = "Rings %d / %d", RINGS_NEW = "New ring", RINGS_NEW_TIP = "A new ring with 8 empty slots.",
 	RINGS_NONE = "No rings yet. Make one with New ring.", RINGS_EDIT = "Edit slots",
-	RINGS_RENAME = "Rename", RINGS_RENAME_TITLE = "Rename ring", RINGS_RENAME_HINT = "Enter saves, Escape cancels.",
+	RINGS_RENAME = "Rename", RINGS_RENAME_TITLE = "Rename ring", RINGS_RENAME_HINT = "Enter or the keyboard's Send saves, Escape or Close cancels.",
 	RINGS_ICON = "Icon", RINGS_ICON_TITLE = "Ring icon", RINGS_ICON_AUTO = "First slot's icon", RINGS_ICON_SLOT = "From this ring's slots", RINGS_ICON_TIP = "The icon in the ring's hub and on the buttons that open it.",
 	RINGS_DELETE = "Delete", RINGS_DELETE_TEXT = "Delete the ring \"%s\"?", RINGS_DELETE_SUB = "It is on %d button(s) (every character): they will be cleared.",
 	RINGS_DELETE_TIP = "Deletes the ring and clears every button that opens it.",
@@ -350,8 +350,11 @@ local function buildRename()
 	edit:SetPoint("TOP", 0, -42)
 	edit:SetAutoFocus(false)
 	edit:SetMaxLetters(Rings.NAME_MAX)
-	edit:SetScript("OnEnterPressed", function() closeRename(true) end)
-	edit:SetScript("OnEscapePressed", function() closeRename(false) end)
+	-- The on-screen keyboard's Send and Close call these (its V.OWN prefix; Rings doesn't need the Keyboard module).
+	edit.ForeverControllerTweaksSave = function() closeRename(true) end
+	edit.ForeverControllerTweaksCancel = function() closeRename(false) end
+	edit:SetScript("OnEnterPressed", edit.ForeverControllerTweaksSave)
+	edit:SetScript("OnEscapePressed", edit.ForeverControllerTweaksCancel)
 	local hint = box:CreateFontString(nil, "ARTWORK", "GameFontDisableSmall")
 	hint:SetPoint("TOP", edit, "BOTTOM", 0, -10)
 	hint:SetText(L.RINGS_RENAME_HINT)

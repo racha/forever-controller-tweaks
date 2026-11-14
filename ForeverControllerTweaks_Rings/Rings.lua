@@ -2,6 +2,7 @@
 -- any routed face or D-pad cell (Face.lua) or touch button (Touch.lua) that holds the entry "ring:<id>".
 --
 -- Storage: ns.db.rings = { nextId, list = { { id, name, icon, count, stick, slots = { [i] = { id, name, icon, kind } } } } }.
+-- axisSaved: the player's GamePadStickAxisButtons value while a held ring has it switched on, until put back.
 -- stick: which stick aims a held ring, "right", "left" or "dynamic" (opened from a D-pad cell: right; from a face
 -- button cell: left, the hand that isn't on the button). Touch rings are tapped.
 -- A slot keeps the catalog id, so a spell group resolves to each character's own highest rank. icon nil: the first
@@ -13,14 +14,22 @@
 -- touch button that owns the press. RunAttribute scrubs its arguments to nil, booleans, numbers and strings (a frame
 -- handle arrives as nil), so a button is passed by the name of the ring frame's frame ref to it: "slot<i>" for its
 -- slots, the router's own name for each Face router (Face.lua sets those refs).
---   _open(id, mode, kind) lays out and arms the slot buttons, picks the aiming stick (kind: the opening cell, "face" or
---                         "dpad", for a dynamic ring) and shows the ring ("hold" or "touch");
---   _release(ref)         on the held button's release: picks the slot the aiming stick points at (the largest dot
---                         product with a slot direction, nothing inside the dead zone), hides the ring and arms that
---                         button's typerelease with that slot's action;
+--   _open(id, mode, kind, own) lays out and arms the slot buttons, picks the aiming stick (kind: the opening cell,
+--                         "face" or "dpad", for a dynamic ring) and shows the ring ("hold" or "touch"). A held ring
+--                         binds its keys (below) but own, the key that opened it; that key pressed again closes it;
+--   _pick(key)            the slot the aiming stick points at (the largest dot product with a slot direction), nil
+--                         inside the dead zone, where a stick key's own direction stands in;
+--   _release(ref)         on the held button's release: aimed, hides the ring and arms that button's typerelease with
+--                         the slot's action; centred, the ring stays open;
+--   _key(key, down)       a key the open held ring bound, through the key button: the aiming stick's directions keep
+--                         the pick and the last one let go (the stick back in the middle) fires it, as the native radial
+--                         menu does; A fires the slot aimed at (or the kept pick), nothing aimed keeps it open; B
+--                         and the stick's press close;
 --   _toggle(id)           a touch tap: opens the ring, or closes it when it is the one open;
 --   _close()              hides it; _arm(ref, which, id, i) writes one slot's action on a button.
 -- No action slot is used: the actions fire through direct secure attributes (spell, item, toy, macrotext).
+-- Stick keys: the game sends a stick's directions as keys (PADRSTICKUP...) only while the CVar GamePadStickAxisButtons
+-- is on, so a held ring switches it on while it is open (below). Without the keys it fires on the button's release or A.
 local ns = ForeverControllerTweaks
 local Rings = {}
 ns.Rings = Rings
@@ -37,6 +46,17 @@ local RECENTRE, HOLD_MAX = 0.2, 1
 -- The native radial menu's selection threshold is 0.5; a ring cancels a little closer to the centre, so a thumb
 -- easing off as the button lets go still counts.
 local DEADZONE = 0.4
+-- What an open held ring binds, per aiming stick, under every modifier prefix (a trigger may emulate one): its four
+-- directions (with their unit vectors), its press (close), A (use) and B (close).
+local MODS = { "", "ALT-", "CTRL-", "SHIFT-", "ALT-CTRL-", "ALT-SHIFT-", "CTRL-SHIFT-", "ALT-CTRL-SHIFT-" }
+local DIRS = { UP = { 0, 1 }, DOWN = { 0, -1 }, LEFT = { -1, 0 }, RIGHT = { 1, 0 } }
+local KEYS = { left = { "PAD1", "PAD2", "PADLSTICK" }, right = { "PAD1", "PAD2", "PADRSTICK" } }
+local ROLE = { PAD1 = "use", PAD2 = "close", PADLSTICK = "close", PADRSTICK = "close" }
+for side, list in pairs(KEYS) do
+	for way in pairs(DIRS) do list[#list + 1] = "PAD" .. side:sub(1, 1):upper() .. "STICK" .. way end
+	table.sort(list)
+end
+Rings.KEYS, Rings.MODS = KEYS, MODS
 -- Disc radius, slot centre radius, slot icon size, hub radius (UI units at scale 1).
 Rings.GEO = { DISC = 160, SLOT_R = 112, ICON = 46, HUB = 54 }
 local QUESTION = "Interface\\Icons\\INV_Misc_QuestionMark"
@@ -286,6 +306,10 @@ function Rings.Repair(db, fix)
 		if rings.list ~= nil then fix("rings.list") end
 		rings.list = {}
 	end
+	if rings.axisSaved ~= nil and type(rings.axisSaved) ~= "string" then
+		rings.axisSaved = nil
+		fix("rings.axisSaved")
+	end
 
 	-- In list order, so the first of two rings with one id is the one kept.
 	local kept, seen, top = {}, {}, 0
@@ -406,13 +430,22 @@ local ARM = [[
 ]]
 
 local OPEN = ([[
-	local id, mode, kind = ...
+	local id, mode, kind, own = ...
 	local n = id and self:GetAttribute("r" .. id .. "n")
 	if not n then return end
+	if mode == "hold" and self:IsShown() and self:GetAttribute("ps-ring") == id and self:GetAttribute("ps-mode") == "hold" then return self:RunAttribute("_close") end
 	local stick = self:GetAttribute("r" .. id .. "s")
 	if stick == "dynamic" then stick = kind == "face" and "left" or "right" end
-	self:SetAttribute("ps-aimside", stick == "left" and "left" or "right")
+	local side = stick == "left" and "left" or "right"
+	self:SetAttribute("ps-aimside", side)
 	self:SetAttribute("ps-aim", stick == "left" and self:GetAttribute("ps-lstick") or self:GetAttribute("ps-rstick"))
+	self:SetAttribute("ps-pick", nil)
+	self:SetAttribute("ps-held", 0)
+	self:ClearBindings()
+	for k = 1, mode == "hold" and %d or 0 do
+		local key = self:GetAttribute("ps-bind" .. side .. k)
+		for m = 1, key ~= own and %d or 0 do self:SetBindingClick(true, self:GetAttribute("ps-mod" .. m) .. key, "ForeverControllerTweaksRingKey", key) end
+	end
 	for i = 1, %d do
 		local slot = self:GetFrameRef("slot" .. i)
 		if i <= n then
@@ -427,34 +460,80 @@ local OPEN = ([[
 	self:SetAttribute("ps-ring", id)
 	self:SetAttribute("ps-mode", mode)
 	self:Show()
-]]):format(MAX_SLOTS, Rings.GEO.SLOT_R, Rings.GEO.SLOT_R)
+]]):format(#KEYS.right, #MODS, MAX_SLOTS, Rings.GEO.SLOT_R, Rings.GEO.SLOT_R)
 
 local CLOSE = [[
+	self:ClearBindings()
 	self:SetAttribute("ps-ring", nil)
 	self:SetAttribute("ps-mode", nil)
+	self:SetAttribute("ps-pick", nil)
 	self:Hide()
 ]]
 
-local RELEASE = ([[
+local PICK = ([[
+	local key = ...
+	local id = self:GetAttribute("ps-ring")
+	local n = id and self:GetAttribute("r" .. id .. "n")
+	if not n then return end
+	local state = GetGamePadState()
+	local stick = state and state.sticks and state.sticks[self:GetAttribute("ps-aim") or 2]
+	local x, y = stick and stick.x or 0, stick and stick.y or 0
+	if x * x + y * y < %s then
+		if not (key and self:GetAttribute("ps-kx-" .. key)) then return end
+		x, y = self:GetAttribute("ps-kx-" .. key), self:GetAttribute("ps-ky-" .. key)
+	end
+	local best, bestDot
+	for i = 1, n do
+		local dot = x * self:GetAttribute("dx" .. n .. "-" .. i) + y * self:GetAttribute("dy" .. n .. "-" .. i)
+		if not bestDot or dot > bestDot then best, bestDot = i, dot end
+	end
+	return best
+]]):format(DEADZONE * DEADZONE)
+
+local RELEASE = [[
 	local ref = ...
 	local button = ref and self:GetFrameRef(ref)
 	if not button then return end
 	button:SetAttribute("typerelease", nil)
 	local id = self:GetAttribute("ps-ring")
 	if not id or self:GetAttribute("ps-mode") ~= "hold" then return end
-	local n = self:GetAttribute("r" .. id .. "n")
-	local state = GetGamePadState()
-	local stick = state and state.sticks and state.sticks[self:GetAttribute("ps-aim") or 2]
+	local pick = self:RunAttribute("_pick")
+	if not pick then return end
 	self:RunAttribute("_close")
-	local x, y = stick and stick.x or 0, stick and stick.y or 0
-	if not n or x * x + y * y < %s then return end
-	local best, bestDot
-	for i = 1, n do
-		local dot = x * self:GetAttribute("dx" .. n .. "-" .. i) + y * self:GetAttribute("dy" .. n .. "-" .. i)
-		if not bestDot or dot > bestDot then best, bestDot = i, dot end
+	self:RunAttribute("_arm", ref, "typerelease", id, pick)
+]]
+
+-- ps-held counts the stick's direction keys down since the ring opened: one already down then (the stick was pushed
+-- as it opened) is let go without a pick.
+-- ponytail: the pick moves only on a key event, so a stick rolled within one direction key's range keeps the pick
+-- made where that key went down; the display shows the live slot. Reading the stick every frame needs an insecure
+-- poll, which can't fire.
+local KEY = [[
+	local key, down = ...
+	local id = self:GetAttribute("ps-ring")
+	if not id or self:GetAttribute("ps-mode") ~= "hold" then return end
+	local role = self:GetAttribute("ps-role-" .. key)
+	if role == "close" then
+		if down then self:RunAttribute("_close") end
+		return
 	end
-	self:RunAttribute("_arm", ref, "typerelease", id, best)
-]]):format(DEADZONE * DEADZONE)
+	local pick
+	if role == "use" then
+		if down then return end
+		pick = self:RunAttribute("_pick") or self:GetAttribute("ps-pick")
+		if not pick then return end
+	else
+		local held = self:GetAttribute("ps-held") or 0
+		if not down and held == 0 then return end
+		local now = self:RunAttribute("_pick", down and not self:GetAttribute("ps-pick") and key or nil)
+		if now then self:SetAttribute("ps-pick", now) end
+		self:SetAttribute("ps-held", down and held + 1 or held - 1)
+		if down or held > 1 then return end
+		pick = self:GetAttribute("ps-pick")
+	end
+	self:RunAttribute("_close")
+	if pick then self:RunAttribute("_arm", "key", "typerelease", id, pick) end
+]]
 
 local TOGGLE = [[
 	local id = ...
@@ -464,6 +543,11 @@ local TOGGLE = [[
 
 -- The slots' and the catcher's taps: a slot fires its action (its own click), then the ring closes.
 local SLOT_PRE = [[return nil, "close"]]
+-- The key button: whatever an earlier key armed is gone first; the release fires what _key armed.
+local KEY_PRE = [[
+	self:SetAttribute("typerelease", nil)
+	self:GetFrameRef("ring"):RunAttribute("_key", button, down)
+]]
 local SLOT_POST = [[self:GetFrameRef("ring"):RunAttribute("_close")]]
 local CATCH = [[self:GetFrameRef("ring"):RunAttribute("_close")]]
 -- Vehicles, override and possess bars and pet battles take the routed keys away (Face.lua), so a release could be
@@ -482,6 +566,11 @@ local catcher = CreateFrame("Button", "ForeverControllerTweaksRingCatcher", fram
 catcher:SetAllPoints(UIParent)
 catcher:SetFrameLevel(frame:GetFrameLevel())
 catcher:RegisterForClicks("AnyUp")
+-- The open held ring's keys click it, with the key's name as the button (a key's release fires, as on the routers).
+local keyButton = CreateFrame("Button", "ForeverControllerTweaksRingKey", UIParent, "SecureActionButtonTemplate")
+keyButton:SetSize(1, 1)
+keyButton:EnableMouse(false)
+keyButton:RegisterForClicks("AnyDown", "AnyUp")
 local slots = {}
 for i = 1, MAX_SLOTS do
 	local slot = CreateFrame("Button", "ForeverControllerTweaksRingSlot" .. i, frame, "SecureActionButtonTemplate")
@@ -505,7 +594,25 @@ local function setup()
 	frame:SetAttribute("_open", OPEN)
 	frame:SetAttribute("_close", CLOSE)
 	frame:SetAttribute("_release", RELEASE)
+	frame:SetAttribute("_pick", PICK)
+	frame:SetAttribute("_key", KEY)
 	frame:SetAttribute("_toggle", TOGGLE)
+	for m, prefix in ipairs(MODS) do frame:SetAttribute("ps-mod" .. m, prefix) end
+	for side, list in pairs(KEYS) do
+		for k, key in ipairs(list) do
+			frame:SetAttribute("ps-bind" .. side .. k, key)
+			local way = DIRS[key:match("STICK(%u+)$") or ""]
+			frame:SetAttribute("ps-role-" .. key, ROLE[key] or "aim")
+			if way then
+				frame:SetAttribute("ps-kx-" .. key, way[1])
+				frame:SetAttribute("ps-ky-" .. key, way[2])
+			end
+		end
+	end
+	keyButton:SetAttribute("pressAndHoldAction", true)
+	SecureHandlerSetFrameRef(keyButton, "ring", frame)
+	SecureHandlerSetFrameRef(frame, "key", keyButton)
+	frame:WrapScript(keyButton, "OnClick", KEY_PRE)
 	frame:SetAttribute("_onstate-guard", ONGUARD)
 	RegisterStateDriver(frame, "guard", GUARD)
 	SecureHandlerSetFrameRef(catcher, "ring", frame)
@@ -647,6 +754,39 @@ function Rings.HoldStick(side, index)
 	hold.side, hold.index, hold.left = side, index, HOLD_MAX
 	hold:Show()
 end
+
+---------------------------------------------------------------------------------------------------------------------
+-- Stick keys: GamePadStickAxisButtons on while a held ring is open (touch rings don't aim), as Improved Forever's ring
+-- does (ImprovedForever_Wheel/Ring.lua, MIT, markg). The player's value waits in ns.db.rings.axisSaved, so a /reload
+-- or a crash mid-ring is put back at the next login; a close in combat puts it back after the fight. Never written when
+-- it already holds the wanted value. A failed write leaves the button's release and A to fire.
+-- ponytail: a saved 1 the client didn't apply at login (ConsolePort's issue #208) reads as 1 and isn't rewritten, so
+-- for a player who keeps it on the keys may not come until it is toggled; writing 0 then 1 on open would cover that.
+
+local AXIS = "GamePadStickAxisButtons"
+
+local function writeAxis(value)
+	local ok, done = pcall(SetCVar, AXIS, value)
+	return ok and done ~= false
+end
+
+local function restoreAxis()
+	local rings = ns.db and ns.db.rings
+	local saved = rings and rings.axisSaved
+	if saved == nil or frame:IsShown() or InCombatLockdown() then return end
+	if GetCVar(AXIS) == saved or writeAxis(saved) then rings.axisSaved = nil end
+end
+
+frame:HookScript("OnShow", function(self)
+	local current = ns.db and self:GetAttribute("ps-mode") == "hold" and GetCVar(AXIS)
+	if not current or current == "1" then return end
+	if ns.db.rings.axisSaved == nil then ns.db.rings.axisSaved = current end
+	writeAxis("1")
+end)
+frame:HookScript("OnHide", restoreAxis)
+ns.On("PLAYER_REGEN_ENABLED", restoreAxis)
+-- After the repair above (FCT_READY handlers run in order).
+ns.On("FCT_READY", restoreAxis)
 
 -- Bars and the stick config can change with the Gamepad UI or the controller.
 ns.On("FCT_ACTIVE_CHANGED", apply)

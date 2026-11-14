@@ -1,5 +1,16 @@
 # Changelog
 
+## 1.2.1-beta.2 — 2026-11-14
+
+### Rings
+- **Let go of the stick to use a slot**, like the game's own radial menu: press the ring's button, flick the stick to a slot, let the stick go. Works in combat.
+- The ring stays open when you let go of its button with the stick centred. **A** uses the lit slot; **B**, a stick press or the ring's button again closes it without using anything. Letting go of the button while aiming still uses the slot.
+- While a held ring is open, the addon turns on the game's stick-as-buttons setting (`GamePadStickAxisButtons`) and puts your own value back when it closes (after combat if a fight is on, or at the next login after a `/reload`).
+- The ring's **Rename** box saves with the on-screen keyboard's Send and cancels with Close.
+
+### Keyboard
+- **Your own quick messages:** Keyboard tab → **Quick messages**. Pick a situation (or **Always**), add, edit, delete and reorder up to 20 lines, typed with the on-screen keyboard. They come first in that situation's suggestions, fill-ins such as `{target}` work, and **Show in suggestions** can hide the built-in lines. Reset keyboard to defaults keeps them.
+
 ## 1.2.1-beta.1 — 2026-11-14
 
 ### Fixes

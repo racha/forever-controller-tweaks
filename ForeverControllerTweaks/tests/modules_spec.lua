@@ -134,6 +134,27 @@ check(contains(more, L.KEYBOARD) == (has.Keyboard == true), "More lists Keyboard
 check(contains(more, L.SETUP_GUIDE) and contains(more, L.RESET), "More keeps its common entries")
 UI.ActionPicker.Close()
 
+-- Keyboard quick messages: Add opens our own box, its save hook stores the line and brings the page back; B returns.
+if has.Keyboard then
+	local KS, KP, own = ns.Keyboard.SettingsTab, ns.Keyboard.Library, ns.Keyboard.View.OWN .. "Save"
+	KS.OpenQuick("dungeon")
+	local q = UI.Current()
+	local qp = footer(q)
+	check(qp.PAD1 == L.SELECT and qp.PAD2 == L.BACK, "quick messages page prompts")
+	for _, node in ipairs(q.nodes) do if node.region.label and node.region.label.text == KS.T.ADD then q:Focus(node) end end
+	q:Select()
+	local edit
+	for _, f in ipairs(W.frames) do if rawget(f, own) then edit = f end end
+	check(UI.Current() == nil and edit and edit:IsVisible(), "Add closes the window and shows our own box")
+	edit[own]("  Pull on my mark ")
+	check(KP.Own(ns.db.keyboard.phrases, "dungeon")[1] == "Pull on my mark" and UI.Current() == q and not edit:IsVisible(), "save stores the line; the page comes back")
+	qp = footer(q)
+	check(qp.PAD1 == KS.T.EDIT and qp.PAD3 == KS.T.DELETE and qp.PAD4 == KS.T.MOVE, "a line's prompts: " .. tostring(qp.PAD1))
+	q:Pad("PAD2")
+	check(UI.Current() ~= q and UI.Current().tabs.index == q.tabs.index, "B goes back to the keyboard tab")
+	UI.Bindings.Open()
+end
+
 -- Options page: the Keyboard button only with the module.
 check(contains(options, L.SETTINGS_OPEN_LABEL), "Options page registered")
 check(contains(options, L.KEYBOARD) == (has.Keyboard == true), "Options lists the keyboard button only with the module")
@@ -165,6 +186,23 @@ local logged = #W.log
 SlashCmdList.FOREVERCONTROLLERTWEAKS("rings")
 if has.Rings then
 	check(UI.Current() and UI.Current().tabs.specs[UI.Current().tabs.index].rings, "/fct rings opens the Rings tab")
+	-- Rename from the pad: X on the ring opens our box, the keyboard's Send saves and Close cancels through its hooks.
+	local function renameBox()
+		local r = UI.Current()
+		for _, node in ipairs(r.nodes) do if node.region.id == 2 then r:Focus(node) end end
+		r:Pad("PAD3")
+		for _, f in ipairs(W.frames) do if rawget(f, "ForeverControllerTweaksSave") and f:IsVisible() then return f end end
+	end
+	local edit = renameBox()
+	check(UI.Current() == nil and edit and edit:IsVisible() and edit:GetText() == "Heals", "X on a ring hides the window and shows the rename box")
+	edit:SetText("Burst")
+	edit.ForeverControllerTweaksSave("Burst")
+	check(ns.Rings.Get(2).name == "Burst" and not edit:IsVisible() and UI.Current(), "Send renames the ring and brings the tab back")
+	edit = renameBox()
+	edit:SetText("Nope")
+	edit.ForeverControllerTweaksCancel("Nope")
+	check(ns.Rings.Get(2).name == "Burst" and not edit:IsVisible() and UI.Current(), "Close keeps the name and brings the tab back")
+	assert(ns.Rings.Rename(2, "Heals"))
 	UI.CloseAll()
 else
 	check(not UI.Current() and W.log[logged + 1] and W.log[logged + 1]:find("/fct", 1, true), "/fct rings without the module: help")

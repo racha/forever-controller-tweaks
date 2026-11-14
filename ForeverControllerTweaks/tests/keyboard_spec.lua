@@ -403,4 +403,20 @@ tracked = 42
 fire("SUPER_TRACKING_CHANGED")
 V.Tick()
 assert(questRows() == 2, "the super-tracked quest gives two lines: " .. questRows())
+-- Our own box (the quick message editor): Send and Close call its own functions; no Enter runs, nothing is learned.
+local ours, got = newBox(), {}
+ours[V.OWN .. "Save"] = function(text) got.save = text end
+ours[V.OWN .. "Cancel"] = function(text) got.cancel = text end
+focus = ours
+V.Observe()
+assert(frame:IsShown() and V.Box() == ours)
+ours.text, ours.cursor = "zappy line", 10
+local entersBefore = enters
+V.Press("PAD2")
+assert(got.save == "zappy line" and enters == entersBefore and not ns.db.keyboard.dictionary.zappy and not frame:IsShown(), "Send saves our box")
+V.Observe()
+V.Press("PAD4")
+assert(got.cancel == "zappy line" and escapes == 0 and not frame:IsShown(), "Close cancels it")
+focus = nil
+V.Observe()
 print("keyboard_spec: view ok")

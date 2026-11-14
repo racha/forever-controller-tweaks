@@ -476,6 +476,7 @@ function K.Settings(saved)
 	for action, key in pairs(K.BUTTONS) do if not saved.buttons[action] then saved.buttons[action] = key end end
 	saved.dictionary = type(saved.dictionary) == "table" and saved.dictionary or {}
 	if not next(saved.dictionary) then K.Seed(saved.dictionary) end
+	if K.Library then K.Library.Repair(saved) end
 	return saved
 end
 

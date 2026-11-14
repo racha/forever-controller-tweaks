@@ -1,11 +1,12 @@
 -- Forever Controller Tweaks "Keyboard" side tab (design/keyboard.md section 7, artboards 7a-c), in the Touch tab's
 -- language: On | Off and Open (With the controller | Always) in the header, a preview of the disc at the current
 -- layout and scale on the left, the settings and the button rows on the right. A on a button row takes the next
--- press (swapping with the action that had it), X restores that row's default. Saves to
+-- press (swapping with the action that had it), X restores that row's default. Quick messages (a row under the
+-- position) opens a page of the player's own lines per situation, typed in our own box with the keyboard. Saves to
 -- ForeverControllerTweaksDB.keyboard through K.Settings.
 local ns = ForeverControllerTweaks
 local UI, K = ns.UI, ns.Keyboard
-local L = UI.L
+local L, P = UI.L, K.Library
 
 local S = {}
 K.SettingsTab = S
@@ -18,6 +19,24 @@ local T = {
 	ROW_TIP = "A: press the new button. X: back to the default.", POSITION = "Position", AUTO = "Auto", CENTRE = "Centre", CUSTOM = "Custom",
 	OFFSET_X = "Left / right", OFFSET_Y = "Up / down", POSITION_TIP = "Auto keeps it clear of the chat, the crossbar and your unit frame. Centre and Custom pin it at the lower centre, Custom moved by the offsets.",
 	OFFSET_TIP = "D-pad left and right move it (Custom).", SCALE_TIP = "D-pad left and right change it. On a phone, 1.25 reads best.",
+	QUICK = "Quick messages", QUICK_COUNT = "%d", QUICK_TIP = "A: write your own lines for each situation. They come first in its suggestions.",
+	QUICK_TITLE = "Controller Tweaks · Keyboard · Quick messages", SITUATION = "Situation", YOURS = "Your lines  %d / %d", BUILTIN = "Built-in lines",
+	SHOW_BUILTIN = "Show in suggestions", ADD = "Add a line", EDIT = "Edit", DELETE = "Delete", MOVE = "Move", DONE = "Done", NONE = "None",
+	QUICK_HINT = "Your lines come first in the keyboard's suggestions while the situation applies, on the channel its lines use.",
+	SITUATION_TIP = "D-pad left and right pick the situation.", BUILTIN_TIP = "Off: only your lines show for this situation.",
+	LINE_TIP = "A: edit. X: delete. Y: move it with the D-pad.", NEW_TITLE = "New quick message · %s", EDIT_TITLE = "Edit quick message · %s",
+	EDIT_HINT = "On the keyboard, Send saves and Close cancels.", DELETE_TEXT = "Delete this quick message?",
+	TOKENS = "Fill-ins: {target} {player} {zone} {subzone} {instance} {quest} {class} {role} {level} {spec} {ilvl} {from}. A line whose fill-in has no value is skipped.",
+	REFUSED = "That line can't be saved: it is empty, a slash command, already in the list, or the list is full.",
+	SITUATIONS = {
+		anywhere = "Always", ready = "Ready check", resurrect = "Resurrection offered", summon = "Summon offered", invite = "Group invite",
+		trade = "Trade window", duel = "Duel request", roll = "Loot roll", proposal = "Queue popped", bosskill = "Boss killed", wipe = "Group wiped",
+		levelup = "Level up", achievement = "Achievement earned", looted = "Item looted", buffed = "Buffed by a player", dead = "Dead",
+		combat = "In combat", newgroup = "Just joined a group", battleground = "Battleground or arena", dungeon = "Dungeon", raid = "Raid",
+		progress = "Quest progress", quest = "Tracking a quest", whisper = "Whispering", friend = "Friendly player targeted",
+		enemy = "Enemy targeted", npc = "Near an NPC, grouped", group = "In a group", queue = "In a queue", city = "In a city",
+		guild = "Guild chat", world = "Out in the world, solo",
+	},
 	ACTIONS = { space = "Space", send = "Send", erase = "Erase", close = "Close", shift = "Shift", symbols = "Symbols", insert = "Insert word", prev = "Previous / next word", left = "Cursor left / right" },
 }
 
@@ -26,9 +45,15 @@ local ROWS = { { "space" }, { "send" }, { "erase" }, { "close" }, { "shift" }, {
 local RIGHT_X, RIGHT_Y, RIGHT_W, RIGHT_H, LEFT_X, LEFT_W = 604, 84, 572, 526, 24, 560
 local ROW_W, ROW_H, ROW_PITCH, SEG_W, SCALE_MIN, SCALE_MAX, SCALE_STEP = 520, 28, 30, 110, 0.75, 1.5, 0.05
 -- Position rows sit under the preview in the left inset; the offsets step 10 units within OFFSET_MAX.
-local POSITION_Y, OFFSET_STEP, OFFSET_MAX, PREVIEW_ROOM = RIGHT_Y + RIGHT_H - 108, 10, 600, 120
+local POSITION_Y, OFFSET_STEP, OFFSET_MAX, PREVIEW_ROOM = RIGHT_Y + RIGHT_H - 138, 10, 600, 150
+-- The quick messages page: line rows in the left inset (the Add row among them), built-in lines in the right.
+local LINE_Y, LINE_H, LINE_PITCH, BUILTIN_Y, BUILTIN_MAX = RIGHT_Y + 58, 22, 23, RIGHT_Y + 96, 18
 
-local window, onoff, openSeg, layoutSeg, suggestSeg, positionSeg, preview, rows, scaleRow, offsetRows, resetButton, capture
+local window, onoff, openSeg, layoutSeg, suggestSeg, positionSeg, preview, rows, scaleRow, offsetRows, resetButton, capture, quickRow
+local quick, sitRow, builtinSeg, yoursHeader, lineRows, builtinTexts, editor, moving, want
+-- Always (anywhere) first, then the situations most specific first.
+local SITS, sit = { "anywhere" }, 1
+for _, spec in ipairs(P.SITUATIONS) do if spec.id ~= "anywhere" then SITS[#SITS + 1] = spec.id end end
 
 local function settings()
 	if not ns.db then return end
@@ -47,10 +72,11 @@ local function set(key, value)
 	changed()
 end
 
-local function newRow(y, label, x)
-	local row = CreateFrame("Button", nil, window)
-	row:SetSize(ROW_W, ROW_H)
-	UI.At(row, window, x or RIGHT_X + (RIGHT_W - ROW_W) / 2, y)
+local function newRow(y, label, x, parent, height)
+	parent = parent or window
+	local row = CreateFrame("Button", nil, parent)
+	row:SetSize(ROW_W, height or ROW_H)
+	UI.At(row, parent, x or RIGHT_X + (RIGHT_W - ROW_W) / 2, y)
 	row.wash = row:CreateTexture(nil, "BACKGROUND")
 	row.wash:SetColorTexture(1, 1, 1, 0.1)
 	row.wash:SetAllPoints()
@@ -58,6 +84,20 @@ local function newRow(y, label, x)
 	row.label = row:CreateFontString(nil, "OVERLAY", "GameFontNormal")
 	row.label:SetPoint("LEFT", 10, 0)
 	row.label:SetText(label)
+	return row
+end
+
+-- A stepper row: the value between clickable D-pad left / right hints.
+local function stepper(row, onStep)
+	row.value = row:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
+	row.value:SetPoint("RIGHT", -40, 0)
+	for step, code in pairs({ [-1] = "DL", [1] = "DR" }) do
+		local arrow = CreateFrame("Button", nil, row)
+		arrow:SetSize(26, ROW_H)
+		arrow:SetPoint("RIGHT", row, "RIGHT", step < 0 and -82 or -6, 0)
+		arrow:SetScript("OnClick", function() onStep(step) end)
+		UI.Glyph(arrow, 16, code):SetPoint("CENTER")
+	end
 	return row
 end
 
@@ -184,6 +224,9 @@ local function refresh()
 		row:SetAlpha(s.position == "custom" and 1 or 0.4)
 	end
 	drawPreview(s)
+	local count = 0
+	for _, list in pairs(s.phrases and s.phrases.added or {}) do count = count + #list end
+	quickRow.value:SetText(T.QUICK_COUNT:format(count))
 	local nodes = {}
 	for _, segs in ipairs({ onoff, openSeg, layoutSeg, suggestSeg }) do
 		for _, segment in ipairs(segs) do nodes[#nodes + 1] = UI.Node(window, segment, segment.click, { cursorX = 0 }) end
@@ -210,6 +253,9 @@ local function refresh()
 			tip = { title = row.label:GetText(), lines = { T.OFFSET_TIP }, side = "right" },
 		})
 	end
+	nodes[#nodes + 1] = UI.Node(window, quickRow, function() S.OpenQuick() end, {
+		cursorX = 0, onFocus = function(on) quickRow.wash:SetShown(on) end, tip = { title = T.QUICK, lines = { T.QUICK_TIP }, side = "right" },
+	})
 	window:SetNodes(nodes)
 	if not UI.DialogShown() then window:SetPrompts(prompts(window.focus and window.focus.region)) end
 end
@@ -235,19 +281,6 @@ local function build()
 	local layoutRow = newRow(y, T.LAYOUT)
 	layoutSeg = UI.Segments(layoutRow, { { "ring", T.RING }, { "compact", T.COMPACT } }, ROW_W - 2 * SEG_W - 4, 1, SEG_W, function(id) set("layout", id) end)
 	y = y + ROW_PITCH
-	-- A stepper row: the value between clickable D-pad left / right hints.
-	local function stepper(row, onStep)
-		row.value = row:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
-		row.value:SetPoint("RIGHT", -40, 0)
-		for step, code in pairs({ [-1] = "DL", [1] = "DR" }) do
-			local arrow = CreateFrame("Button", nil, row)
-			arrow:SetSize(26, ROW_H)
-			arrow:SetPoint("RIGHT", row, "RIGHT", step < 0 and -82 or -6, 0)
-			arrow:SetScript("OnClick", function() onStep(step) end)
-			UI.Glyph(arrow, 16, code):SetPoint("CENTER")
-		end
-		return row
-	end
 	scaleRow = stepper(newRow(y, T.SCALE), stepScale)
 	local leftRowX = LEFT_X + (LEFT_W - ROW_W) / 2
 	local positionRow = newRow(POSITION_Y, T.POSITION, leftRowX)
@@ -256,6 +289,10 @@ local function build()
 		x = stepper(newRow(POSITION_Y + ROW_PITCH, T.OFFSET_X, leftRowX), function(step) stepOffset("x", step) end),
 		y = stepper(newRow(POSITION_Y + 2 * ROW_PITCH, T.OFFSET_Y, leftRowX), function(step) stepOffset("y", step) end),
 	}
+	quickRow = newRow(POSITION_Y + 3 * ROW_PITCH, T.QUICK, leftRowX)
+	quickRow.value = quickRow:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
+	quickRow.value:SetPoint("RIGHT", -10, 0)
+	quickRow:SetScript("OnClick", function() S.OpenQuick() end)
 	y = y + ROW_PITCH
 	local suggestRow = newRow(y, T.SUGGEST)
 	suggestSeg = UI.Segments(suggestRow, { { "on", T.ON }, { "off", T.OFF } }, ROW_W - 2 * SEG_W - 4, 1, SEG_W, function(id) set("suggestions", id == "on") end)
@@ -300,6 +337,230 @@ local function build()
 			return true
 		end
 	end
+end
+
+---------------------------------------------------------------------------------------------------------------------
+-- Quick messages: a situation stepper, the player's lines for it (A edits, X deletes, Y moves, the last row adds)
+-- and its built-in lines with their On | Off. Typing happens in our own box over the world, with the window hidden,
+-- so the on-screen keyboard takes the pad; its Send and Close call the box's own save and cancel (Keyboard/View.lua).
+
+local function key() return SITS[sit] end
+
+local function quickPrompts(region)
+	if moving then return { { "PAD1", T.DONE } } end
+	if region and region.index then return { { "PAD1", T.EDIT }, { "PAD3", T.DELETE }, { "PAD4", T.MOVE }, UI.TabPrompt("keyboard", -1), { "PAD2", L.BACK } } end
+	return { { "PAD1", L.SELECT }, UI.TabPrompt("keyboard", -1), { "PAD2", L.BACK } }
+end
+
+local function closeEditor(text)
+	if not editor:IsShown() then return end
+	local id, index = editor.key, editor.index
+	editor:Hide()
+	local typed = text and text:match("%S")
+	local ok = typed and P.Set(settings(), id, index, text)
+	if typed and not ok then ns.log(T.REFUSED) end
+	-- The page comes back on the line just saved (or the Add row).
+	local count = #P.Own(settings().phrases, id)
+	want = lineRows[index or (ok and count or count + 1)]
+	if not InCombatLockdown() then S.OpenQuick(id) end
+end
+
+local function buildEditor()
+	local box = CreateFrame("Frame", nil, UIParent)
+	box:SetSize(540, 150)
+	box:SetPoint("TOP", UIParent, "TOP", 0, -96)
+	box:SetFrameStrata("DIALOG")
+	box:EnableMouse(true)
+	local bottom = box:CreateTexture(nil, "BACKGROUND", nil, -7)
+	bottom:SetAtlas("UI-DialogBox-Background-Dark")
+	bottom:SetPoint("TOPLEFT", 7, -7)
+	bottom:SetPoint("BOTTOMRIGHT", -7, 7)
+	local top = box:CreateTexture(nil, "BACKGROUND", nil, -4)
+	top:SetAtlas(GameDialogBackgroundTop or "UI-DiamondDialogBox-Border")
+	top:SetAllPoints()
+	box.title = box:CreateFontString(nil, "ARTWORK", "GameFontNormal")
+	box.title:SetPoint("TOP", 0, -18)
+	local edit = CreateFrame("EditBox", nil, box, "InputBoxTemplate")
+	edit:SetSize(480, 24)
+	edit:SetPoint("TOP", 0, -42)
+	edit:SetAutoFocus(false)
+	edit:SetMaxLetters(P.LINE_MAX)
+	-- Our own functions only: the keyboard's Send and Close call them (V.OWN), a hardware Enter and Escape too.
+	edit[K.View.OWN .. "Save"] = closeEditor
+	edit[K.View.OWN .. "Cancel"] = function() closeEditor() end
+	edit:SetScript("OnEnterPressed", function(self) closeEditor(self:GetText()) end)
+	edit:SetScript("OnEscapePressed", function() closeEditor() end)
+	local hint = box:CreateFontString(nil, "ARTWORK", "GameFontDisableSmall")
+	hint:SetPoint("TOP", edit, "BOTTOM", 0, -10)
+	hint:SetText(T.EDIT_HINT)
+	local tokens = box:CreateFontString(nil, "ARTWORK", "GameFontDisableSmall")
+	tokens:SetWidth(480)
+	tokens:SetPoint("TOP", hint, "BOTTOM", 0, -6)
+	tokens:SetText(T.TOKENS)
+	box:SetScript("OnHide", function() edit:ClearFocus() end)
+	box.edit = edit
+	box:Hide()
+	editor = box
+end
+
+local function openEditor(index)
+	if InCombatLockdown() then return ns.log(L.COMBAT) end
+	if not editor then buildEditor() end
+	local id = key()
+	local line = index and P.Own(settings().phrases, id)[index]
+	UI.CloseAll()
+	editor.key, editor.index = id, index
+	editor.title:SetText((index and T.EDIT_TITLE or T.NEW_TITLE):format(T.SITUATIONS[id]))
+	editor:Show()
+	editor.edit:SetText(line or "")
+	editor.edit:SetFocus()
+end
+
+ns.On("FCT_COMBAT_START", function() if editor and editor:IsShown() then editor:Hide() end end)
+
+local function quickChanged(focusRow)
+	want = focusRow
+	if quick and quick:IsShown() then quick:Refresh() end
+end
+
+local function stepSituation(step)
+	sit, moving = (sit - 1 + step) % #SITS + 1, nil
+	quickChanged()
+end
+
+local function deleteLine(index)
+	local id = key()
+	local line = P.Own(settings().phrases, id)[index]
+	if not line then return end
+	UI.Dialog():Open(quick, { text = T.DELETE_TEXT, sub = line, buttons = { T.DELETE, L.CANCEL }, back = 2, on1 = function()
+		P.Remove(settings(), id, line)
+		quickChanged(lineRows[math.min(index, #P.Own(settings().phrases, id) + 1)])
+	end })
+end
+
+local function moveLine(step)
+	if not P.Move(settings(), key(), moving, step) then return end
+	moving = moving + step
+	quickChanged(lineRows[moving])
+end
+
+local function quickRefresh()
+	local s = settings()
+	if not s then return end
+	local id, saved = key(), s.phrases
+	local own, hidden = P.Own(saved, id), P.Hidden(saved, id)
+	sitRow.value:SetText(T.SITUATIONS[id])
+	yoursHeader.text:SetText(T.YOURS:format(#own, P.LINES_MAX))
+	builtinSeg:Select(hidden and "off" or "on")
+	local defaults = P.DEFAULTS[id] or {}
+	for i, text in ipairs(builtinTexts) do
+		local line = defaults[i]
+		text:SetText(line and P.Text(line) or i == 1 and T.NONE or "")
+		text:SetFontObject(hidden and "GameFontDisable" or "GameFontHighlight")
+	end
+	local nodes = { UI.Node(quick, sitRow, function() end, {
+		cursorX = 0, noSide = true, onDir = stepSituation, onFocus = function(on) sitRow.wash:SetShown(on) end,
+		tip = { title = T.SITUATION, lines = { T.SITUATION_TIP }, side = "right" },
+	}) }
+	for _, segment in ipairs(builtinSeg) do nodes[#nodes + 1] = UI.Node(quick, segment, segment.click, { cursorX = 0, tip = { title = T.BUILTIN, lines = { T.BUILTIN_TIP }, side = "left" } }) end
+	for i, row in ipairs(lineRows) do
+		local line = own[i]
+		local add = not line and i == #own + 1
+		row:SetShown(line ~= nil or add)
+		row.index = line and i or nil
+		row.label:SetFontObject(add and "GameFontNormal" or "GameFontHighlight")
+		row.label:SetText(line or T.ADD)
+		row.lit:SetShown(moving == i)
+		if line or add then
+			nodes[#nodes + 1] = UI.Node(quick, row, function() openEditor(row.index) end, {
+				cursorX = 0, onFocus = function(on) row.wash:SetShown(on) end, tip = line and { title = T.QUICK, lines = { T.LINE_TIP }, side = "right" } or nil,
+			})
+		end
+	end
+	quick:SetNodes(nodes)
+	for _, node in ipairs(nodes) do if want and node.region == want then quick:Focus(node) end end
+	want = nil
+	if not UI.DialogShown() then quick:SetPrompts(quickPrompts(quick.focus and quick.focus.region)) end
+end
+
+local function buildQuick()
+	local geo = UI.Bindings.GEO
+	local index
+	for i, spec in ipairs(UI.TABS) do if spec.keyboard then index = i end end
+	quick = UI.NewWindow(geo.WIDTH, geo.HEIGHT)
+	quick.tabs = UI.SideTabs(quick, UI.TABS, index)
+	quick:SetTitle(T.QUICK_TITLE)
+	sitRow = stepper(newRow(25, T.SITUATION, LEFT_X, quick), stepSituation)
+	UI.Text(quick, "GameFontDisableSmall", 24, 58, T.QUICK_HINT)
+	UI.Inset(quick, LEFT_X, RIGHT_Y, LEFT_W, RIGHT_H)
+	UI.Inset(quick, RIGHT_X, RIGHT_Y, RIGHT_W, RIGHT_H)
+	yoursHeader = UI.SectionHeader(quick, LEFT_X + (LEFT_W - 197) / 2, RIGHT_Y + 12, 197, "")
+	local leftRowX = LEFT_X + (LEFT_W - ROW_W) / 2
+	lineRows = {}
+	for i = 1, P.LINES_MAX do
+		local row = newRow(LINE_Y + (i - 1) * LINE_PITCH, "", leftRowX, quick, LINE_H)
+		row.label:SetPoint("RIGHT", -10, 0)
+		row.label:SetJustifyH("LEFT")
+		row.label:SetWordWrap(false)
+		row.lit = row:CreateTexture(nil, "BACKGROUND", nil, 1)
+		row.lit:SetTexture("Interface\\QuestFrame\\UI-QuestTitleHighlight")
+		row.lit:SetBlendMode("ADD")
+		row.lit:SetAllPoints()
+		row:SetScript("OnClick", function(self) openEditor(self.index) end)
+		lineRows[i] = row
+	end
+	UI.SectionHeader(quick, RIGHT_X + (RIGHT_W - 197) / 2, RIGHT_Y + 12, 197, T.BUILTIN)
+	local showRow = newRow(RIGHT_Y + 58, T.SHOW_BUILTIN, nil, quick)
+	builtinSeg = UI.Segments(showRow, { { "on", T.ON }, { "off", T.OFF } }, ROW_W - 2 * SEG_W - 4, 1, SEG_W, function(id)
+		if InCombatLockdown() then return ns.log(L.COMBAT) end
+		P.Hide(settings(), key(), id == "off")
+		quickChanged()
+	end)
+	builtinTexts = {}
+	for i = 1, BUILTIN_MAX do
+		local text = UI.Text(quick, "GameFontHighlight", RIGHT_X + (RIGHT_W - ROW_W) / 2 + 10, BUILTIN_Y + (i - 1) * LINE_PITCH, "", ROW_W - 20)
+		text:SetWordWrap(false)
+		builtinTexts[i] = text
+	end
+
+	quick.OnRefresh = quickRefresh
+	quick.OnFocusChanged = function() if not UI.DialogShown() then quick:SetPrompts(quickPrompts(quick.focus and quick.focus.region)) end end
+	quick.OnBack = function() S.Open() end
+	quick.OnKey = function(_, pad)
+		-- Moving a line: D-pad up / down carries it, any other press puts it down (an L1/R1 tap must not switch tabs).
+		if moving then
+			quick.tap = nil
+			if pad == "PADDUP" or pad == "PADDDOWN" then
+				moveLine(pad == "PADDUP" and -1 or 1)
+			elseif pad == "PAD1" or pad == "PAD2" or pad == "PAD4" then
+				moving = nil
+				quickChanged()
+			end
+			return true
+		end
+		local index = quick.focus and quick.focus.region.index
+		if not index then return end
+		if pad == "PAD3" then
+			deleteLine(index)
+			return true
+		end
+		if pad == "PAD4" then
+			if #P.Own(settings().phrases, key()) > 1 then
+				moving = index
+				quickChanged()
+			end
+			return true
+		end
+	end
+	quick.OnClosed = function() moving = nil end
+end
+
+-- The quick messages page, on situation id (else the last one shown).
+function S.OpenQuick(id)
+	if not settings() then return end
+	for i, other in ipairs(SITS) do if other == id then sit = i end end
+	if not quick then buildQuick() end
+	UI.Show(quick)
 end
 
 function S.Open()

@@ -265,24 +265,84 @@ local function edits(settings)
 	settings.phrases = saved
 	saved.added = type(saved.added) == "table" and saved.added or {}
 	saved.removed = type(saved.removed) == "table" and saved.removed or {}
+	saved.hidden = type(saved.hidden) == "table" and saved.hidden or {}
 	return saved
+end
+
+-- The player's own lines per key (the quick messages; "anywhere" is every situation): at most LINES_MAX of LINE_MAX
+-- bytes (the chat's limit), no slash command, no repeat. hidden[key] drops that key's built-in lines.
+P.LINES_MAX, P.LINE_MAX = 20, 255
+
+local function usable(text) return type(text) == "string" and text:match("%S") ~= nil and #text <= P.LINE_MAX and text:sub(1, 1) ~= "/" end
+
+-- A saved table repaired in place on load: wrong types dropped, lists cut to the limits.
+function P.Repair(settings)
+	if type(settings.phrases) ~= "table" then settings.phrases = nil return end
+	local saved = edits(settings)
+	for key, list in pairs(saved.added) do
+		local kept, seen = {}, {}
+		for _, line in ipairs(type(list) == "table" and list or NONE) do
+			if usable(line) and not seen[line] and #kept < P.LINES_MAX then kept[#kept + 1], seen[line] = line, true end
+		end
+		saved.added[key] = type(key) == "string" and kept or nil
+	end
+	for key, set in pairs(saved.removed) do if type(set) ~= "table" then saved.removed[key] = nil end end
+	for key, on in pairs(saved.hidden) do if on ~= true then saved.hidden[key] = nil end end
+	return saved
+end
+
+function P.Own(saved, key) return saved and saved.added and saved.added[key] or NONE end
+function P.Hidden(saved, key) return saved and saved.hidden and saved.hidden[key] == true end
+
+-- The quick message editor's writes. Set replaces line i, or adds the line last (i nil); false when it is not
+-- usable, is already one of the key's own lines, or the key is full.
+function P.Set(settings, key, i, text)
+	text = type(text) == "string" and text:match("^%s*(.-)%s*$") or text
+	if not usable(text) then return false end
+	local saved = edits(settings)
+	local list = saved.added[key] or {}
+	for j, line in ipairs(list) do if line == text and j ~= i then return false end end
+	if not i and #list >= P.LINES_MAX then return false end
+	list[i or #list + 1], saved.added[key] = text, list
+	return true
+end
+
+-- Line i one place up (step -1) or down (1); false at an end.
+function P.Move(settings, key, i, step)
+	local list = edits(settings).added[key] or NONE
+	local j = i + step
+	if not (list[i] and list[j]) then return false end
+	list[i], list[j] = list[j], list[i]
+	return true
+end
+
+function P.Hide(settings, key, on) edits(settings).hidden[key] = on and true or nil end
+
+-- The built-in lines of a key the player hasn't removed or hidden.
+function P.Builtin(saved, key)
+	if saved and saved.hidden and saved.hidden[key] then return NONE end
+	local removed = saved and saved.removed and saved.removed[key]
+	if not removed then return P.DEFAULTS[key] or NONE end
+	local list = {}
+	for _, line in ipairs(P.DEFAULTS[key] or NONE) do if not removed[P.Text(line)] then list[#list + 1] = line end end
+	return list
 end
 
 -- The lines of one key: the player's own first, then the defaults they haven't removed.
 -- saved = { added = { [key] = { "line", ... } }, removed = { [key] = { ["default line"] = true } } }.
 function P.Lines(saved, key)
-	local added, removed = saved and saved.added and saved.added[key], saved and saved.removed and saved.removed[key]
-	if not (added or removed) then return P.DEFAULTS[key] or NONE end
+	local own, builtin = P.Own(saved, key), P.Builtin(saved, key)
+	if own == NONE then return builtin end
 	local list = {}
-	for _, line in ipairs(added or NONE) do list[#list + 1] = line end
-	for _, line in ipairs(P.DEFAULTS[key] or NONE) do if not (removed and removed[P.Text(line)]) then list[#list + 1] = line end end
+	for _, line in ipairs(own) do list[#list + 1] = line end
+	for _, line in ipairs(builtin) do list[#list + 1] = line end
 	return list
 end
 
 -- The phrase editor's writes: they only touch the saved edits. Add puts a new line first, or restores a removed
 -- default in its place; false when the line is already there, or is a slash command (the keyboard never types one).
 function P.Add(settings, key, text)
-	if text:sub(1, 1) == "/" then return false end
+	if not usable(text) then return false end
 	local saved = edits(settings)
 	local removed = saved.removed[key]
 	if removed and removed[text] then
@@ -291,6 +351,7 @@ function P.Add(settings, key, text)
 	end
 	for _, line in ipairs(P.Lines(saved, key)) do if P.Text(line) == text then return false end end
 	saved.added[key] = saved.added[key] or {}
+	if #saved.added[key] >= P.LINES_MAX then return false end
 	table.insert(saved.added[key], 1, text)
 	return true
 end
@@ -310,6 +371,6 @@ end
 -- Back to the defaults: one key, or everything.
 function P.Reset(settings, key)
 	local saved = edits(settings)
-	if not key then saved.added, saved.removed = {}, {} return end
-	saved.added[key], saved.removed[key] = nil, nil
+	if not key then saved.added, saved.removed, saved.hidden = {}, {}, {} return end
+	saved.added[key], saved.removed[key], saved.hidden[key] = nil, nil, nil
 end

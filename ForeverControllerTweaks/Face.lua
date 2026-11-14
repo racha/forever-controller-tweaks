@@ -94,12 +94,12 @@ local ROUTER_SNIPPET = [[
 	end
 	if self:GetAttribute("ps-debug") then self:SetAttribute("ps-route", format("%s %s %s %s", self:GetAttribute("ps-pos"), down and "down" or "up", layer, tostring(name))) end
 	if not name then return false end
-	-- A ring (Rings.lua): the press opens it, the release fires the slot the right stick points at.
+	-- A ring (Rings.lua): the press opens it (or closes it, open), the release fires the slot the stick points at.
 	if name == "ring" then
 		local rings = self:GetFrameRef("rings")
 		self:SetAttribute("type", nil)
 		self:SetAttribute("typerelease", nil)
-		if rings and down then rings:RunAttribute("_open", self:GetAttribute("ps-ring-" .. layer), "hold", self:GetAttribute("ps-kind")) end
+		if rings and down then rings:RunAttribute("_open", self:GetAttribute("ps-ring-" .. layer), "hold", self:GetAttribute("ps-kind"), self:GetAttribute("ps-key")) end
 		if rings and not down then rings:RunAttribute("_release", self:GetName()) end
 		return
 	end
@@ -665,6 +665,8 @@ local function applyNow(ignorePanel)
 			if catcher then aimCatcher(catcher, shown or nil, actionBars) end
 		end
 		header:SetAttribute("ps-key" .. i, moved and key or nil)
+		-- An open ring binds A and B but the key that opened it.
+		router:SetAttribute("ps-key", moved and key or nil)
 		if moved then
 			local cellParts = {}
 			for _, cellLayer in ipairs(CELL_LAYERS) do

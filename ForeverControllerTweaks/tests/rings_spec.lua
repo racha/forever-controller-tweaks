@@ -6,7 +6,7 @@
 local here = (arg and arg[0] or ""):match("^(.*)[/\\]") or "."
 local dir = here .. "/.."
 
-local W = { combat = false, conds = {}, held = {}, sticks = {}, bindings = {}, cvars = {}, char = "Ann" }
+local W = { combat = false, conds = {}, held = {}, sticks = {}, bindings = {}, prio = {}, cvars = {}, char = "Ann" }
 
 local function compile(body, env, name)
 	if setfenv then return setfenv(assert(loadstring(body, name)), env) end
@@ -68,8 +68,14 @@ function Frame:SetPoint(...) self.point = { ... } end
 function Frame:GetParent() return self.parent end
 function Frame:GetFrameLevel() return self.level or 1 end
 function Frame:SetFrameLevel(level) self.level = level end
-function Frame:Show() self.shown = true end
-function Frame:Hide() self.shown = false end
+function Frame:HookScript(s, fn)
+	self.hooks = self.hooks or {}
+	self.hooks[s] = self.hooks[s] or {}
+	table.insert(self.hooks[s], fn)
+end
+local function hooked(f, s) for _, fn in ipairs(f.hooks and f.hooks[s] or {}) do fn(f) end end
+function Frame:Show() if not self.shown then self.shown = true; hooked(self, "OnShow") end end
+function Frame:Hide() if self.shown then self.shown = false; hooked(self, "OnHide") end end
 function Frame:IsShown() return self.shown end
 function Frame:IsVisible() return self.shown and (not self.parent or self.parent:IsVisible()) end
 function Frame:GetName() return self.name end
@@ -93,27 +99,31 @@ function Frame:RunAttribute(name, ...)
 	return scrub(runArgs(self.env, assert(self.attrs[name], "no snippet " .. name), self, scrub(...)))
 end
 function Frame:WrapScript(target, _, pre, post) target.wrap = { header = self, pre = pre, post = post } end
+-- Priority bindings (an open ring's) beat the routers' plain ones and give them back when cleared.
 function Frame:ClearBindings()
-	for k, v in pairs(W.bindings) do if v.owner == self then W.bindings[k] = nil end end
+	for _, list in ipairs({ W.bindings, W.prio }) do
+		for k, v in pairs(list) do if v.owner == self then list[k] = nil end end
+	end
 end
-function Frame:SetBindingClick(priority, key, name, button) W.bindings[key] = { owner = self, priority = priority, click = name .. ":" .. button } end
+function Frame:SetBindingClick(priority, key, name, button) (priority and W.prio or W.bindings)[key] = { owner = self, click = name .. ":" .. button } end
 
 -- A click as the secure button runs it: the wrapped pre-snippet in its header's environment, then (when a message
 -- came back) the post-snippet. Returns what the button then fires: "type value" or nil.
-local function click(button, down, which)
+local function click(button, down, which, mouse)
 	local wrap = button.wrap
-	local newButton, message = secure(run, wrap.header.env, "self,button,down", wrap.pre, button, "LeftButton", down)
+	local newButton, message = secure(run, wrap.header.env, "self,button,down", wrap.pre, button, mouse or "LeftButton", down)
 	if newButton == false then return false end
 	local a = button.attrs
 	local actionType = a[which or "type"]
 	local fired = actionType and (actionType .. " " .. tostring(a.spell or a.item or a.toy or a.macrotext or a.action))
-	if wrap.post and message ~= nil then secure(run, wrap.header.env, "self,message,button,down", wrap.post, button, message, "LeftButton", down) end
+	if wrap.post and message ~= nil then secure(run, wrap.header.env, "self,message,button,down", wrap.post, button, message, mouse or "LeftButton", down) end
 	return fired
 end
--- A bound key on a face router: press (fires type) or release (fires typerelease, as pressAndHoldAction does).
+-- A bound key: press (fires type) or release (fires typerelease, as pressAndHoldAction does).
 local function press(key, down)
-	local b = assert(W.bindings[key], "nothing bound to " .. key)
-	return click(frames[b.click:match("^(.-):")], down, down and "type" or "typerelease")
+	local b = assert(W.prio[key] or W.bindings[key], "nothing bound to " .. key)
+	local name, mouse = b.click:match("^(.-):(.*)$")
+	return click(frames[name], down, down and "type" or "typerelease", mouse)
 end
 
 function CreateFrame(_, name, parent, template) return frame(name, template, parent) end
@@ -160,6 +170,12 @@ function GetBindingAction() return "" end
 Enum = { BindingContext = { GamepadModeInGameCore = 9 }, SpellBookSpellBank = { Player = 0, Pet = 1 } }
 function GetCVar(k) return W.cvars[k] end
 function GetCVarBool(k) return W.cvars[k] == "1" end
+W.writes = {}
+function SetCVar(k, v)
+	W.writes[#W.writes + 1] = k .. "=" .. v
+	W.cvars[k] = v
+	return true
+end
 function InCombatLockdown() return W.combat end
 function GetTime() return 0 end
 function date() return "00:00:00 " end
@@ -326,7 +342,9 @@ check(press("PAD1", false) == "spell 639" and not ring.shown, "face: release fir
 check(router.attrs.checkselfcast == true, "face: self-cast modifiers on spells")
 press("PAD1", true)
 aim(180, 0.2)
-check(press("PAD1", false) == nil and not ring.shown, "face: release in the dead zone cancels")
+check(press("PAD1", false) == nil and ring.shown, "face: released in the dead zone, the ring stays open")
+check(not W.prio.PAD1 and not W.prio["SHIFT-PAD1"] and W.prio.PAD2 and W.prio["ALT-CTRL-SHIFT-PADRSTICKUP"], "keys: the opening key isn't bound, B and the stick keys are")
+check(press("PAD1", true) == nil and not ring.shown and not next(W.prio) and press("PAD1", false) == nil, "face: the ring's button again closes it, nothing fired, keys given back")
 press("PAD1", true)
 aim(181)
 check(press("PAD1", false) == "item item:6948" and router.attrs.spell == nil, "face: an item, the spell attribute cleared")
@@ -344,7 +362,94 @@ press("PADDRIGHT", true)
 check(ring.shown and ring.attrs["ps-mode"] == "hold", "face: D-pad right opens the ring")
 aim(0)
 check(press("PADDRIGHT", false) == "spell 133" and not ring.shown and dpadRight.attrs.typerelease == "spell", "face: D-pad right's release fires slot 1")
+
+-- Stick keys (GamePadStickAxisButtons on): flick to a slot, let the stick go, the last direction key up fires it and
+-- the ring closes, as the native radial menu does; the button's release no longer has to.
+local keyButton = frames.ForeverControllerTweaksRingKey
+local function open()
+	aim(0, 0)
+	press("PADDRIGHT", true)
+	press("PADDRIGHT", false)
+end
+open()
+check(ring.shown and W.prio.PAD1.click == "ForeverControllerTweaksRingKey:PAD1" and W.prio["SHIFT-PADRSTICKRIGHT"].click == "ForeverControllerTweaksRingKey:PADRSTICKRIGHT" and W.prio.PADRSTICK, "keys: the held ring binds A, B, the right stick's press and directions")
+aim(90)
+check(press("PADRSTICKRIGHT", true) == nil and ring.shown and ring.attrs["ps-pick"] == 3, "keys: a flick picks, nothing fires yet")
+aim(90, 0.3)
+check(press("PADRSTICKRIGHT", false) == "spell 639" and not ring.shown and not next(W.prio) and keyButton.attrs.checkselfcast == true, "keys: the stick let go fires the pick and closes, keys given back")
+open()
+aim(0)
+press("PADRSTICKUP", true)
+aim(90)
+press("PADRSTICKRIGHT", true)
+check(press("PADRSTICKUP", false) == nil and ring.shown and ring.attrs["ps-pick"] == 3, "keys: rolled from up to right, the pick follows, one key still down")
+aim(90, 0.2)
+check(press("PADRSTICKRIGHT", false) == "spell 639" and not ring.shown, "keys: the last key up fires")
+open()
+aim(180, 0.3)
+check(press("PADRSTICKDOWN", true) == nil and ring.attrs["ps-pick"] == 5, "keys: a short reading as the key goes down picks by the key's own direction")
+aim(0, 0)
+check(press("PADRSTICKDOWN", false) == "item item:6948" and not ring.shown, "keys: an item fires on the let go")
+open()
+aim(90)
+check(press("PADRSTICKRIGHT", false) == nil and ring.shown and ring.attrs["ps-pick"] == nil, "keys: a key already down as the ring opened is let go without a pick")
+aim(0, 0)
+check(press("PAD1", true) == nil and press("PAD1", false) == nil and ring.shown, "keys: A with nothing aimed keeps the ring open")
+aim(270)
+check(press("PAD1", true) == nil and press("PAD1", false) == "macro /sit" and not ring.shown, "keys: A fires the slot aimed at (no stick keys)")
+open()
+aim(90)
+press("PADRSTICKRIGHT", true)
+aim(0, 0)
+check(press("PAD1", false) == "spell 639", "keys: A, stick centred, fires the kept pick")
+open()
+check(press("PAD2", true) == nil and not ring.shown and not next(W.prio), "keys: B closes, nothing fired")
+open()
+check(press("PADRSTICK", true) == nil and not ring.shown, "keys: the stick's press closes")
+open()
+check(press("PADDRIGHT", true) == nil and not ring.shown and press("PADDRIGHT", false) == nil, "keys: the ring's button again closes")
+open()
+cond("vehicleui", true)
+check(not ring.shown and not next(W.prio), "keys: the guard closes and gives the keys back")
+cond("vehicleui", false)
 W.combat = false
+
+-- GamePadStickAxisButtons: on while a held ring is open, the player's value saved and put back (in combat, after the
+-- fight; after a /reload mid-ring, at login), never written when it already holds the wanted value.
+local AXIS = "GamePadStickAxisButtons"
+W.cvars[AXIS], W.writes = "0", {}
+open()
+check(W.cvars[AXIS] == "1" and ns.db.rings.axisSaved == "0" and #W.writes == 1, "axis: a held ring switches it on and saves the old value")
+press("PAD2", true)
+check(W.cvars[AXIS] == "0" and ns.db.rings.axisSaved == nil and #W.writes == 2, "axis: closing puts it back")
+W.cvars[AXIS] = "1"
+open()
+press("PAD2", true)
+check(W.cvars[AXIS] == "1" and ns.db.rings.axisSaved == nil and #W.writes == 2, "axis: already on: neither saved nor written")
+W.cvars[AXIS] = "0"
+W.combat = true
+open()
+press("PAD2", true)
+check(W.cvars[AXIS] == "1" and ns.db.rings.axisSaved == "0" and #W.writes == 3, "axis: closed in combat, it stays on until the fight ends")
+open()
+press("PAD2", true)
+check(ns.db.rings.axisSaved == "0" and #W.writes == 3, "axis: opened again in combat: no write, the first saved value kept")
+W.combat = false
+ns.Fire("PLAYER_REGEN_ENABLED")
+check(W.cvars[AXIS] == "0" and ns.db.rings.axisSaved == nil and #W.writes == 4, "axis: put back after the fight")
+ns.db.rings.axisSaved, W.cvars[AXIS] = "0", "1"
+ns.Fire("FCT_READY")
+check(W.cvars[AXIS] == "0" and ns.db.rings.axisSaved == nil and #W.writes == 5, "axis: a value left saved (a /reload mid-ring) is put back at login")
+ns.db.rings.axisSaved = "0"
+ns.Fire("FCT_READY")
+check(ns.db.rings.axisSaved == nil and #W.writes == 5, "axis: at login, already the saved value: cleared, not written")
+local setCVar = SetCVar
+SetCVar = function() error("blocked") end
+open()
+aim(90)
+check(ring.shown and W.cvars[AXIS] == "0" and press("PAD1", true) == nil and press("PAD1", false) == "spell 639", "axis: a failed write: the ring opens and A still fires")
+check(ns.db.rings.axisSaved == nil and #W.writes == 5, "axis: after a failed write nothing is left to put back")
+SetCVar = setCVar
 
 -- The Stick setting: stored per ring for the snippets; Left aims with the left stick wherever the ring opens, Dynamic
 -- with the left on a face button and the right on a D-pad button. The release reads that stick only.
@@ -361,7 +466,10 @@ W.combat = true
 press("PADDRIGHT", true)
 check(ring.attrs["ps-aim"] == 1 and ring.attrs["ps-aimside"] == "left", "stick: left from a D-pad button aims with the left stick")
 aim(0)
-check(press("PADDRIGHT", false) == nil and not ring.shown, "stick: left, the right stick doesn't pick")
+check(press("PADDRIGHT", false) == nil and ring.shown, "stick: left, the right stick doesn't pick")
+check(W.prio.PADLSTICKUP and W.prio.PADLSTICK and not W.prio.PADRSTICKUP, "keys: aiming left binds the left stick's keys")
+press("PADDRIGHT", true)
+press("PADDRIGHT", false)
 press("PADDRIGHT", true)
 aimLeft(90)
 check(press("PADDRIGHT", false) == "spell 639", "stick: left, the left stick picks")
@@ -375,7 +483,9 @@ check(press("PADDRIGHT", false) == "spell 639", "stick: dynamic on D-pad right, 
 press("PAD1", true)
 check(ring.attrs["ps-aim"] == 1 and ring.attrs["ps-aimside"] == "left", "stick: dynamic on a face button aims with the left stick")
 aim(90)
-check(press("PAD1", false) == nil, "stick: dynamic on a face button, the right stick doesn't pick")
+check(press("PAD1", false) == nil and ring.shown, "stick: dynamic on a face button, the right stick doesn't pick")
+press("PAD1", true)
+press("PAD1", false)
 press("PAD1", true)
 aimLeft(0)
 check(press("PAD1", false) == "spell 133", "stick: dynamic on a face button, the left stick picks")
@@ -482,7 +592,9 @@ assert(ns.Touch.SetEntry("left", 1, ringEntry))
 local touch = ns.Touch.Button("left", 1)
 check(touch.attrs["ps-ring-T"] == heals.id and touch.attrs["frameref-rings"] == ring, "touch: the ring on the button")
 W.combat = true
+local writes = #W.writes
 check(click(touch, true) == nil and ring.shown and ring.attrs["ps-mode"] == "touch", "touch: a tap opens")
+check(W.cvars.GamePadStickAxisButtons == "0" and #W.writes == writes, "touch: a touch ring leaves GamePadStickAxisButtons alone")
 local slot1 = frames.ForeverControllerTweaksRingSlot1
 check(click(slot1, false) == "spell 133" and not ring.shown, "touch: a slot tap fires and closes")
 click(touch, true)
