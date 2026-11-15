@@ -350,6 +350,16 @@ ns.On("UPDATE_MACROS", function()
 end)
 assert(Touch.SetEntry("left", 2, ns.Actions.Find("game:sit")))
 check(skipped, "touch: no apply while Actions writes a slot")
+nextFrame()
+-- An apply asked for during another module's slot write isn't dropped: it runs next frame.
+local busy = ns.Actions.Busy
+ns.Actions.Busy = function() return true end
+local was = #ns.db.debugLog
+ns.Fire("FCT_ACTIVE_CHANGED")
+ns.Actions.Busy = busy
+check(#ns.db.debugLog == was and #afters == 1, "touch: an apply during a slot write waits")
+nextFrame()
+check(#ns.db.debugLog > was, "touch: then runs next frame")
 
 -- Per side: each bar its own count, size, gap, inset (X from its edge), offsetY and alpha.
 for key, value in pairs({ count = 4, size = 64, gap = 10, inset = 40, offsetY = 30, alpha = 0.7 }) do assert(Touch.SetSide("right", key, value)) end

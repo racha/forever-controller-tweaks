@@ -566,7 +566,14 @@ bars()[FIRST + 5] = nil
 -- /fct release: every owned slot given back, every registered FCT: macro deleted, nothing placed until /reload.
 assert(A.Shadow("FB", "T", { id = "spell:133", name = "Fireball" }) == 180)
 assert(Actions.Assign(FIRST + 5, entry("game:sit")) and macroNamed("FCT:Sit"))
+local realDelete, busyAtDelete = DeleteMacro, nil
+DeleteMacro = function(i)
+	busyAtDelete = Actions.Busy()
+	realDelete(i)
+end
 SlashCmdList.FOREVERCONTROLLERTWEAKS("release")
+DeleteMacro = realDelete
+check(busyAtDelete and not Actions.Busy(), "release deletes its macros as a slot write (Busy while it runs)")
 check(not bars()[180] and next(ns.db.chars["Ann-Realm"].shadow) == nil and not macroNamed("FCT:Sit") and next(ns.db.macros) == nil, "release: slots cleared, FCT: macros deleted")
 check(printed[#printed]:find("gave back 1 action slots and deleted 1 FCT: macros", 1, true), "release: one chat line")
 ok, err = A.Shadow("FB", "T", { id = "spell:133", name = "Fireball" })

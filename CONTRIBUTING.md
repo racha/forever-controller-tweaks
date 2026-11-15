@@ -60,9 +60,9 @@ WoW blocks protected actions (casting, targeting, moving bindings) when addon co
 
 - on the crossbar's glyph textures, shoulder textures and class-action prompts, which go under the addon's own glyphs;
 - on a crossbar slot's own regions while a mirror of a moved action stands on it, and on its macro name while it holds an `FCT:` macro;
-- while the settings window is open: the Options window (when the settings were opened from it), an open tooltip and the gamepad focus arrow.
+- while the settings window is open: an open tooltip and the gamepad focus arrow.
 
-**The one Settings registration allowed** is the addon's own Options → AddOns page (`Settings.RegisterVerticalLayoutCategory` + `Settings.RegisterAddOnCategory` in `Panel/Panel.lua`). It holds native button rows only, is registered once at login out of combat, and its buttons open the settings on the next frame.
+**No Settings registration.** The addon has no Options page: Options' search reads every category, and one registered by addon code taints the search, so the game blocks its next protected call and blames the addon.
 
 **The addon builds its own instead.** Its windows, dialogs, pickers, focus cursor, minimap button and touch bars are its own frames. They use the game's art by atlas name, and its templates only where the template's code touches nothing but its own textures.
 

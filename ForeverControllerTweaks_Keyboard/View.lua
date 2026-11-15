@@ -1,6 +1,7 @@
 -- Forever Controller Tweaks on-screen keyboard (design/keyboard.md): a dark disc with eight 4-key
 -- clusters, a command hub, the word / phrase tab and a leader line to the focused EditBox. It types into that box with
--- the box's own methods only, and finds it by polling GetCurrentKeyBoardFocus() in our own OnUpdate (no hooks).
+-- the box's own methods only, and finds it by polling GetCurrentKeyBoardFocus() in our own OnUpdate (no hooks). A chat
+-- box is never written to: its line is composed in the tab's field and sent by our own secure button (V.Send).
 -- Input: the frame has EnableGamePadButton / EnableGamePadStick and SetPropagateKeyboardInput(false) set once at
 -- creation, out of combat (they are restricted in combat), so showing and hiding it never changes input settings:
 -- a shown keyboard takes the pad, a hidden one takes nothing and the sticks move the character again.
@@ -14,10 +15,13 @@ K.View = V
 local T = {
 	SHIFT = "Shift", SYMBOLS = "Symbols", CHOOSE = "Choose", INSERT = "Insert", CORRECTION = "Correction",
 	SECURE = "This command needs Enter on a real keyboard.", SLASH = "Only channel switches (/s, /p, /g, /w ...): other commands need a real keyboard.",
-	WHISPER_FIRST = "Start a whisper on an empty line: /w, then the name.", STYLE = "Chat Style is Classic: close the keyboard and press A to send, or set Chat Style to IM.", CHANNEL = "Channel: %s", DENIED = "Typing here needs a real keyboard: the game blocks addons from this box.", SPACE = "Space", SEND = "Send", ERASE = "Erase", CLOSE = "Close", CURSOR = "Cursor",
+	WHISPER_FIRST = "Start a whisper on an empty line: /w, then the name.", CHANNEL = "Channel: %s",
+	NO_CHANNEL = "This chat channel can't be sent from the keyboard: switch with /s, /p, /g or /w.", LONG = "Too long for one chat line.",
+	COMBAT = "In combat only party, raid, instance, guild and whispers send: the line waits.", MODIFIER = "Let go of Shift and Symbols to send.",
+	BOUND = "Another binding holds the Send button: the line was not sent.", NOT_SENT = "The game did not run Send: the keyboard's chat line was not sent.", DENIED = "Typing here needs a real keyboard: the game blocks addons from this box.", SPACE = "Space", SEND = "Send", ERASE = "Erase", CLOSE = "Close", CURSOR = "Cursor",
 	-- The tab's heading and its line when there are no rows, by the kind of list Suggest returned.
-	HEAD = { phrases = "Quick phrases · %s", words = "Words", items = "Items", names = "Names", searches = "Recent searches", none = "" },
-	EMPTY = { phrases = "", words = "Type a word to see suggestions", items = "No matching item", names = "No matching name", searches = "No recent searches", none = "" },
+	HEAD = { phrases = "Quick phrases · %s", fills = "Fill-ins", words = "Words", items = "Items", names = "Names", searches = "Recent searches", none = "" },
+	EMPTY = { phrases = "", fills = "No fill-in starts like that", words = "Type a word to see suggestions", items = "No matching item", names = "No matching name", searches = "No recent searches", none = "" },
 }
 K.T = T
 
@@ -45,22 +49,43 @@ local refreshSuggestions
 -- sent: the box a message was just sent from (or a chat box closed), kept closed until it loses the focus; tipRow:
 -- the row with the tooltip; scroll: the rows above the first one shown; passing: a press went on to the game (passBack).
 local typedAt, told, sent, tipRow, scroll, passing = 0, setmetatable({}, { __mode = "k" }), nil, nil, 0, false
-local repeatAction, repeatAt, statusUntil, statusText, lastInput, cachedText = nil, 0, 0, T.SECURE, nil, nil
+local repeatAction, repeatAt, statusUntil, statusText, lastInput = nil, 0, 0, T.SECURE, nil
 local mirror, mode = false, "right"
+-- draft, draftAt: a chat box's line and its byte cursor, kept here; lineChannel: the channel a switch typed in it
+-- picked (nil: the box's own); drafts: what a closed chat box had. sender: the secure button Send runs a chat line
+-- through; loaded: the line on it for this press, clicked once it ran.
+local draft, draftAt, lineChannel, drafts = "", 0, nil, setmetatable({}, { __mode = "k" })
+local sender, loaded, clicked = nil, nil, false
 
+-- The saved settings, repaired (K.Settings) once per table: on FCT_READY, and again only if the table is replaced.
+local repaired
 local function db()
+	local saved = ns.db and ns.db.keyboard
+	if saved and saved == repaired then return saved end
 	if not ns.db then return end
-	ns.db.keyboard = K.Settings(ns.db.keyboard)
-	return ns.db.keyboard
+	repaired = K.Settings(saved)
+	ns.db.keyboard = repaired
+	return repaired
 end
 
 local function sound(id) if id then PlaySound(id) end end
 
--- The box's own script, run synchronously (ExecuteFrameScript where the client has it).
-local function run(edit, script)
-	if ExecuteFrameScript then return ExecuteFrameScript(edit, script) end
-	local handler = edit:GetScript(script)
-	if handler then handler(edit) end
+-- A value the game hides (a secret) is never compared or parsed: it reads as nil.
+local function plain(value) if issecretvalue and issecretvalue(value) then return nil end return value end
+
+local function chat() return box.GetAttribute ~= nil and box:GetAttribute("chatType") ~= nil end
+
+-- Where a chat line goes: the channel its typed switch picked, else the box's own.
+local function channelNow() return lineChannel or { kind = plain(box:GetAttribute("chatType")), target = plain(box:GetAttribute("tellTarget")), id = tonumber(plain(box:GetAttribute("channelTarget"))) } end
+
+local function snapshot() return K.Context.Snapshot(box, chat() and lineChannel or nil) end
+
+-- The chat line changes the way the chat box's text would: a complete channel switch at its start becomes the line's
+-- channel and leaves the rest (K.TakeSwitch).
+local function setDraft(text, cur)
+	local channel, rest = K.TakeSwitch(text)
+	if channel then lineChannel, cur, text = channel, math.max(0, (cur or #text) - (#text - #rest)), rest end
+	draft, draftAt = text, cur or #text
 end
 
 local function at(region, parent, x, y, point) region:SetPoint(point or "CENTER", parent, "TOPLEFT", x, -y) end
@@ -293,6 +318,16 @@ local function build()
 	leader:Hide()
 	footer = buildFooter()
 
+	sender = CreateFrame("Button", "ForeverControllerTweaksChatSend", UIParent, "SecureActionButtonTemplate")
+	sender:SetAttribute("type", "macro")
+	sender:SetAttribute("useOnKeyDown", true)
+	sender:RegisterForClicks("AnyDown", "AnyUp")
+	-- It runs on the press (useOnKeyDown); the binding comes off with the release, so no half of the press goes elsewhere.
+	sender:SetScript("PostClick", function(_, _, down)
+		if not loaded then return end
+		if down then clicked = true else V.Disarm(true) end
+	end)
+
 	frame:SetScript("OnShow", function()
 		leader:Show()
 		footer:Show()
@@ -345,8 +380,10 @@ local function drawDisc()
 		cluster:SetAlpha(set and not focused and 0.55 or 1)
 		cluster:ClearAllPoints()
 		at(cluster, frame, sx, sy)
+		-- Compact: an unfocused set is only its range; its keys would cover that text, so they go too.
 		local hidden = compact and not focused
 		for j, key in ipairs(cluster.keys) do
+			key:SetShown(not hidden)
 			local state = focused and (keyFocus == j and "pick" or "focus") or "idle"
 			local size, d = focused and KEY_F or KEY, focused and KEY_FD or KEY_D
 			styleKey(key, state, size)
@@ -366,7 +403,7 @@ local function drawDisc()
 	local on = { shift = charset == "upper" or charset == "symbols", symbols = charset == "numbers" or charset == "symbols" }
 	for action, mod in pairs(frame.mods) do
 		local left = action == "shift"
-		mod.glyph:SetCode(settings.buttons[action])
+		mod.glyph:SetCode(K.BUTTONS[action])
 		mod.label:SetFontObject(on[action] and "GameFontNormalSmall" or "GameFontHighlightSmall")
 		mod:SetAlpha(on[action] and 1 or 0.35)
 		mod.glyph:ClearAllPoints()
@@ -396,14 +433,18 @@ local function lastChars(text, n)
 end
 
 local function boxText()
-	local text = box:GetText() or ""
+	if chat() then return draft, draftAt end
+	local text = plain(box:GetText()) or ""
 	local cur = box.GetUTF8CursorPosition and K.CharToByte(text, box:GetUTF8CursorPosition()) or #text
 	return text, cur
 end
 
+-- A chat line is only in the tab's field, so a chat box shows the tab (its field alone with suggestions off).
+local function tabShown() return settings.suggestions or box ~= nil and chat() end
+
 local function drawTab()
 	local tab, inner = frame.tab, frame.tab.inner
-	local shown = settings.suggestions
+	local shown, full = tabShown(), settings.suggestions
 	tab:SetShown(shown)
 	if not shown then return end
 
@@ -421,14 +462,15 @@ local function drawTab()
 
 	local text, cur = boxText()
 	local ghost = set and keyFocus and K.CHARSETS[charset][set][keyFocus]
-	inner.text:SetText(lastChars(text:sub(1, cur), 26))
+	local switch = chat() and lineChannel and K.SwitchCommand(lineChannel) or ""
+	inner.text:SetText(lastChars(switch .. text:sub(1, cur), 26))
 	inner.ghost:SetText(ghost and K.InsertText(ghost) or "")
 	local status = GetTime() < statusUntil
 	inner.head:SetFontObject(status and "GameFontRedSmall" or "GameFontNormal")
-	inner.head:SetText(status and statusText or string.format(T.HEAD[head.kind], head.place))
+	inner.head:SetText(status and statusText or full and string.format(T.HEAD[head.kind], head.place) or "")
 
 	local count = #suggestions
-	inner.empty:SetText(count == 0 and T.EMPTY[head.kind] or "")
+	inner.empty:SetText(full and count == 0 and T.EMPTY[head.kind] or "")
 	if rowFocus then scroll = math.max(math.min(scroll, rowFocus - 1), rowFocus - ROWS) end
 	scroll = math.max(0, math.min(scroll, count - ROWS))
 	for i, row in ipairs(inner.rows) do
@@ -447,7 +489,10 @@ local function drawTab()
 	end
 	inner.up:SetShown(scroll > 0)
 	inner.down:SetShown(scroll + ROWS < count)
-	for _, hint in ipairs(inner.hints) do if hint.action then hint:SetCode(settings.buttons[hint.action]) end end
+	for _, hint in ipairs(inner.hints) do
+		hint:SetShown(full)
+		if hint.action then hint:SetCode(K.BUTTONS[hint.action]) end
+	end
 	V.Tip()
 end
 
@@ -492,9 +537,9 @@ local function drawFooter(left)
 			item.label = item:CreateFontString(nil, "OVERLAY", "GameFontHighlightMedium")
 			footer.items[i] = item
 		end
-		item.glyph:SetCode(settings.buttons[spec[1]])
+		item.glyph:SetCode(K.BUTTONS[spec[1]])
 		item.glyph2:SetShown(spec[3] ~= nil)
-		if spec[3] then item.glyph2:SetCode(settings.buttons[spec[3]]) end
+		if spec[3] then item.glyph2:SetCode(K.BUTTONS[spec[3]]) end
 		item.label:SetText(spec[2])
 		item.label:ClearAllPoints()
 		item.label:SetPoint("LEFT", spec[3] and item.glyph2 or item.glyph, "RIGHT", 6, 0)
@@ -542,8 +587,9 @@ local function union(a, b)
 end
 
 -- What the keyboard must not cover: the whole chat frame of a chat box (log, its tab, the edit box), read only.
+-- One of our own boxes may name the area around it (V.OWN .. "Area": the quick message dialog), kept clear like a chat.
 function V.ChatBounds(edit)
-	local bounds = rectOf(edit)
+	local bounds = union(rectOf(edit), shownRect(rawget(edit, V.OWN .. "Area")))
 	local chat = edit.chatFrame
 	if type(chat) == "table" and chat.GetRect then
 		bounds = union(bounds, shownRect(chat))
@@ -571,7 +617,7 @@ function V.Place()
 	local k = settings.scale * (settings.layout == "compact" and 0.8 or 1)
 	local left, bottom, scale
 	chatRect = V.ChatBounds(box) or boxRect
-	left, bottom, scale, mode, mirror = K.Place(boxRect, chatRect, V.Avoid(), UIParent:GetWidth(), UIParent:GetHeight(), k, settings, not settings.suggestions)
+	left, bottom, scale, mode, mirror = K.Place(boxRect, chatRect, V.Avoid(), UIParent:GetWidth(), UIParent:GetHeight(), k, not tabShown())
 	frame:SetScale(scale)
 	frame:ClearAllPoints()
 	frame:SetPoint("BOTTOMLEFT", UIParent, "BOTTOMLEFT", left / scale, bottom / scale)
@@ -595,22 +641,24 @@ local function note(text)
 	drawTab()
 end
 
--- A chat box runs a line that opens with "/" inside our call (K.Slash says how): the keyboard leaves one in a chat
--- box, or sends one, only when it is a channel switch. Other boxes parse nothing.
-local function chat() return box.GetAttribute ~= nil and box:GetAttribute("chatType") ~= nil end
-local function command(text, sending) return chat() and K.Slash(text, sending) == "refused" end
+-- A chat line holds only channel switches (K.Slash): Send runs it as a macro line, so another command would run.
+-- Other boxes parse nothing.
+local function command(text) return chat() and K.Slash(text) == "refused" end
 
--- cur nil: the end of the box's text once it has taken the change (a chat box drops a channel switch from it).
+-- cur nil: the end of the text.
 local function setText(text, cur)
 	if command(text) then return note(T.SLASH) end
+	if chat() then return setDraft(text, cur) end
 	typedAt = GetTime()
 	box:SetText(text)
-	box:SetCursorPosition(cur or #(box:GetText() or ""))
+	box:SetCursorPosition(cur or #(plain(box:GetText()) or ""))
 end
 
 local function insert(text)
 	local before, cur = boxText()
-	if command(K.Insert(before, cur, text)) then return note(T.SLASH) end
+	local after, at2 = K.Insert(before, cur, text)
+	if command(after) then return note(T.SLASH) end
+	if chat() then return setDraft(after, at2) end
 	typedAt = GetTime()
 	box:Insert(text)
 end
@@ -637,7 +685,8 @@ end
 
 local function moveCursor(step)
 	local text, cur = boxText()
-	box:SetCursorPosition(step < 0 and K.Left(text, cur) or K.Right(text, cur))
+	local to = step < 0 and K.Left(text, cur) or K.Right(text, cur)
+	if chat() then draftAt = to else box:SetCursorPosition(to) end
 end
 
 -- Our code never ends a box's focus, nor runs its Enter or Escape (which end it): focus-lost handlers drive the
@@ -674,36 +723,86 @@ local function own(edit, action)
 	local run = rawget(edit, V.OWN .. action)
 	if type(run) ~= "function" then return false end
 	V.Hide()
-	run(edit:GetText() or "")
+	run(plain(edit:GetText()) or "")
 	return true
 end
 
--- Send: a chat box's own Enter, synchronously inside this button press (with Chat Style IM it only clears the line:
--- ClearChat, ChatFrameEditBox.lua:561-568; Classic hides the box, which ends its focus, so it is refused); other
--- boxes keep their text. Then the keyboard closes, and on B the box's focus goes too (passBack); it opens on that box
--- again only after the box lost the focus and got it back. A refused line (a command other than a channel switch,
--- a secure command) stays, and the keyboard stays open with the note.
-function V.Send(key)
-	local text, talk = box:GetText() or "", chat()
-	if own(box, "Save") then return end
-	local secure = text:match("^(/%S+)")
-	if command(text, true) then return note(T.SLASH) end
-	if secure and IsSecureCmd and IsSecureCmd(secure) then return note(T.SECURE) end
-	if talk and GetCVar("chatStyle") ~= "im" then return note(T.STYLE) end
-	cachedText, typedAt = text, GetTime()
-	local sentIn = K.Context.Snapshot(box)
-	if talk then run(box, "OnEnterPressed") end
-	if cachedText ~= "" then
-		K.Learn(settings.dictionary, cachedText)
-		K.Suggest.Sent(settings, cachedText, sentIn)
+-- A chat line is sent by the game's own code: the line goes on our secure button as its macro text, the Send key
+-- clicks that button for this one press (a priority override binding on our button), and the press goes on to the
+-- bindings (SecureTemplates.lua SECURE_ACTIONS.macro -> C_Macro.RunMacroText -> MacroExecutionManager.lua: a private
+-- chat box of the game's sends it). The chat box, its history and its last tell are never touched by our code.
+-- Attributes and bindings change only out of combat. False when the key doesn't reach the button.
+local function arm(key, line)
+	local click = "CLICK " .. sender:GetName() .. ":LeftButton"
+	sender:SetAttribute("macrotext", line)
+	SetOverrideBindingClick(sender, true, key, sender:GetName(), "LeftButton")
+	loaded, clicked = line, false
+	return GetBindingAction(key, true) == click
+end
+
+-- The line and the binding come off once the button ran it (ran), or the keyboard closed without it (said in chat).
+function V.Disarm(ran)
+	if ran then clicked = true end
+	if not loaded or InCombatLockdown() then return end
+	if not clicked then ns.log(T.NOT_SENT) end
+	loaded = nil
+	ClearOverrideBindings(sender)
+	sender:SetAttribute("macrotext", nil)
+end
+
+-- In combat no secure button changes: the chat API sends the message itself, to the channels an addon may send to
+-- (say, yell, emotes and numbered channels from addons are blocked outside instances).
+local COMBAT_SEND = { PARTY = true, RAID = true, RAID_WARNING = true, INSTANCE_CHAT = true, GUILD = true, OFFICER = true, WHISPER = true }
+
+local WHY = { command = T.SLASH, channel = T.NO_CHANNEL, long = T.LONG }
+
+-- Send in a chat box: the field's line (K.ChatLine) out through our button, or in combat the chat API. Then the field
+-- empties and the keyboard closes; the chat box keeps the focus, open and empty, until B. An empty line is Close. A
+-- line that can't go stays, and the keyboard stays open with the note.
+local function sendChat(key)
+	local line, message, dest = K.ChatLine(draft, channelNow())
+	if not line then
+		if message == "empty" then return V.Close(key) end
+		return note(WHY[message])
 	end
-	cachedText = nil
+	local combat = InCombatLockdown()
+	if combat then
+		local api = C_ChatInfo and C_ChatInfo.SendChatMessage or SendChatMessage
+		local locked = C_ChatInfo and C_ChatInfo.InChatMessagingLockdown and C_ChatInfo.InChatMessagingLockdown()
+		if locked or not (api and dest and COMBAT_SEND[dest.kind]) or not pcall(api, message, dest.kind, nil, dest.target) then return note(T.COMBAT) end
+	elseif shiftHeld or symbolsHeld or IsModifierKeyDown and IsModifierKeyDown() then
+		return note(T.MODIFIER)
+	elseif not arm(key, line) then
+		V.Disarm(true)
+		return note(T.BOUND)
+	else
+		passing = true
+		frame:SetPropagateKeyboardInput(true)
+	end
+	K.Learn(settings.dictionary, message)
+	K.Suggest.Sent(settings, message, snapshot())
+	draft, draftAt, lineChannel, sent = "", 0, nil, box
+	-- Out of combat the frame stays up for this press (it goes on to the button); the next Observe closes it.
+	if combat then V.Hide() end
+end
+
+-- Send: a chat box's line goes out (sendChat); other boxes keep their text and nothing of theirs runs. Then the
+-- keyboard closes, and on B the box's focus goes too (passBack); it opens on that box again only after the box lost
+-- the focus and got it back. A secure command stays, and the keyboard stays open with the note.
+function V.Send(key)
+	if own(box, "Save") then return end
+	if chat() then return sendChat(key) end
+	local text = boxText()
+	local secure = text:match("^(/%S+)")
+	if secure and IsSecureCmd and IsSecureCmd(secure) then return note(T.SECURE) end
+	typedAt = GetTime()
+	if text ~= "" then K.Suggest.Sent(settings, text, K.Context.Snapshot(box)) end
 	sent = box
 	if not passBack(key) then V.Hide() end
 end
 
--- Close: the keyboard closes and the box keeps its text; on B its focus goes too (passBack), else it keeps the focus
--- until B or a tap elsewhere.
+-- Close: the keyboard closes and the box keeps its text (a chat box's line waits for it: V.Hide); on B its focus
+-- goes too (passBack), else it keeps the focus until B or a tap elsewhere.
 function V.Close(key)
 	if own(box, "Cancel") then return end
 	sent = box
@@ -741,7 +840,7 @@ function V.Press(key)
 		typeKey(FACE_OF[code])
 		return V.Draw()
 	end
-	local action = K.ActionOf(settings.buttons, key)
+	local action = K.ActionOf(K.BUTTONS, key)
 	if action == "space" then
 		insert(" ")
 		flash(frame.hubKeys[3])
@@ -766,7 +865,7 @@ function V.Press(key)
 end
 
 function V.Release(key)
-	local action = K.ActionOf(settings and settings.buttons or K.BUTTONS, key)
+	local action = K.ActionOf(K.BUTTONS, key)
 	if action == repeatAction then repeatAction = nil end
 	if action == "shift" then shiftHeld = false elseif action == "symbols" then symbolsHeld = false end
 	if action == "shift" or action == "symbols" then
@@ -808,7 +907,8 @@ end
 -- The box's channel, read: the chat box switches it itself (its own button, or a typed /p), and the list follows.
 local function channelOf()
 	if not chat() then return "" end
-	return tostring(box:GetAttribute("chatType")) .. "\0" .. tostring(box:GetAttribute("tellTarget")) .. "\0" .. tostring(box:GetAttribute("channelTarget"))
+	local channel = channelNow()
+	return tostring(channel.kind) .. "\0" .. tostring(channel.target) .. "\0" .. tostring(channel.id)
 end
 
 function refreshSuggestions()
@@ -817,7 +917,7 @@ function refreshSuggestions()
 	if keyNow == searchKey and rev == searchRev then return end
 	local held = keyNow == searchKey and suggestions[rowFocus or 0]
 	searchKey, searchRev, rowFocus, correction, searchJob, scroll = keyNow, rev, nil, nil, nil, 0
-	context = K.Context.Snapshot(box)
+	context = snapshot()
 	local word = K.WordAt(text, cur)
 	if not word or #word < 2 or K.Suggest.LOOKUP[context.field] then
 		suggestions, head = K.Suggest.List(settings, context, text, cur)
@@ -850,6 +950,8 @@ end
 
 function V.Hide()
 	takeBack()
+	V.Disarm()
+	if box and chat() then drafts[box] = (draft ~= "" or lineChannel) and { draft, lineChannel } or nil end
 	box, boxRect, chatRect = nil, nil, nil
 	if tipRow then UI.HideTooltip(tipRow) end
 	tipRow = nil
@@ -898,6 +1000,7 @@ function V.Valid(edit)
 	if edit.IsForbidden and edit:IsForbidden() then return false end
 	if edit.IsAnchoringRestricted and edit:IsAnchoringRestricted() then return false end
 	if not edit:IsVisible() or (edit.IsPassword and edit:IsPassword()) then return false end
+	if issecretvalue and issecretvalue(edit:GetText()) then return false end
 	return not (edit.GetAttribute and edit:GetAttribute("ForeverControllerTweaksNoKeyboard"))
 end
 
@@ -905,6 +1008,9 @@ local function open(edit)
 	local was = box
 	box, boxRect = edit, rectOf(edit)
 	set, keyFocus, searchKey, rowFocus, head, suggestions, scroll = nil, nil, nil, nil, WORDS, {}, 0
+	local kept = chat() and drafts[edit] or {}
+	draft, lineChannel = kept[1] or "", kept[2]
+	draftAt = #draft
 	K.Context.Focus(edit)
 	shiftHeld, symbolsHeld = false, false
 	charset = charsetNow()
@@ -928,11 +1034,15 @@ local function refuse(edit)
 end
 
 -- A blocked action within BLOCK_WINDOW of our changing the box (or sending from it, which closes the keyboard): its
--- handlers reach code the game keeps from addons. The box joins the denied ones; the next Observe closes the
--- keyboard. The core or this module may be blamed.
-local function onBlocked(addon)
+-- handlers reach code the game keeps from addons. The box is denied for this session; the next Observe closes the
+-- keyboard. Only a blocked function that is plainly the box's own ("<its name>:SetText()") saves the denial: any of
+-- our modules may be blamed, so a block from elsewhere must not shut the box for good.
+local function onBlocked(addon, fn)
 	local edited = box or sent
-	if type(addon) == "string" and addon:find("^ForeverControllerTweaks") and edited and GetTime() - typedAt <= BLOCK_WINDOW then K.Context.Deny(edited, settings) end
+	if not (type(addon) == "string" and addon:find("^ForeverControllerTweaks") and edited and GetTime() - typedAt <= BLOCK_WINDOW) then return end
+	local name, called = plain(edited.GetName and edited:GetName()), plain(fn)
+	local ownCall = type(name) == "string" and name ~= "" and type(called) == "string" and (called:sub(1, #name + 1) == name .. ":" or called:sub(1, #name + 1) == name .. ".")
+	K.Context.Deny(edited, settings, ownCall)
 end
 
 -- A tap on the screen (Steam Link sends touches as mouse clicks) counts as the controller while our touch bars are on.
@@ -942,7 +1052,14 @@ local function touchBars()
 	return config and config.enabled and config.show ~= "never"
 end
 
--- Runs while the Gamepad UI is on and the keyboard is enabled.
+-- The observer runs only while the keyboard is enabled and the Gamepad UI is on (V.Wake).
+function V.Wake()
+	settings = db()
+	local on = settings and settings.enabled and ns.Active() and true or false
+	if observer then observer:SetShown(on) end
+	if not on then V.Hide() end
+end
+
 function V.Observe()
 	settings = db()
 	if not (settings and frame) then return end
@@ -975,6 +1092,7 @@ local function buildInput()
 	input:SetScript("OnEvent", function() lastInput = "mouse" end)
 	observer = CreateFrame("Frame")
 	observer:SetScript("OnUpdate", V.Observe)
+	V.Wake()
 end
 
 -- Creation sets input propagation, which is restricted in combat: after a /reload in combat it waits for its end.
@@ -987,19 +1105,36 @@ end
 -- The settings tab's preview draws with the same key parts.
 V.NewKey, V.StyleKey, V.KeyLabel = newKey, styleKey, keyLabel
 
+-- Text in at the cursor, as the keyboard types it (the specs type with it).
+function V.Type(text)
+	if not box then return end
+	insert(text)
+	V.Draw()
+end
+
 function V.Frame() return frame end
 function V.Box() return box end
-function V.State() return { charset = charset, set = set, key = keyFocus, row = rowFocus, scroll = scroll, head = head, suggestions = suggestions, correction = correction, mode = mode, mirror = mirror } end
+function V.State() return { charset = charset, set = set, key = keyFocus, row = rowFocus, scroll = scroll, head = head, suggestions = suggestions, correction = correction, mode = mode, mirror = mirror, draft = draft, at = draftAt, channel = lineChannel } end
 
 ns.On("PLAYER_LOGIN", V.Init)
 ns.On("ADDON_ACTION_BLOCKED", onBlocked)
 ns.On("ADDON_ACTION_FORBIDDEN", onBlocked)
-ns.On("PLAYER_REGEN_ENABLED", V.Init)
-ns.On("PLAYER_REGEN_DISABLED", takeBack)
+ns.On("PLAYER_REGEN_ENABLED", function()
+	V.Init()
+	V.Disarm()
+end)
+-- Still out of combat here: the pad and the Send button are given back before the lockdown.
+ns.On("PLAYER_REGEN_DISABLED", function()
+	takeBack()
+	V.Disarm()
+end)
 ns.On("FCT_READY", function()
+	repaired = nil
 	local s = db()
 	if s then K.Context.Forget(s) end
+	V.Wake()
 end)
+ns.On("FCT_ACTIVE_CHANGED", function() V.Wake() end)
 ns.On("PLAYER_LOGOUT", function()
 	local s = db()
 	if not s then return end

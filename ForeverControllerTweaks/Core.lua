@@ -22,6 +22,9 @@
 --   ns.Active()                    true while the game's "Enable Gamepad UI (Beta)" option is on. The addon does nothing
 --                                  else while it is off: native config, no face bindings, no glyphs, no learning.
 --   ns.SetPanelOpen(open)          the settings screen reports open/closed; Remap applies native while it is open.
+--                                  A change fires FCT_PANEL_OPEN(open).
+--   ns.MigrateChar(flag, fn)       a once-per-character migration that needs the game's slots or macros, run by its
+--                                  owner when it can: fn(char) runs until it returns true, which sets char[flag].
 --   ns.TogglePanel()               no-op until the settings screen replaces it; the binding and plain /fct call it.
 --   ns.commands[name] = fn(args)   adds a /fct subcommand.
 --   ns.Device.Current()            { key = "054c/0ce6", family = "playstation"|"xbox"|"switch"|"generic", raw = <db raw>,
@@ -44,7 +47,9 @@
 -- "remap" (applied state changed; second arg is Remap.State()).
 -- Message FCT_ACTIVE_CHANGED(active): the Gamepad UI option changed; also fires once at the first
 -- PLAYER_ENTERING_WORLD.
--- Message FCT_PAD_FREE(free): ns.padFree() changed (polled at 0.1 s); also fires at every PLAYER_ENTERING_WORLD.
+-- Message FCT_PAD_FREE(free): ns.padFree() changed (seen a frame after the binding stack changes, polled as a safety
+-- net); also fires at every PLAYER_ENTERING_WORLD.
+-- Message FCT_DETECTING(on): controller detection started or stopped.
 -- CVAR_UPDATE(name) arrives as the game sends it, in any case: listeners compare name:lower().
 -- A listener's error is caught: the other listeners still run, and it is reported once per session.
 -- Message FCT_COMBAT_START: fired synchronously first thing in PLAYER_REGEN_DISABLED, before the lockdown
@@ -64,10 +69,17 @@ local handlers, run = {}, nil
 local eventFrame = CreateFrame("Frame")
 eventFrame:SetScript("OnEvent", function(_, event, ...) ns.Fire(event, ...) end)
 
+-- Registering an event the client doesn't have throws and would stop the file loading, so a removed one is skipped
+-- (the check is Controller Companion's, MIT).
+local function validEvent(event)
+	local check = C_EventUtils and C_EventUtils.IsEventValid
+	return not check or check(event)
+end
+
 function ns.On(event, fn)
 	if not handlers[event] then
 		handlers[event] = {}
-		if not event:find("^FCT_") then eventFrame:RegisterEvent(event) end
+		if not event:find("^FCT_") and validEvent(event) then eventFrame:RegisterEvent(event) end
 	end
 	local list = handlers[event]
 	list[#list + 1] = fn
@@ -92,13 +104,28 @@ function ns.Fire(msg, ...)
 	for _, fn in ipairs(handlers[msg] or NONE) do run(msg, fn, ...) end
 end
 
+-- A ring of DEBUG_CAP lines: once full, debugAt is the newest line's index. Put back in order at logout.
+local debugAt, lastDebug = 0, nil
+
 function ns.debug(fmt, ...)
 	local db = ns.db
 	if not (db and db.options.debug) then return end
 
 	local log = db.debugLog
-	log[#log + 1] = date("%H:%M:%S ") .. string.format(fmt, ...)
-	while #log > DEBUG_CAP do table.remove(log, 1) end
+	lastDebug = date("%H:%M:%S ") .. string.format(fmt, ...)
+	if #log < DEBUG_CAP then
+		log[#log + 1] = lastDebug
+		return
+	end
+	debugAt = debugAt % DEBUG_CAP + 1
+	log[debugAt] = lastDebug
+end
+
+local function unroll(log)
+	if debugAt == 0 or #log < DEBUG_CAP then return log end
+	local out = {}
+	for i = 1, #log do out[i] = log[(debugAt + i - 1) % #log + 1] end
+	return out
 end
 
 local GAMEPAD_UI = Enum.InputDeviceInterfaceType and Enum.InputDeviceInterfaceType.Gamepad or 1
@@ -199,7 +226,6 @@ function ns.whenPadFree(what, fn, opts)
 	if next(jobs) and not queueTicker then queueTicker = C_Timer.NewTicker(QUEUE_POLL, queueTick) end
 end
 
-local FREE_POLL = 0.1
 local lastFree, freeTicker
 
 local function pollFree()
@@ -208,6 +234,26 @@ local function pollFree()
 
 	lastFree = free
 	ns.Fire("FCT_PAD_FREE", free)
+end
+
+-- The stack's answer changes only in these four methods (InputBindingManager.lua), so post-hooks on them see every
+-- change; the check runs a frame later, as a window can push and pop in one frame. hooksecurefunc runs our hook after
+-- Blizzard's method has run and returned to secure execution, and the hook only starts a timer; the check after it is
+-- the same read (IsOnlyCoreBindingSetActive) padFree always made. Nothing of the manager is written or replaced but
+-- those four fields, which hooksecurefunc keeps secure (TaintWatch checks them). The poll
+-- stays as a safety net for a caller that kept the old method; at 0.1 s if the hooks couldn't be set.
+-- Learning it from the stack is Gamepad Suite's idea (All Rights Reserved; nothing of its code is used).
+local FREE_POLL, SAFETY_POLL = 0.1, 1
+local STACK_WRITERS = { "AddBindingSet", "RemoveSet", "ClearBindings", "AssumeCoreBindingsAreUsable" }
+local function freeSoon() C_Timer.After(0, pollFree) end
+
+local function hookStack()
+	local manager = GamepadSharedUtility and GamepadSharedUtility.InputBindingManager
+	if not (manager and hooksecurefunc) then return false end
+	for _, method in ipairs(STACK_WRITERS) do
+		if type(manager[method]) ~= "function" or not pcall(hooksecurefunc, manager, method, freeSoon) then return false end
+	end
+	return true
 end
 
 local blockedTold
@@ -221,7 +267,13 @@ function ns.OnBlocked(event, addon, func)
 	ns.log("Blizzard blocked " .. tostring(func) .. " — please /reload and report")
 end
 
-function ns.SetPanelOpen(open) ns.panelOpen = not not open end
+function ns.SetPanelOpen(open)
+	open = not not open
+	if open == ns.panelOpen then return end
+
+	ns.panelOpen = open
+	ns.Fire("FCT_PANEL_OPEN", open)
+end
 
 function ns.TogglePanel() end
 
@@ -231,11 +283,17 @@ ns.On("PLAYER_ENTERING_WORLD", function()
 	updateActive()
 	lastFree = nil
 	pollFree()
-	freeTicker = freeTicker or C_Timer.NewTicker(FREE_POLL, pollFree)
+	freeTicker = freeTicker or C_Timer.NewTicker(hookStack() and SAFETY_POLL or FREE_POLL, pollFree)
 end)
-ns.On("INPUT_DEVICE_INTERFACE_TRANSITION", function(newMode) updateActive(newMode == GAMEPAD_UI) end)
+-- padFree() is always true while inactive, so it can change with the option too.
+ns.On("INPUT_DEVICE_INTERFACE_TRANSITION", function(newMode)
+	updateActive(newMode == GAMEPAD_UI)
+	pollFree()
+end)
 ns.On("CVAR_UPDATE", function(name)
-	if type(name) == "string" and name:lower() == "inputdeviceinterfacestyle" then updateActive() end
+	if not (type(name) == "string" and name:lower() == "inputdeviceinterfacestyle") then return end
+	updateActive()
+	pollFree()
 end)
 
 -- The lockdown starts after this event, so the panel can close and the remap can still be written for the fight.
@@ -261,6 +319,16 @@ local MIGRATIONS = {
 }
 
 local function asTable(value) return type(value) == "table" and value or {} end
+-- value - value is NaN for NaN and for an infinity.
+local function finite(value) return type(value) == "number" and value - value == 0 end
+
+local function stringList(value)
+	if type(value) ~= "table" then return false end
+	for key, item in pairs(value) do
+		if type(key) ~= "number" or type(item) ~= "string" then return false end
+	end
+	return true
+end
 
 -- Drops every value that isn't a table, down to depth levels (cells[device][code][layer] is 3).
 local function tablesDown(map, depth, path, fix)
@@ -285,7 +353,17 @@ local function repairMacros(macros, path, fix)
 end
 
 local CHAR_TABLES = { highest = 1, shadow = 1, cells = 3, faceEntries = 2 }
-local CHAR_FLAGS = { "legacyFaceDone", "routedUnderDone" }
+-- The per-character migrations (ns.MigrateChar): legacyFaceDone (Face, PS:Back/Inspect macros to routed cells),
+-- routedUnderDone (Face, FCT: macros left under routed cells), macroPrefixDone (Actions, PS: macros renamed FCT:).
+local CHAR_FLAGS = { "legacyFaceDone", "routedUnderDone", "macroPrefixDone" }
+
+-- Unlike MIGRATIONS (the account db, at load), these need the game's slots and macros, so each runs from its owner
+-- when those can be written; a run that couldn't finish (a slot write refused) is tried again on the next call.
+function ns.MigrateChar(flag, fn)
+	local char = ns.Face and ns.Face.CharDB()
+	if not char or char[flag] then return end
+	if fn(char) then char[flag] = true end
+end
 
 -- The face, action and macro stores are other files' data; only their shape is repaired here, so a damaged one can't
 -- break the load. Bad entries are dropped.
@@ -334,7 +412,19 @@ local function loadDB()
 	if type(options.glyphs) ~= "boolean" then options.glyphs = true end
 	if type(options.toggleKey) ~= "string" then options.toggleKey = "PADSOCIAL" end
 	options.debug = options.debug == true
-	while #db.debugLog > DEBUG_CAP do table.remove(db.debugLog, 1) end
+	-- toggleHold: false (the key alone) or the physical buttons held first; nil gets the Panel's default.
+	if options.toggleHold ~= false and not stringList(options.toggleHold) then options.toggleHold = nil end
+	if not finite(options.minimapAngle) then options.minimapAngle = nil end
+	-- Onboarding's sets: { [device or onboarding key] = true }.
+	for _, set in ipairs({ "onboarded", "declined" }) do
+		if db[set] ~= nil and type(db[set]) ~= "table" then
+			db[set] = nil
+			fixes[#fixes + 1] = set
+		end
+	end
+	local log, kept = db.debugLog, {}
+	for i = math.max(1, #log - DEBUG_CAP + 1), #log do kept[#kept + 1] = log[i] end
+	db.debugLog = kept
 
 	for key, entry in pairs(db.devices) do
 		local repaired, entryFixes = ns.Layout.RepairDevice(entry, key)
@@ -362,19 +452,72 @@ ns.On("ADDON_LOADED", function(name)
 	ns.Fire("FCT_READY")
 end)
 
-local HELP = "/fct (or /controllertweaks) opens the settings. Commands: status | preset native|split | release (gives back every slot and macro before uninstalling)"
-	.. " | role <L1 R1 L2 R2 P1-P4> <leftmod rightmod friendly hostile none> | face <bottom right left top> <interact inspect back jump>"
-	.. " | family playstation|xbox|switch|reset | detect | reset | selftest"
+local HELP = "/fct (or /controllertweaks) opens the settings; so do L2 + R2 + Create/View and the minimap button. Commands: bindings (the Bindings window) | rings (the Rings settings)"
+	.. " | setup (the first-run guide) | detect (press-each-button controller setup) | family playstation|xbox|switch|reset"
+	.. " | preset native|split | role <L1 R1 L2 R2 P1-P4> <leftmod rightmod friendly hostile none>"
+	.. " | face <bottom right left top> <interact inspect back jump> | learn <L1 R1 L2 R2 P1-P4>|cancel | reset (the layout)"
+	.. " | release (gives back every slot and macro before uninstalling) | status | selftest | ringlog | debug on|off | help"
 
 function ns.commands.help() ns.log(HELP) end
+
+-- Debug only, read only: issecurevariable on the Blizzard gamepad state the addon must never own. The first moment
+-- each field turns insecure is logged once, with the debug line written just before it (our last action). The idea
+-- is Controller Forever's TaintWatch (All Rights Reserved; nothing of its code is used).
+local TAINT_POLL = 1
+local TAINT_FIELDS = {
+	{ "InputBindingManager", function() return GamepadSharedUtility and GamepadSharedUtility.InputBindingManager end, { "bindingSetStack", "activeBindings", "currentCoreBindingActive", "AddBindingSet", "RemoveSet", "ClearBindings", "AssumeCoreBindingsAreUsable" } },
+	{ "FrameControlsManager", function() return GamepadMode and GamepadMode.FrameControlsManager end, { "focusedFrame", "isUIFocused", "shownFrames", "topSuspendedFrame" } },
+	{ "PageUnit", function() return GamepadMainActionBarFrame and GamepadMainActionBarFrame.PageUnit end, { "activeBar", "currentState", "activeFlyoutButton", "actionBars" } },
+}
+local taintSeen, taintTicker = {}, nil
+
+-- name.field -> nil (secure or not there) or who owns it ("?" when the game doesn't say).
+local function taintedFields()
+	local out = {}
+	if not issecurevariable then return out end
+	for _, watched in ipairs(TAINT_FIELDS) do
+		local name, get, fields = watched[1], watched[2], watched[3]
+		local owner = get()
+		for _, field in ipairs(type(owner) == "table" and fields or NONE) do
+			local ok, secure, by = pcall(issecurevariable, owner, field)
+			if ok and not secure then out[name .. "." .. field] = by or "?" end
+		end
+	end
+	return out
+end
+
+local function taintCheck()
+	if not ns.db.options.debug then
+		taintTicker:Cancel()
+		taintTicker = nil
+		return
+	end
+	for field, by in pairs(taintedFields()) do
+		if not taintSeen[field] then
+			taintSeen[field] = true
+			ns.debug("taintwatch: %s now insecure, by %s; last before it: %s", field, by, tostring(lastDebug))
+		end
+	end
+end
+
+local function watchTaint()
+	if ns.db.options.debug and not taintTicker then taintTicker = C_Timer.NewTicker(TAINT_POLL, taintCheck) end
+end
 
 function ns.commands.debug(args)
 	local on = args[1] == "on"
 	if not on and args[1] ~= "off" then return ns.log("debug log is " .. (ns.db.options.debug and "on" or "off")) end
 
 	ns.db.options.debug = on
+	watchTaint()
 	ns.log("debug log " .. (on and "on (ForeverControllerTweaksDB.debugLog)" or "off"))
 end
+
+ns.On("PLAYER_LOGIN", watchTaint)
+ns.On("PLAYER_LOGOUT", function()
+	ns.db.debugLog = unroll(ns.db.debugLog)
+	debugAt = 0
+end)
 
 -- Pcall'd: the reading is for a bug report, so a missing API or another file's error must not stop it.
 local function safe(fn, ...)
@@ -406,6 +549,11 @@ function ns.commands.selftest()
 	local account, character = safe(GetNumMacros)
 	add("macros: %s account, %s character", account, character or "?")
 	add("remap %s, face %s, glyphs %s", ns.Remap.State(), safe(ns.Face and ns.Face.State), safe(ns.Glyphs and ns.Glyphs.Mode))
+	local tainted = {}
+	for field, by in pairs(taintedFields()) do tainted[#tainted + 1] = field .. " by " .. by end
+	table.sort(tainted)
+	add("taintwatch: %s", not issecurevariable and "n/a" or #tainted > 0 and table.concat(tainted, ", ") or "every watched Blizzard gamepad field is secure")
+	watchTaint()
 	ns.log("selftest: the debug log is on (/fct debug off to stop). For a taint check type /console taintLog 2, then /reload.")
 end
 

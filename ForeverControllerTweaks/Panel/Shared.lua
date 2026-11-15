@@ -41,21 +41,21 @@ UI.L = {
 	BINDINGS = "Bindings",
 	CLEAR_SLOT = "Clear slot",
 	TOUCH_MISSING = "Touch bars are not in this build yet.",
+	TOUCH_TURNED_OFF = "Touch bars are turned off: turn on Forever Controller Tweaks: Touch in the AddOns list.",
 	TOUCH = "Touch",
 	TOUCH_TAB = "Touch bars",
 	TOUCH_TITLE = "Controller Tweaks · Touch bars",
 	TOUCH_HINT = "Buttons on the screen edges to tap on a touch screen (Steam Link).",
 	TOUCH_ON = "On",
-	TOUCH_OFF = "Off",
 	TOUCH_ONOFF_TIP = "Turns both bars on or off.",
 	TOUCH_SHOW = { always = "Always", gamepad = "Gamepad UI", combat = "In combat", never = "Never" },
 	TOUCH_SHOW_TIP = "When the bars are on screen.",
 	TOUCH_SHOW_LABEL = "Show",
 	TOUCH_SLOTS = "Slots %d / %d",
 	TOUCH_FULL = "All %d touch slots are in use: clear a button first.",
-	TOUCH_LAYERS_LATER = "Modifier layers on touch buttons need a newer Touch build.",
 	TOUCH_SUB_LAYER = "%s · button %d · %s bar",
 	TOUCH_SIDE_TIP = "Which bar the settings below change.",
+	TOUCH_SIDE_LABEL = "Settings for",
 	TAB_BINDINGS = "Bindings",
 	RINGS_OFF = "The Rings module is off: this button does nothing until you turn it on in the AddOns list.",
 	LEARN_BUTTON = "button %d",
@@ -95,7 +95,6 @@ UI.L = {
 	GUIDE_HEADING = "Step %d of 4 · Press the button you want for %s",
 	GUIDE_HINT = "If that button already has a role, the two swap automatically.",
 	GUIDE_TARGET = { leftmod = "the LEFT bar", rightmod = "the RIGHT bar", friendly = "FRIENDLY targeting", hostile = "HOSTILE targeting" },
-	GUIDE_WILL = { leftmod = "Will open the LEFT bar", rightmod = "Will open the RIGHT bar", friendly = "Will hold FRIENDLY targeting", hostile = "Will hold HOSTILE targeting" },
 	GUIDE_WAITING = "Waits for its turn",
 	GUIDE_NOT_SET = "Not set yet",
 	ROLE_TIP = "Picking a role another button holds swaps the two.",
@@ -157,9 +156,8 @@ UI.L = {
 	FAMILY_MISSING = "Controller type can't be saved in this build yet.",
 	SUGGESTED = "Suggested",
 	FAMILY_SUGGESTED = { xbox = "Steam Link controllers usually work as Xbox.", playstation = "This controller says it works as PlayStation.", switch = "This controller says it works as Switch." },
-	OPEN_WAYS = "Open Controller Tweaks: %s; Options > AddOns > Forever Controller Tweaks; the AddOns menu on the minimap; Key Bindings > AddOns > Forever Controller Tweaks; or /fct.",
+	OPEN_WAYS = "Open Controller Tweaks: %s; the minimap button; the AddOns menu on the minimap; Key Bindings > AddOns > Forever Controller Tweaks; or /fct.",
 	TOGGLE_HOLD = "hold %s, then press %s",
-	HELP_MORE = " /fct bindings, /fct setup, /fct detect; /fct release before uninstalling.",
 	CLEAR_TIP = "Empties this crossbar slot.",
 	SHOWN_ACTION = "%s bar · %s",
 	DETECT_TITLE = "Controller Tweaks · Controller setup",
@@ -214,7 +212,6 @@ UI.L = {
 	RESTORE_DEFAULT = "Restore default action",
 	UNDO_RESTORE = "Undo: restore %s",
 	KEYBOARD = "On-screen keyboard",
-	KEYBOARD_OPEN = "Keyboard settings",
 	KEYBOARD_TIP = "Type in chat and text boxes with the controller: on or off, when it opens, its size and its buttons.",
 	UNDO_TIP = "Puts back what you just cleared.",
 	TOUCH_RESET = "Reset touch layout",
@@ -231,14 +228,6 @@ UI.L = {
 	RESUME = "Resume",
 	RESUME_GUIDE = "Combat closed the Controller Tweaks setup guide. Resume where you left it?",
 	RESUME_CUSTOM = "Combat closed \"Set it up yourself\". Resume where you left it?",
-	SETTINGS_TITLE = "Forever Controller Tweaks",
-	SETTINGS_OPEN_LABEL = "Bindings",
-	SETTINGS_OPEN = "Open Settings",
-	SETTINGS_OPEN_TIP = "Opens Bindings: buttons, roles and presets. On the controller: %s.",
-	SETTINGS_SETUP_LABEL = "Setup guide",
-	SETTINGS_SETUP = "Run setup guide",
-	SETTINGS_SETUP_TIP = "Walks you through choosing a layout for this controller again.",
-	SETTINGS_FAILED = "Options page not added: %s",
 	NOTICE_TEXT = "Forever Controller Tweaks works with the Gamepad UI. Turn on Options > Gamepad (Beta) > Enable Gamepad UI (Beta).",
 	RESET_TEXT = "Reset Controller Tweaks for this controller? Buttons go back to the game’s default roles and face actions.",
 	RESET_SUB = "Your crossbar actions stay where they are.",
@@ -250,6 +239,8 @@ UI.L = {
 }
 
 local L = UI.L
+-- Touch is an addon of its own: installed but turned off, it is not "missing from this build".
+if C_AddOns and C_AddOns.DoesAddOnExist and C_AddOns.DoesAddOnExist("ForeverControllerTweaks_Touch") then L.TOUCH_MISSING = L.TOUCH_TURNED_OFF end
 
 -- Role words and lines, controller names and glyph-set lines: UI text too, merged into UI.ROLE / UI.FAMILY below.
 L.ROLES = {
@@ -1307,6 +1298,19 @@ function UI.DialogShown() return dialog and dialog:IsShown() end
 -- side = "right" | "left" | "below" }.
 local tooltip
 local TIP_PAD, TIP_GAP, ACTION_GLYPH = 10, 2, 18
+-- Text wraps at TIP_TEXT_W, GameTooltip's own width for a long line, so a tooltip stays beside its row instead of
+-- stretching over it.
+local TIP_TEXT_W = 300
+
+-- Sets a tooltip font string's text and width: its own width up to TIP_TEXT_W, wrapping past that.
+local function tipText(fs, text)
+	fs:SetWidth(TIP_TEXT_W)
+	fs:SetText(text)
+	local full = fs.GetUnboundedStringWidth and fs:GetUnboundedStringWidth() or fs:GetStringWidth()
+	fs:SetWidth(math.min(full or TIP_TEXT_W, TIP_TEXT_W) + 1)
+	return fs:GetWidth()
+end
+UI.TIP_TEXT_W = TIP_TEXT_W
 
 local function tooltipFrame()
 	if tooltip then return tooltip end
@@ -1317,12 +1321,14 @@ local function tooltipFrame()
 	local color = TOOLTIP_DEFAULT_BACKGROUND_COLOR
 	if tooltip.Center and color and color.GetRGB then tooltip.Center:SetVertexColor(color:GetRGB()) end
 	tooltip.title = tooltip:CreateFontString(nil, "ARTWORK", "GameTooltipHeaderText")
+	tooltip.title:SetJustifyH("LEFT")
 	tooltip.lines, tooltip.actions = {}, {}
 	return tooltip
 end
 
 local function tipLine(i)
 	local line = tooltip.lines[i] or tooltip:CreateFontString(nil, "ARTWORK", "GameFontHighlight")
+	line:SetJustifyH("LEFT")
 	tooltip.lines[i] = line
 	return line
 end
@@ -1348,18 +1354,18 @@ function UI.Tooltip(owner, spec)
 	for _, action in ipairs(tip.actions) do action:Hide() end
 
 	local y, width = TIP_PAD, 0
-	tip.title:SetText(spec.title or "")
+	width = tipText(tip.title, spec.title or "")
 	tip.title:SetTextColor(NORMAL_FONT_COLOR:GetRGB())
 	tip.title:ClearAllPoints()
 	tip.title:SetPoint("TOPLEFT", TIP_PAD, -y)
-	y, width = y + tip.title:GetStringHeight() + TIP_GAP, tip.title:GetStringWidth()
+	y = y + tip.title:GetStringHeight() + TIP_GAP
 	for i, text in ipairs(spec.lines or {}) do
 		local line = tipLine(i)
-		line:SetText(text)
+		width = math.max(width, tipText(line, text))
 		line:ClearAllPoints()
 		line:SetPoint("TOPLEFT", TIP_PAD, -y)
 		line:Show()
-		y, width = y + line:GetStringHeight() + TIP_GAP, math.max(width, line:GetStringWidth())
+		y = y + line:GetStringHeight() + TIP_GAP
 	end
 	if spec.actions and #spec.actions > 0 then y = y + 8 end
 	for i, entry in ipairs(spec.actions or {}) do
@@ -1376,7 +1382,14 @@ function UI.Tooltip(owner, spec)
 
 	tip:SetSize(width + TIP_PAD * 2, y - TIP_GAP + TIP_PAD)
 	tip:ClearAllPoints()
-	if spec.side == "left" then tip:SetPoint("TOPRIGHT", owner, "TOPLEFT", -8, 0)
+	-- Beside the row, never over it: a side the screen can't hold flips to the other (the clamp would push it back
+	-- over the row). Owner units; the tooltip takes the owner's scale below.
+	local side, left, right = spec.side, owner:GetLeft(), owner:GetRight()
+	local screen = UIParent:GetRight() and UIParent:GetRight() * UIParent:GetEffectiveScale() / owner:GetEffectiveScale()
+	local need = tip:GetWidth() + 8
+	if side ~= "left" and side ~= "below" and right and screen and right + need > screen and left and left - need >= 0 then side = "left"
+	elseif side == "left" and left and left - need < 0 and right and screen and right + need <= screen then side = "right" end
+	if side == "left" then tip:SetPoint("TOPRIGHT", owner, "TOPLEFT", -8, 0)
 	elseif spec.side == "below" then tip:SetPoint("TOPRIGHT", owner, "BOTTOMLEFT", -6, -8)
 	else tip:SetPoint("TOPLEFT", owner, "TOPRIGHT", 8, 0) end
 	tip:SetScale(owner:GetEffectiveScale() / UIParent:GetEffectiveScale())
@@ -1404,47 +1417,212 @@ function UI.SectionHeader(parent, x, y, width, text)
 	return header
 end
 
+-- Settings controls (design/settings-redesign.md 1.4): our own frames with the Settings panel's art, never its
+-- templates. They only draw and take mouse clicks; the tab keeps the value, steps it on the pad (its row's onDir and
+-- A) and sets it back with Set.
+
+-- A checkbox (SettingsCheckboxTemplate's art), 30 x 29. onClick() on a click; box:Set(on) shows the check.
+function UI.Checkbox(parent, onClick)
+	local box = CreateFrame("Button", nil, parent)
+	box:SetSize(30, 29)
+	local bg = box:CreateTexture(nil, "BACKGROUND")
+	bg:SetAtlas("checkbox-minimal")
+	bg:SetAllPoints()
+	box.check = box:CreateTexture(nil, "ARTWORK")
+	box.check:SetAtlas("checkmark-minimal")
+	box.check:SetAllPoints()
+	box:SetScript("OnClick", function() onClick() end)
+	function box.Set(_, on) box.check:SetShown(not not on) end
+	return box
+end
+
+-- The dropdown art: common-dropdown-c-button stretched 7 past the button on every side.
+local function dropdownArt(button, atlas, layer)
+	local tex = button:CreateTexture(nil, layer or "BACKGROUND")
+	tex:SetAtlas(atlas)
+	tex:SetPoint("TOPLEFT", -7, 7)
+	tex:SetPoint("BOTTOMRIGHT", 7, -7)
+	return tex
+end
+
+-- A stepper dropdown (SettingsDropdownWithButtonsTemplate's look): a back button, the value (width wide, 25 tall)
+-- and a next button, 26 x 25 each, 5 and 4 apart. onStep(-1 | 1) from the steppers, onStep(1, true) from the value
+-- (round past the end). drop:Set(text, first, last) greys the stepper at an end; drop:SetFocused(on) lights it.
+local DROP_H, DROP_STEP = 25, 26
+
+function UI.Dropdown(parent, width, onStep)
+	local drop = CreateFrame("Frame", nil, parent)
+	drop:SetSize(width + 2 * DROP_STEP + 9, DROP_H)
+	local value = CreateFrame("Button", nil, drop)
+	value:SetSize(width, DROP_H)
+	value:SetPoint("LEFT", DROP_STEP + 5, 0)
+	dropdownArt(value, "common-dropdown-c-button")
+	drop.hover = dropdownArt(value, "common-dropdown-c-button-hover-2", "BORDER")
+	drop.hover:Hide()
+	drop.arrow = value:CreateTexture(nil, "ARTWORK")
+	drop.arrow:SetAtlas("common-dropdown-c-button-hover-arrow")
+	drop.arrow:SetSize(12, 5)
+	drop.arrow:SetPoint("TOP", value, "BOTTOM", 0, 1)
+	drop.arrow:Hide()
+	drop.text = value:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+	drop.text:SetPoint("LEFT", 8, 0)
+	drop.text:SetPoint("RIGHT", -8, 0)
+	drop.text:SetWordWrap(false)
+	value:SetScript("OnClick", function() onStep(1, true) end)
+	drop.steppers = {}
+	for step, name in pairs({ [-1] = "back", [1] = "next" }) do
+		local button = CreateFrame("Button", nil, drop)
+		button:SetSize(DROP_STEP, DROP_H)
+		button:SetPoint(step < 0 and "LEFT" or "RIGHT")
+		dropdownArt(button, "common-dropdown-c-button")
+		button.icon = button:CreateTexture(nil, "ARTWORK")
+		button.icon:SetSize(17, 17)
+		button.icon:SetPoint("CENTER")
+		button.atlas = "common-dropdown-icon-" .. name
+		button:SetScript("OnClick", function() onStep(step) end)
+		drop.steppers[step] = button
+	end
+	function drop.Set(_, text, first, last)
+		drop.text:SetText(text)
+		for step, button in pairs(drop.steppers) do
+			local ended = step < 0 and first or step > 0 and last
+			button.icon:SetAtlas(button.atlas .. (ended and "-disabled" or ""))
+		end
+	end
+	function drop.SetFocused(_, on)
+		drop.hover:SetShown(on)
+		drop.arrow:SetShown(on)
+	end
+	return drop
+end
+
+-- A slider with steppers (MinimalSliderWithSteppersTemplate's art), width wide with the steppers, the value in
+-- GameFontNormal 10 past its right. onStep(-1 | 1) from the steppers; onSet(value) when the thumb is dragged (on the
+-- grid min + n * step). slider:Set(value, text) moves the thumb.
+function UI.Slider(parent, width, min, max, step, onStep, onSet)
+	local slider = CreateFrame("Frame", nil, parent)
+	slider:SetSize(width, 19)
+	for dir, spec in pairs({ [-1] = { "LEFT", 11, 19, "Minimal_SliderBar_Button_Left" }, [1] = { "RIGHT", 9, 18, "Minimal_SliderBar_Button_Right" } }) do
+		local button = CreateFrame("Button", nil, slider)
+		button:SetSize(spec[2], spec[3])
+		button:SetPoint(spec[1])
+		local tex = button:CreateTexture(nil, "ARTWORK")
+		tex:SetAtlas(spec[4])
+		tex:SetAllPoints()
+		button:SetScript("OnClick", function() onStep(dir) end)
+	end
+	local bar = CreateFrame("Slider", nil, slider)
+	bar:SetPoint("TOPLEFT", 15, -1)
+	bar:SetPoint("BOTTOMRIGHT", -13, 1)
+	bar:SetOrientation("HORIZONTAL")
+	bar:SetMinMaxValues(min, max)
+	bar:SetValueStep(step)
+	bar:SetObeyStepOnDrag(true)
+	for _, part in ipairs({ { "Minimal_SliderBar_Left", "LEFT" }, { "Minimal_SliderBar_Right", "RIGHT" } }) do
+		local cap = bar:CreateTexture(nil, "BACKGROUND")
+		cap:SetAtlas(part[1])
+		cap:SetSize(11, 17)
+		cap:SetPoint(part[2])
+	end
+	local middle = bar:CreateTexture(nil, "BACKGROUND")
+	middle:SetAtlas("_Minimal_SliderBar_Middle")
+	middle:SetPoint("TOPLEFT", 11, 0)
+	middle:SetPoint("BOTTOMRIGHT", -11, 0)
+	local thumb = bar:CreateTexture(nil, "ARTWORK")
+	thumb:SetAtlas("Minimal_SliderBar_Button")
+	thumb:SetSize(20, 19)
+	bar:SetThumbTexture(thumb)
+	-- Set moves the thumb quietly; only a drag reaches onSet. Values round to hundredths, so steps never drift.
+	bar:SetScript("OnValueChanged", function(_, value)
+		if not slider.quiet then onSet(math.floor(value * 100 + 0.5) / 100) end
+	end)
+	slider.value = slider:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+	slider.value:SetPoint("LEFT", slider, "RIGHT", 10, 0)
+	function slider.Set(_, value, text)
+		slider.quiet = true
+		bar:SetValue(value)
+		slider.quiet = nil
+		slider.value:SetText(text or value)
+	end
+	return slider
+end
+
+-- A vertical scroll bar (MinimalScrollBar's art and geometry: 8 wide, 17 x 11 arrows at the ends, the track 19 in) on
+-- our own frames: the template's OnLoad and scroll controller are Blizzard code. onScroll(top) from an arrow (a row),
+-- a thumb drag, a track click or the wheel over the bar; the caller clamps it and redraws. bar:Set(top, visible,
+-- total) moves the thumb quietly, sizes it to visible of total and shows the bar only while rows are out of view
+-- (returns that); bar.top is the top it was last set to.
+local BAR_W, BAR_END, BAR_THUMB = 8, 19, 23
+
+function UI.ScrollBar(parent, height, onScroll)
+	local bar = CreateFrame("Frame", nil, parent)
+	bar:SetSize(BAR_W, height)
+	bar.top = 0
+	local track = CreateFrame("Slider", nil, bar)
+	track:SetOrientation("VERTICAL")
+	track:SetPoint("TOPLEFT", 0, -BAR_END)
+	track:SetPoint("BOTTOMRIGHT", 0, BAR_END)
+	track:SetValueStep(1)
+	track:SetObeyStepOnDrag(true)
+	-- Begin, end and the middle between them, on the track and on the thumb alike (inside the region).
+	local function art(region, layer, name, tile)
+		local first, last, middle = track:CreateTexture(nil, layer), track:CreateTexture(nil, layer), track:CreateTexture(nil, layer)
+		first:SetAtlas(name .. "-top", true)
+		first:SetPoint("TOPLEFT", region)
+		last:SetAtlas(name .. "-bottom", true)
+		last:SetPoint("BOTTOMLEFT", region)
+		middle:SetAtlas((tile or "") .. name .. "-middle", true)
+		middle:SetPoint("TOPLEFT", first, "BOTTOMLEFT")
+		middle:SetPoint("BOTTOMRIGHT", last, "TOPRIGHT")
+	end
+	art(track, "BACKGROUND", "minimal-scrollbar-track", "!")
+	local thumb = track:CreateTexture(nil, "ARTWORK")
+	thumb:SetColorTexture(0, 0, 0, 0)
+	thumb:SetSize(BAR_W, BAR_THUMB)
+	track:SetThumbTexture(thumb)
+	art(thumb, "ARTWORK", "minimal-scrollbar-small-thumb")
+	track:SetScript("OnValueChanged", function(_, value) if not bar.quiet then onScroll(math.floor(value + 0.5)) end end)
+	bar.arrows = {}
+	for step, name in pairs({ [-1] = "top", [1] = "bottom" }) do
+		local button = CreateFrame("Button", nil, bar)
+		button:SetSize(17, 11)
+		button:SetPoint(step < 0 and "TOP" or "BOTTOM")
+		button.icon = button:CreateTexture(nil, "BACKGROUND")
+		button.icon:SetAtlas("minimal-scrollbar-arrow-" .. name)
+		button.icon:SetAllPoints()
+		button:SetHighlightAtlas("minimal-scrollbar-arrow-" .. name .. "-over", "BLEND")
+		button:SetPushedAtlas("minimal-scrollbar-arrow-" .. name .. "-down")
+		button:SetScript("OnClick", function() onScroll(bar.top + step) end)
+		bar.arrows[step] = button
+	end
+	bar:EnableMouseWheel(true)
+	bar:SetScript("OnMouseWheel", function(_, delta) onScroll(bar.top - delta) end)
+	function bar.Set(_, top, visible, total)
+		local last = math.max(0, total - visible)
+		bar.top = top
+		bar:SetShown(last > 0)
+		if last == 0 then return false end
+		bar.quiet = true
+		track:SetMinMaxValues(0, last)
+		track:SetValue(top)
+		bar.quiet = nil
+		thumb:SetHeight(math.max(BAR_THUMB, (height - 2 * BAR_END) * visible / total))
+		-- An arrow at its end greys out (the template desaturates a disabled stepper).
+		for step, button in pairs(bar.arrows) do
+			local live = step < 0 and top > 0 or step > 0 and top < last
+			button:SetEnabled(live)
+			button.icon:SetDesaturated(not live)
+		end
+		return true
+	end
+	return bar
+end
+
 -- The character window's vertical side tabs (LargeSideTabButtonTemplate's art: common-sidetab, -mask, -selected,
 -- -hover; Camelot icon offset -4) on the window's right edge, with the L1 glyph above the column and R1 below
 -- (GamepadTabIndicatorsTemplate's place and size; the end glyph shows its disabled state). specs = { { icon, name,
 -- open }, ... }; index = this window's tab.
 local TAB_ICON_X = -4
-
--- A segmented control in a window header (Touch's On/Off and Show, Keyboard's settings): native footer slot plates
--- side by side, the selected one lit with UI-QuestTitleHighlight and gold text. specs = { { id, label }, ... };
--- onPick(id) on a click or A. segments:Select(id) lights one.
-local SEGMENT_H = 26
-
-function UI.Segments(parent, specs, x, y, width, onPick)
-	local segments = {}
-	for i, spec in ipairs(specs) do
-		local segment = CreateFrame("Button", nil, parent)
-		segment:SetSize(width, SEGMENT_H)
-		UI.At(segment, parent, x + (i - 1) * width, y)
-		segment.bg = segment:CreateTexture(nil, "BACKGROUND")
-		segment.bg:SetAtlas("gamepad-footer-slot-bg")
-		segment.bg:SetAllPoints()
-		segment.highlight = segment:CreateTexture(nil, "ARTWORK")
-		segment.highlight:SetTexture("Interface\\QuestFrame\\UI-QuestTitleHighlight")
-		segment.highlight:SetBlendMode("ADD")
-		segment.highlight:SetAllPoints()
-		segment.label = segment:CreateFontString(nil, "OVERLAY", "GameFontDisable")
-		segment.label:SetPoint("CENTER")
-		segment.label:SetText(spec[2])
-		segment.id, segment.text = spec[1], spec[2]
-		segment.click = function() onPick(spec[1]) end
-		segment:SetScript("OnClick", segment.click)
-		segments[i] = segment
-	end
-	function segments.Select(_, id)
-		for _, segment in ipairs(segments) do
-			local on = segment.id == id
-			segment.highlight:SetShown(on)
-			segment.label:SetFontObject(on and "GameFontNormal" or "GameFontDisable")
-		end
-	end
-	return segments
-end
 
 function UI.SideTabs(window, specs, index)
 	local info = C_Texture.GetAtlasInfo("common-sidetab")

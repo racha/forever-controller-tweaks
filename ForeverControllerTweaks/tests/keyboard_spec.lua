@@ -89,45 +89,28 @@ local count = 0
 for _ in pairs(big) do count = count + 1 end
 assert(count == K.CAP and big["w" .. (K.CAP + 5)], "learning keeps the cap: " .. count)
 
--- Quick phrases: situations most specific first, tokens filled, unfillable skipped, duplicates removed.
-local ctx = { instance = "party", group = true, dungeon = "The Deadmines", zone = "Westfall" }
-local list = K.Phrases(ctx)
-assert(list[1].text == "Ready to pull?" and list[1].situation == "dungeon")
-local texts = {}
-for _, p in ipairs(list) do texts[p.text] = (texts[p.text] or 0) + 1 end
-assert(texts["Can someone summon me to The Deadmines?"] == 1 and not texts["Are you doing {quest}?"])
-local thanks = 0
-for _, p in ipairs(K.Phrases({ whisper = true })) do if p.text == "Thanks!" then thanks = thanks + 1 end end
-assert(thanks == 1, "Thanks! (whisper and anywhere) appears once")
-for _, p in ipairs(list) do assert(not p.text:find("{quest}", 1, true), "a quest phrase with no quest is skipped") end
-list = K.Phrases({ combat = true, whisper = true, quest = "|cffffff00[Q]|r" })
-assert(list[1].situation == "combat" and list[4].situation == "whisper")
-local q = false
-for _, p in ipairs(list) do if p.text == "Can anyone help with |cffffff00[Q]|r?" then q = true end end
-assert(q, "{quest} becomes the link")
-assert(K.Fill("Target {target}", {}) == "Target %t" and K.Fill("{zone}", {}) == nil)
-list = K.Phrases({}, { anywhere = { "Mine" } })
-assert(#list == 1 and list[1].text == "Mine", "saved phrases replace the defaults")
--- Quest lines: at most 2, the most useful first; the list stays short.
-list = K.Phrases({ quest = "[Q]", resting = true, group = true })
-local questLines = {}
-for _, p in ipairs(list) do if p.text:find("[Q]", 1, true) then questLines[#questLines + 1] = p.text end end
-assert(#questLines == 2 and questLines[1] == "Can anyone help with [Q]?" and questLines[2] == "Group up for [Q]?", table.concat(questLines, " / "))
-assert(#list <= K.PHRASE_MAX and list[3].situation == "group", "then situational lines, " .. #list .. " in all")
-list = K.Phrases({ resting = true })
-for _, p in ipairs(list) do assert(not p.text:find("{quest}", 1, true) and p.situation ~= "quest", "no quest followed: no quest lines") end
-local s = K.Situations({ instance = "raid", group = true, raid = true, resting = true })
-assert(table.concat(s, ",") == "raid,anywhere", table.concat(s, ","))
+-- Learning: a link or a colour code teaches nothing; one line adds at most LEARN_NEW new words, none too long; known
+-- words still count up.
+local learned = { hello = 1 }
+K.Learn(learned, "|cff00ff00green|r words |Hitem:1|h[Sword]|h")
+assert(not learned.green and not learned.words and not learned.sword, "a line with | teaches nothing")
+K.Learn(learned, "hello " .. ("abcdefghijklmnopqrstuvwxyz"):sub(1, K.LEARN_LONG + 1) .. " one two three four five six seven eight nine ten")
+local fresh = 0
+for word in pairs(learned) do if word ~= "hello" then fresh = fresh + 1 end end
+assert(learned.hello == 2 and fresh == K.LEARN_NEW and learned.one and learned.eight and not learned.nine, "known words count, at most " .. K.LEARN_NEW .. " new: " .. fresh)
+assert(not learned[("abcdefghijklmnopqrstuvwxyz"):sub(1, K.LEARN_LONG + 1)], "a word past LEARN_LONG letters is not learned")
+K.Learn(learned, nil)
+assert(learned.hello == 2, "nothing to learn from no line")
 
 -- Placement: from the edit box toward the screen centre. The disc's centre lies on the E->C line, the first point
 -- where disc, tab and modifier row clear the chat frame (12 gap); the tab on the side the line heads to; clamped;
--- over the crossbar or unit frame it slides on; no room: the lower centre. Pins: centre, custom offsets.
+-- over the crossbar or unit frame it slides on; no room: the lower centre.
 local W, H = 1365.33, 768
 local crossbar, player = { 380, 0, 985, 110 }, { 1100, 650, 1350, 750 }
 local avoid = { crossbar, player }
 local function check(name, box, chat, wantDir, opts)
 	opts = opts or {}
-	local l, b, sc, where, mir, x, y = K.Place(box, chat, opts.avoid or avoid, W, H, opts.k or 1, opts.pin)
+	local l, b, sc, where, mir, x, y = K.Place(box, chat, opts.avoid or avoid, W, H, opts.k or 1)
 	assert(l >= 8 - 1e-9 and b >= 8 - 1e-9 and l + K.BLOCK_W * sc <= W - 8 + 1e-9 and b + K.BLOCK_H * sc <= H - 8 + 1e-9, name .. ": on screen")
 	local r = K.DISC_R * sc
 	assert(not K.CircleHits(x, y, r + 11, chat), name .. ": the disc clears the chat frame")
@@ -163,6 +146,11 @@ box, chat = chatAt(938, 470)
 check("top-right", box, chat, { -1, -1 })
 box, chat = { 480, 120, 880, 152 }, { 480, 120, 880, 330 }
 check("bottom-centre", box, chat, { 0, 1 })
+-- The quick message editor: its dialog (top centre, 540 x 100) is the area kept clear, so the disc, the tab and the
+-- modifier row all sit below it.
+box, chat = { W / 2 - 240, H - 114, W / 2 + 240, H - 90 }, { W / 2 - 270, H - 148, W / 2 + 270, H - 48 }
+local _, _, qs, _, _, _, qy = check("the quick message dialog", box, chat, { 0, -1 })
+assert(qy + K.DISC_Y * qs <= chat[2] - 12 + 1e-9, "the quick message dialog: the modifier row sits under it")
 box, chat = { 17, 120, 560, 152 }, { 17, 120, 560, 640 }
 _, _, _, where = check("a large chat frame", box, chat, { 1, 1 })
 assert(where == "line", "a large chat frame: still on the line, past the centre")
@@ -175,27 +163,18 @@ assert(slid > first, "it slid further along the line")
 -- No room anywhere: the lower centre, above the crossbar.
 local l, b, sc, where2 = K.Place({ 8, 300, W - 8, 332 }, { 8, 8, W - 8, H - 8 }, avoid, W, H, 1)
 assert(where2 == "centre" and math.abs(l + K.BLOCK_W / 2 - W / 2) < 1e-6 and b == crossbar[4] + 16, "no room: lower centre above the crossbar")
--- Pins.
 box, chat = chatAt(17, 530)
-local cl, cb = K.Place(box, chat, avoid, W, H, 1, { position = "centre" })
-assert(cb == crossbar[4] + 16 and math.abs(cl + K.BLOCK_W / 2 - W / 2) < 1e-6, "pinned to the centre")
-local ml, mb = K.Place(box, chat, avoid, W, H, 1, { position = "custom", x = 40, y = -20 })
-assert(ml == cl + 40 and mb == cb - 20, "custom offsets move the pin")
-ml, mb = K.Place(box, chat, avoid, W, H, 1, { position = "custom", x = 5000, y = 5000 })
-assert(ml + K.BLOCK_W <= W - 8 + 1e-9 and mb + K.BLOCK_H <= H - 8 + 1e-9, "offsets are clamped to the screen")
 local _, _, s1 = K.Place(box, chat, avoid, W, H, 1.5)
 local _, _, s2 = K.Place(box, chat, avoid, W, H, 2)
 assert(s1 == 1.5 and math.abs(s2 - (H - 16) / K.BLOCK_H) < 1e-9, "scale kept when it fits, else fit to the height")
 local p = K.Leader({ 0, 0, 10 }, -50, -50)
 assert(#p == 24 and math.abs(p[1][1] + 7.0710678) < 1e-6 and math.abs(p[1][2] + 7.0710678) < 1e-6 and p[24][1] == -50 and p[24][2] == -50, "the leader leaves the rim facing the box")
 
--- Settings: defaults fill in; rebinding swaps.
-local saved = K.Settings({ buttons = { send = "PAD1" } })
+-- Settings: defaults fill in; an older save's custom buttons and position pin are dropped (default buttons, Auto).
+local saved = K.Settings({ buttons = { send = "PAD1" }, position = "custom", x = 40, y = -20 })
 assert(saved.enabled and saved.open == "controller" and saved.scale == 1 and saved.suggestions and saved.layout == "ring")
-assert(saved.buttons.close == "PAD4" and next(saved.dictionary))
-local b = K.Settings().buttons
-K.Bind(b, "send", "PAD1")
-assert(b.send == "PAD1" and b.space == "PAD2" and K.ActionOf(b, "PAD1") == "send")
+assert(saved.buttons == nil and saved.position == nil and saved.x == nil and saved.y == nil and next(saved.dictionary), "custom buttons and pin dropped")
+assert(K.ActionOf(K.BUTTONS, "PAD1") == "space" and K.ActionOf(K.BUTTONS, "PAD4") == "close", "the default buttons")
 
 print("keyboard_spec: engine ok")
 
@@ -291,6 +270,32 @@ local edit = newBox()
 focus = edit
 V.Observe()
 assert(frame:IsShown() and V.Box() == edit and sounds == 1, "a valid focus opens the keyboard")
+
+-- Both layouts, switched live: Ring shows every key with its letter; Compact shows each set as its range alone, and
+-- the set the stick picks with its letters.
+local lower = K.CHARSETS.lower
+local function lettered(i)
+	for j, key in ipairs(frame.sets[i].keys) do
+		local value = lower[i][j]
+		local shows = K.Marker(value) and key.icon:IsShown() or key.label:IsShown() and key.label:GetText() == value
+		if not (key:IsShown() and shows) then return false end
+	end
+	return true
+end
+for i in ipairs(frame.sets) do assert(lettered(i) and frame.sets[i].range:GetText() == "", "ring: set " .. i .. " shows its letters") end
+ns.db.keyboard.layout = "compact"
+V.Place()
+for i, cluster in ipairs(frame.sets) do
+	local hidden = true
+	for _, key in ipairs(cluster.keys) do hidden = hidden and not key:IsShown() end
+	assert(hidden and cluster.range:GetText() == lower[i][1] .. "–" .. lower[i][4], "compact: set " .. i .. " shows only its range")
+end
+V.Stick("Left", 0, 1)
+assert(lettered(1) and frame.sets[1].range:GetText() == "" and not frame.sets[2].keys[1]:IsShown(), "compact: the picked set shows its letters")
+V.Stick("Left", 0, 0)
+ns.db.keyboard.layout = "ring"
+V.Place()
+for i in ipairs(frame.sets) do assert(lettered(i), "back to ring: set " .. i .. " shows its letters") end
 V.Press("PAD1")
 assert(edit.text == " ", "Space")
 V.Stick("Left", 0, 1)
@@ -326,13 +331,13 @@ V.Press("PADDRIGHT")
 V.Release("PADDRIGHT")
 assert(edit.cursor == 4, "cursor right")
 
--- Send: a secure command stays; other text goes through the box's own Enter and teaches its words.
+-- Send: a secure command stays; a box that is not chat keeps its text, and nothing of it runs or is learned.
 edit.text, edit.cursor = "/cast Fireball", 14
 V.Press("PAD2")
 assert(enters == 0 and edit.text == "/cast Fireball", "a secure command is not sent")
 edit.text, edit.cursor = "zorbly greetings", 16
 V.Press("PAD2")
-assert(enters == 0 and edit.text == "zorbly greetings" and ns.db.keyboard.dictionary.zorbly == 1, "a box that is not chat: its Enter never runs in our call (it ends the focus); its words learned")
+assert(enters == 0 and edit.text == "zorbly greetings" and ns.db.keyboard.dictionary.zorbly == nil, "a box that is not chat: its Enter never runs in our call (it ends the focus); only sent chat teaches words")
 V.Observe()
 assert(not frame:IsShown() and V.Box() == nil and focus == edit, "the keyboard closes; the box keeps the focus")
 focus = nil
@@ -378,9 +383,30 @@ ns.Active = function() return false end
 function focus:IsPassword() return false end
 V.Observe()
 assert(not frame:IsShown(), "never with the Gamepad UI off")
+local observer
+for _, f in ipairs(made) do if f.scripts.OnUpdate == V.Observe then observer = f end end
+fire("FCT_ACTIVE_CHANGED")
+assert(observer and not observer:IsShown(), "Gamepad UI off: the per-frame observer sleeps")
+ns.Active = function() return true end
+fire("FCT_ACTIVE_CHANGED")
+assert(observer:IsShown(), "and wakes when it is on again")
+ns.db.keyboard.enabled = false
+V.Wake()
+assert(not observer:IsShown(), "the keyboard turned off: asleep")
+ns.db.keyboard.enabled = true
+V.Wake()
+assert(observer:IsShown())
+local repairs, settingsOf = 0, K.Settings
+K.Settings = function(saved) repairs = repairs + 1 return settingsOf(saved) end
+for _ = 1, 5 do V.Observe() end
+assert(repairs == 0, "the settings are not repaired every frame")
+ns.db.keyboard = { open = "always" }
+V.Observe()
+V.Observe()
+assert(repairs == 1 and type(ns.db.keyboard.dictionary) == "table", "a replaced table is repaired once")
+K.Settings = settingsOf
 
 -- Quest phrases come from the super-tracked quest only.
-ns.Active = function() return true end
 local tracked
 C_SuperTrack = { GetSuperTrackedQuestID = function() return tracked end }
 C_QuestLog = { GetQuestIDForQuestWatchIndex = function() return 77 end }

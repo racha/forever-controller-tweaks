@@ -21,6 +21,10 @@ local STRINGS = {
 	RINGS_SLOTS = "Slots", RINGS_SLOTS_TIP = "D-pad left and right: %d to %d slots. Slots past the count are kept for later.",
 	RINGS_STICK = "Stick", RINGS_STICK_NAMES = { right = "Right", left = "Left", dynamic = "Dynamic" },
 	RINGS_STICK_TIP = "The stick that aims while you hold the button. Dynamic: right on a D-pad button, left on a face button.",
+	RINGS_SHOW = "Show", RINGS_SHOW_NAMES = { toggle = "Toggle", hold = "Hold" },
+	RINGS_SHOW_TIP = "Toggle: a press opens the ring until you use a slot, press the button again or B. Hold: the ring shows while you hold the button; let go to use the slot you aim at.",
+	RINGS_STYLE = "Style", RINGS_STYLE_NAMES = { full = "Full", compact = "Compact" },
+	RINGS_STYLE_TIP = "Full: the radial wheel, with names. Compact: like the game's radial flyout, the aura and stance picker.",
 	RINGS_SLOT = "Slot %d", RINGS_EMPTY = "Empty slot", RINGS_UNUSABLE = "This character can't use it now.",
 	RINGS_ROW_TIP = "%d slots, on %d button(s).", RINGS_COMBAT = "Controller Tweaks changes rings out of combat only.",
 }
@@ -31,13 +35,18 @@ local GEO = Rings.GEO
 -- the right, each under its section pill.
 local LEFT_X, TOP_Y, LEFT_W, RIGHT_X, RIGHT_W, BOX_H, PILL_W = 24, 84, 300, 344, 832, 526, 197
 local ROW_W, ROW_H, ROW_PITCH, LIST_Y = 268, 28, 30, TOP_Y + 58
-local DISC_Y = TOP_Y + 58
-local STEP_Y = DISC_Y + 2 * GEO.DISC + 22
-local STICK_Y, SETTING_W, STICK_SEG_W = STEP_Y + 32, 360, 90
-local BUTTONS_Y, BUTTON_W = STICK_Y + 40, 140
+-- The preview area: the in-game wheel scaled to fit it.
+local PREVIEW_Y, PREVIEW = TOP_Y + 58, 288
+-- Four setting rows and the buttons under the preview, inside the box (it ends at TOP_Y + BOX_H = 610).
+local STEP_Y = PREVIEW_Y + PREVIEW + 14
+-- A setting row's control starts CONTROL_X in: the Slots slider SLIDER_W wide, the other rows' dropdown values STICK_W.
+local STICK_Y, SETTING_W, CONTROL_X, SLIDER_W, STICK_W = STEP_Y + 32, 360, 120, 180, 140
+local SHOW_Y = STICK_Y + 32
+local STYLE_Y = SHOW_Y + 32
+local BUTTONS_Y, BUTTON_W = STYLE_Y + 36, 140
 
-local window, countText, rows, newRow, ringPill, preview, hub, slotButtons, emptyText, stepRow, stickRow, buttons, renameBox
-local selected
+local window, countText, rows, newRow, ringPill, preview, wheel, slotButtons, emptyText, stepRow, stickRow, showRow, styleRow, buttons, renameBox
+local selected, focusedSlot
 
 local function report(ok, err)
 	if ok then return true end
@@ -64,16 +73,21 @@ local function stepCount(step)
 	report(Rings.SetCount(ring.id, count))
 end
 
--- One step through Right, Left, Dynamic; past either end false (left/right moves the focus on), or round with wrap (A).
-local function stepStick(step, wrap)
-	local ring = Rings.Get(selected)
-	if not (ring and editable()) then return false end
-	local index, sticks = 1, Rings.STICKS
-	for i, stick in ipairs(sticks) do if stick == ring.stick then index = i end end
-	local stick = sticks[wrap and (index + step - 1) % #sticks + 1 or index + step]
-	if not stick then return false end
-	report(Rings.SetStick(ring.id, stick))
+-- One step through a ring setting's values (Stick: Right, Left, Dynamic; Show: Toggle, Hold; Style: Full, Compact); past either end false
+-- (left/right moves the focus on), or round with wrap (A).
+local function stepper(values, field, set)
+	return function(step, wrap)
+		local ring = Rings.Get(selected)
+		if not (ring and editable()) then return false end
+		local index = 1
+		for i, value in ipairs(values) do if value == ring[field] then index = i end end
+		local value = values[wrap and (index + step - 1) % #values + 1 or index + step]
+		if not value then return false end
+		report(set(ring.id, value))
+	end
 end
+local stepStick, stepShow = stepper(Rings.STICKS, "stick", Rings.SetStick), stepper(Rings.SHOWS, "show", Rings.SetShow)
+local stepStyle = stepper(Rings.STYLES, "style", Rings.SetStyle)
 
 local function pick(i)
 	if not (Rings.Get(selected) and editable()) then return end
@@ -404,6 +418,13 @@ local function newListRow(y)
 	return row
 end
 
+-- The native highlight on the slot the pad or the mouse is on.
+local function light()
+	local ring = Rings.Get(selected)
+	local i = ring and focusedSlot and focusedSlot <= ring.count and focusedSlot or nil
+	Rings.View.Highlight(wheel, ring and ring.count, i, i and slotButtons[i].view.cant or false)
+end
+
 -- The selected ring in the middle, as it shows in game (icons only: states are live in game).
 local function drawRing()
 	local ring = Rings.Get(selected)
@@ -411,6 +432,8 @@ local function drawRing()
 	emptyText:SetShown(ring == nil)
 	stepRow:SetShown(ring ~= nil)
 	stickRow:SetShown(ring ~= nil)
+	showRow:SetShown(ring ~= nil)
+	styleRow:SetShown(ring ~= nil)
 	for _, button in pairs(buttons) do button:SetEnabled(ring ~= nil) end
 	for _, row in ipairs(rows) do
 		local lit = row.id ~= nil and row.id == selected
@@ -421,21 +444,32 @@ local function drawRing()
 	if not ring then return end
 
 	ringPill.text:SetText(ring.name)
-	hub.icon:SetTexture(Rings.Icon(ring))
-	hub.name:SetText(ring.name)
-	stepRow.value:SetText(ring.count)
-	stickRow.segments:Select(ring.stick)
+	stepRow.control:Set(ring.count)
+	local sticks = Rings.STICKS
+	for i, stick in ipairs(sticks) do if stick == ring.stick then stickRow.control:Set(L.RINGS_STICK_NAMES[stick], i == 1, i == #sticks) end end
+	local shows = Rings.SHOWS
+	for i, show in ipairs(shows) do if show == ring.show then showRow.control:Set(L.RINGS_SHOW_NAMES[show], i == 1, i == #shows) end end
+	local styles = Rings.STYLES
+	for i, style in ipairs(styles) do if style == ring.style then styleRow.control:Set(L.RINGS_STYLE_NAMES[style], i == 1, i == #styles) end end
+	local n, compact = ring.count, ring.style == "compact"
+	-- Full is scaled to fit the box; the compact flyout fits it at its in-game size.
+	wheel:SetScale(compact and 1 or PREVIEW / wheel:GetHeight())
+	Rings.View.DrawWheel(wheel, n, ring.style)
+	Rings.View.DrawCentre(wheel, compact and Rings.Icon(ring), "circle")
+	-- Slots past the count are drawn empty too: their disabled segment is on the wheel, not the hidden button.
 	for i, button in ipairs(slotButtons) do
-		local shown = i <= ring.count
-		button:SetShown(shown)
-		if shown then
-			local dx, dy = Rings.Dir(ring.count, i)
-			local stored = ring.slots[i]
+		local stored = i <= n and ring.slots[i] or nil
+		button:SetShown(i <= n)
+		Rings.View.DrawSlot(button.view, stored, Rings.Resolve(stored), n, i, ring.style)
+		if i <= n then
+			local dx, dy = Rings.Dir(n, i)
+			local r, hit = compact and GEO.COMPACT_R or GEO.SLOT_R, compact and GEO.COMPACT_HIT or GEO.HIT
+			button:SetSize(hit, hit)
 			button:ClearAllPoints()
-			button:SetPoint("CENTER", preview, "CENTER", GEO.SLOT_R * dx, GEO.SLOT_R * dy)
-			Rings.View.DrawSlot(button.view, stored, Rings.Resolve(stored))
+			button:SetPoint("CENTER", wheel, "CENTER", r * dx, r * dy)
 		end
 	end
+	light()
 end
 
 local function slotTip(i)
@@ -493,10 +527,8 @@ local function refresh()
 		local node = UI.Node(window, button, function() pick(i) end, {
 			cursorX = 0, tip = function() return slotTip(i) end,
 			onFocus = function(on)
-				Rings.View.SetFocus(button.view, on)
-				local stored = on and Rings.SlotEntry(selected, i)
-				if on then hub.slotName:SetText(stored and stored.name or L.RINGS_EMPTY) end
-				if not on then hub.slotName:SetText("") end
+				if on then focusedSlot = i elseif focusedSlot == i then focusedSlot = nil end
+				light()
 			end,
 		})
 		window.slotNodes[i] = node
@@ -507,8 +539,16 @@ local function refresh()
 		tip = { title = L.RINGS_SLOTS, lines = { string.format(L.RINGS_SLOTS_TIP, Rings.MIN_SLOTS, Rings.MAX_SLOTS) }, side = "right" },
 	})
 	nodes[#nodes + 1] = UI.Node(window, stickRow, function() stepStick(1, true) end, {
-		cursorX = 0, noSide = true, onDir = stepStick, onFocus = function(on) stickRow.wash:SetShown(on) end,
+		cursorX = 0, noSide = true, onDir = stepStick, onFocus = function(on) stickRow.wash:SetShown(on) stickRow.control:SetFocused(on) end,
 		tip = { title = L.RINGS_STICK, lines = { L.RINGS_STICK_TIP }, side = "right" },
+	})
+	nodes[#nodes + 1] = UI.Node(window, showRow, function() stepShow(1, true) end, {
+		cursorX = 0, noSide = true, onDir = stepShow, onFocus = function(on) showRow.wash:SetShown(on) showRow.control:SetFocused(on) end,
+		tip = { title = L.RINGS_SHOW, lines = { L.RINGS_SHOW_TIP }, side = "right" },
+	})
+	nodes[#nodes + 1] = UI.Node(window, styleRow, function() stepStyle(1, true) end, {
+		cursorX = 0, noSide = true, onDir = stepStyle, onFocus = function(on) styleRow.wash:SetShown(on) styleRow.control:SetFocused(on) end,
+		tip = { title = L.RINGS_STYLE, lines = { L.RINGS_STYLE_TIP }, side = "right" },
 	})
 	nodes[#nodes + 1] = UI.Node(window, buttons.rename, rename, { cursorX = 0 })
 	nodes[#nodes + 1] = UI.Node(window, buttons.icon, pickIcon, { cursorX = 0, tip = { title = L.RINGS_ICON_TITLE, lines = { L.RINGS_ICON_TIP }, side = "right" } })
@@ -529,20 +569,6 @@ local function settingRow(y, label)
 	row.label = row:CreateFontString(nil, "OVERLAY", "GameFontNormal")
 	row.label:SetPoint("LEFT", 10, 0)
 	row.label:SetText(label)
-	return row
-end
-
-local function stepper(y)
-	local row = settingRow(y, L.RINGS_SLOTS)
-	row.value = row:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
-	row.value:SetPoint("RIGHT", -40, 0)
-	for step, code in pairs({ [-1] = "DL", [1] = "DR" }) do
-		local arrow = CreateFrame("Button", nil, row)
-		arrow:SetSize(26, ROW_H)
-		arrow:SetPoint("RIGHT", row, "RIGHT", step < 0 and -82 or -6, 0)
-		arrow:SetScript("OnClick", function() stepCount(step) end)
-		UI.Glyph(arrow, 16, code):SetPoint("CENTER")
-	end
 	return row
 end
 
@@ -581,15 +607,17 @@ local function build()
 	newRow:SetScript("OnClick", newRing)
 
 	preview = CreateFrame("Frame", nil, window)
-	preview:SetSize(2 * GEO.DISC, 2 * GEO.DISC)
-	UI.At(preview, window, RIGHT_X + RIGHT_W / 2 - GEO.DISC, DISC_Y)
-	hub = Rings.View.Disc(preview)
+	preview:SetSize(PREVIEW, PREVIEW)
+	UI.At(preview, window, RIGHT_X + (RIGHT_W - PREVIEW) / 2, PREVIEW_Y)
+	wheel = Rings.View.Wheel(preview)
+	wheel:SetScale(PREVIEW / wheel:GetHeight())
+	wheel:SetPoint("CENTER")
 	slotButtons = {}
 	for i = 1, Rings.MAX_SLOTS do
-		local button = CreateFrame("Button", nil, preview)
-		button:SetSize(GEO.ICON, GEO.ICON)
+		local button = CreateFrame("Button", nil, wheel)
+		button:SetSize(GEO.HIT, GEO.HIT)
 		button.slot = i
-		button.view = Rings.View.NewSlot(button)
+		button.view = Rings.View.NewSlot(button, wheel)
 		button:RegisterForClicks("LeftButtonUp", "RightButtonUp")
 		button:SetScript("OnClick", function(_, mouseButton)
 			if mouseButton == "RightButton" then return clearSlot(i) end
@@ -597,14 +625,22 @@ local function build()
 		end)
 		slotButtons[i] = button
 	end
-	emptyText = UI.CenterText(window, "GameFontDisable", RIGHT_X, DISC_Y + GEO.DISC, RIGHT_W, L.RINGS_NONE)
-	stepRow = stepper(STEP_Y)
-	stickRow = settingRow(STICK_Y, L.RINGS_STICK)
-	local specs = {}
-	for i, stick in ipairs(Rings.STICKS) do specs[i] = { stick, L.RINGS_STICK_NAMES[stick] } end
-	stickRow.segments = UI.Segments(stickRow, specs, SETTING_W - #specs * STICK_SEG_W - 4, 1, STICK_SEG_W, function(stick)
-		if editable() and Rings.Get(selected) then report(Rings.SetStick(selected, stick)) end
+	emptyText = UI.CenterText(window, "GameFontDisable", RIGHT_X, PREVIEW_Y + PREVIEW / 2, RIGHT_W, L.RINGS_NONE)
+	stepRow = settingRow(STEP_Y, L.RINGS_SLOTS)
+	stepRow.control = UI.Slider(stepRow, SLIDER_W, Rings.MIN_SLOTS, Rings.MAX_SLOTS, 1, stepCount, function(count)
+		local ring = Rings.Get(selected)
+		if ring and editable() and count ~= ring.count then report(Rings.SetCount(ring.id, count)) end
 	end)
+	stepRow.control:SetPoint("LEFT", stepRow, "LEFT", CONTROL_X, 0)
+	stickRow = settingRow(STICK_Y, L.RINGS_STICK)
+	stickRow.control = UI.Dropdown(stickRow, STICK_W, stepStick)
+	stickRow.control:SetPoint("LEFT", stickRow, "LEFT", CONTROL_X, 0)
+	showRow = settingRow(SHOW_Y, L.RINGS_SHOW)
+	showRow.control = UI.Dropdown(showRow, STICK_W, stepShow)
+	showRow.control:SetPoint("LEFT", showRow, "LEFT", CONTROL_X, 0)
+	styleRow = settingRow(STYLE_Y, L.RINGS_STYLE)
+	styleRow.control = UI.Dropdown(styleRow, STICK_W, stepStyle)
+	styleRow.control:SetPoint("LEFT", styleRow, "LEFT", CONTROL_X, 0)
 	buttons = {}
 	for i, spec in ipairs({ { "rename", L.RINGS_RENAME, rename }, { "icon", L.RINGS_ICON, pickIcon }, { "delete", L.RINGS_DELETE, delete } }) do
 		local button = CreateFrame("Button", nil, window, "SharedButtonSmallTemplate")

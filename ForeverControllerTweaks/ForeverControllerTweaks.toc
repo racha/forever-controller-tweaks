@@ -22,6 +22,9 @@ SlotView.lua
 Face.lua
 Glyphs.lua
 Actions.lua
+Tweaks.lua
+TweaksGear.lua
+TweaksActions.lua
 Panel/Templates.xml
 Panel/Shared.lua
 Panel/Window.lua
@@ -29,4 +32,5 @@ Panel/Bindings.lua
 Panel/ActionPicker.lua
 Panel/Detect.lua
 Panel/Onboarding.lua
+Panel/TweaksTab.lua
 Panel/Panel.lua

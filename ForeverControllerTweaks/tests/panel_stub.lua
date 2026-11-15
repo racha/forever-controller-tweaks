@@ -41,6 +41,8 @@ function HideUIPanel(f) W.calls[#W.calls + 1] = "HideUIPanel"; f:Hide() end
 function hooksecurefunc(t, name, fn) local orig = t[name]; t[name] = function(...) local r = orig(...); fn(...); return r end end
 HIGHLIGHT_FONT_COLOR = { GetRGB = function() return 1, 1, 1 end }
 NORMAL_FONT_COLOR = { GetRGB = function() return 1, 0.82, 0 end }
+WHITE_FONT_COLOR = { GetRGB = function() return 1, 1, 1 end }
+DISABLED_FONT_COLOR = { GetRGB = function() return 0.5, 0.5, 0.5 end }
 BLUE_FONT_COLOR = { GetRGB = function() return 0, 0.75, 0.95 end }
 InputUtil = { IsGamepadUIEnabled = function() return W.gamepadUI ~= false end }
 InputIconTextureSetUtility = {

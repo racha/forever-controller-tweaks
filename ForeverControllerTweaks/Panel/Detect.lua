@@ -537,7 +537,10 @@ end
 
 local function build()
 	window = UI.NewWindow(W, H)
+	-- Its Esc presses a dialog's second button, so no other notice opens over it (Panel's interact check).
+	window.detect = true
 	window:SetTitle(L.DETECT_TITLE)
+
 	window.ClosePanelButton:SetScript("OnClick", cancel)
 	window.OnKeyDownOverride = onKey
 	window.OnKey = function(_, key)

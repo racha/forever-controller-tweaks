@@ -239,7 +239,11 @@ function ns.On(e, fn) handlers[e] = handlers[e] or {}; table.insert(handlers[e],
 function ns.Fire(e, ...) for _, fn in ipairs(handlers[e] or {}) do fn(...) end end
 function ns.log(m) lines[#lines + 1] = m end
 function ns.debug(fmt, ...) debugLog[#debugLog + 1] = string.format(fmt, ...) end
-function ns.SetPanelOpen(open) ns.panelOpen = not not open end
+function ns.SetPanelOpen(open)
+	if ns.panelOpen == not not open then return end
+	ns.panelOpen = not not open
+	ns.Fire("FCT_PANEL_OPEN", ns.panelOpen)
+end
 
 assert(loadfile(dir .. "/Layout.lua"))("ForeverControllerTweaks", ns)
 local Layout = ns.Layout
@@ -557,6 +561,88 @@ header.attrs["ps-key4"], header.attrs["ps-key5"] = nil, nil
 out = run()
 check(out["leftBar.Left.ActionButton1"] == nil and glyphAlpha(leftBar.Left.ActionButton1.ButtonIcon) == 3 and leftBar.Left.ActionButton1.icon:GetAlpha() == 1, "cell entry removed: mirror gone, prompt and cell art restored")
 
+-- A face action on a D-pad cell of the both-modifiers layer (reported: Inspect on L2+R2 + D-pad stopped the overlay):
+-- each direction mirrors that action's top-bar button on the bottom bar's D-pad slot, without an error.
+bottomBar.Left = mock({ name = "bottomBar.Left", parent = bottomBar })
+local DPAD = { { "DU", "PADDUP" }, { "DL", "PADDLEFT" }, { "DR", "PADDRIGHT" }, { "DD", "PADDDOWN" } }
+local FACE_ICON = { interact = "Interface\\Cursor\\Interact", inspect = "crosshair_inspect_32", back = "128-redbutton-exit", jump = "gamepad-ability-icon-jump" }
+for i, d in ipairs(DPAD) do bottomBar.Left["ActionButton" .. i] = cell("bottomBar.Left.ActionButton" .. i, d[2], bottomBar.Left, true) end
+local chatBefore = #lines
+for i, d in ipairs(DPAD) do
+	local code, key = d[1], d[2]
+	header.attrs["ps-key" .. (4 + i)] = key
+	for _, action in ipairs({ "inspect", "interact", "jump", "back" }) do
+		cells[code .. "/B"] = { id = "face:" .. action, name = action, icon = 0, kind = "face" }
+		out = run()
+		local slot = "bottomBar.Left.ActionButton" .. i
+		check(out[slot] == "mirror " .. FACE_ICON[action] and mirrorOn(bottomBar.Left["ActionButton" .. i]).maskAtlas == "SquareMask", ("%s on %s/B: mirrored on the bottom bar (got %s)"):format(action, code, tostring(out[slot])))
+		held[code .. "/B"] = true
+		out = run()
+		held[code .. "/B"] = nil
+		check(out[slot] == "mirror " .. FACE_ICON[action] and #lines == chatBefore and driver.shown, ("%s on %s/B pressed: still drawn, no error"):format(action, code))
+	end
+	cells[code .. "/B"] = nil
+	header.attrs["ps-key" .. (4 + i)] = nil
+end
+out = run()
+check(out["bottomBar.Left.ActionButton1"] == nil and #lines == chatBefore, "both-modifiers cells cleared: mirrors gone")
+
+-- The party/raid frames' footer: "open group targeting" on the friendly targeting key (RaidTargetDPAD.lua SetupFooter,
+-- reported as "This L1 is not L1 anymore"), and Group Targeting's "close" footer while it runs (GroupTargeting.lua
+-- SetupFooters). Blizzard makes the legend lazily, so it is picked up on a later poll, not only on refresh.
+local partyFrame = mock({ name = "CompactPartyFrame" })
+RaidTargetingFreeSelection = { raidTargetingFooter = {} }
+GroupTargeting = { targetingActiveDPadFooter = {} }
+out = run()
+check(out["RaidTargetingFooter.open.InputIcon1"] == nil, "party footer: no legend yet, nothing drawn")
+RaidTargetingFreeSelection.raidTargetingFooter.inputLegend = { promptFrames = { prompt("RaidTargetingFooter.open", { "PADLSHOULDER" }, partyFrame) } }
+GroupTargeting.targetingActiveDPadFooter.inputLegend = { promptFrames = { dpad = prompt("TargetingFooter.dpad", { "PADDUP" }, partyFrame), close = prompt("TargetingFooter.close", { "PADLSHOULDER" }, partyFrame) } }
+driver.OnUpdate(driver, 0.2)
+out = drawn()
+check(out["RaidTargetingFooter.open.InputIcon1"] == "PADRSHOULDER", "party footer: the friendly targeting key's physical button (got " .. tostring(out["RaidTargetingFooter.open.InputIcon1"]) .. ")")
+check(out["TargetingFooter.close.InputIcon1"] == "PADRSHOULDER" and out["TargetingFooter.dpad.InputIcon1"] == nil, "group targeting footer: close follows the key, the D-pad prompt stays native")
+check(glyphAlpha(RaidTargetingFreeSelection.raidTargetingFooter.inputLegend.promptFrames[1].InputIcons[1]) == 0, "party footer: native L1 hidden under ours")
+RaidTargetingFreeSelection, GroupTargeting = nil, nil
+out = run()
+check(out["RaidTargetingFooter.open.InputIcon1"] == nil, "footers gone: overlays gone")
+
+-- Midnight secret values (reported: Glyphs.lua:538 "attempt to compare field 'left' (a secret number value)").
+-- Inspect's icon shows a raid marker through SetRaidTargetIconTexture, so its texcoords and more read back secret.
+-- Addon code can't compare, test or do arithmetic on one; it can only hand it to a setter. Mocked as a value that
+-- errors on any compare or arithmetic (two secrets compared invoke __eq in Lua 5.1 too).
+local SECRET = {}
+local function secretUse() error("attempt to compare a secret value", 2) end
+for _, m in ipairs({ "__eq", "__lt", "__le", "__add", "__sub", "__mul", "__div", "__unm", "__concat" }) do SECRET[m] = secretUse end
+local function secret(v) return setmetatable({ v = v }, SECRET) end
+local function isSecretMock(v) return getmetatable(v) == SECRET end
+issecretvalue = isSecretMock
+local markIcon, rCell = inspect.SpecialActionIcon, bottomBar.Left.ActionButton3
+markIcon.GetTexCoord = function() return secret(0), secret(0), secret(0), secret(0.25), secret(0.25), secret(0), secret(0.25), secret(0.25) end
+markIcon.GetVertexColor = function() return secret(1), secret(1), secret(1), secret(1) end
+markIcon.IsDesaturated = function() return secret(false) end
+markIcon.GetAlpha = function() return secret(1) end
+markIcon.IsShown = function() return secret(true) end
+markIcon.GetPoint = function(_, i) return i == 1 and "TOPLEFT" or "BOTTOMRIGHT", inspect, i == 1 and "TOPLEFT" or "BOTTOMRIGHT", secret(6), secret(-6) end
+rCell.icon.GetAlpha = function() return secret(0.7) end
+header.attrs["ps-key7"] = "PADDRIGHT"
+cells["DR/B"] = { id = "face:inspect", name = "Inspect", icon = 0, kind = "face" }
+local chatSecret = #lines
+for _ = 1, 3 do out = run() end
+local markView = mirrorOn(rCell)
+check(#lines == chatSecret and driver.shown, "secret texcoords, color, alpha, anchors: the overlay keeps running (got " .. tostring(lines[#lines]) .. ")")
+check(out["bottomBar.Left.ActionButton3"] and markView and isSecretMock(markView.icon.coords[4]) and isSecretMock(markView.icon.offset[1]), "secrets go straight to the setters (texcoords, anchor offsets)")
+check(rCell.icon.alpha == 0, "a slot texture with a secret alpha is still hidden under the mirror")
+markIcon.GetAtlas = function() return secret("raid-marker") end
+for _ = 1, 2 do run() end
+check(#lines == chatSecret and isSecretMock(markView.icon.atlas), "a secret atlas is set as is, every frame")
+cells["DR/B"], header.attrs["ps-key7"] = nil, nil
+run()
+check(#lines == chatSecret and isSecretMock(rCell.icon.alpha), "the cell's secret alpha is put back as it was")
+for _, k in ipairs({ "GetTexCoord", "GetVertexColor", "IsDesaturated", "GetAlpha", "IsShown", "GetPoint", "GetAtlas" }) do markIcon[k] = nil end
+rCell.icon.GetAlpha, rCell.icon.alpha, issecretvalue = nil, nil, nil
+run()
+check(#lines == chatSecret, "secrets gone: still running")
+
 -- GamepadSwapTargetModifiers: the legend swaps its own header keys; friendly stays R1 (native R1 there), hostile R2.
 swap = true
 U.LeftShoulderIcon.atlas, U.RightShoulderIcon.atlas = "gamepad-targeting-hostile", "gamepad-targeting-friendly" -- SetShoulderIcons swaps
@@ -669,6 +755,19 @@ check(names() == "0.9 1" and not watch.shown, "Gamepad UI off: names restored")
 isActive = true
 ns.Fire("FCT_ACTIVE_CHANGED", true)
 check(names() == "0 0", "Gamepad UI back: hidden again")
+-- No FCT: macro registered anywhere (/fct release): the watcher stops and the names come back; one registered
+-- again (UPDATE_MACROS) starts it.
+local charDB, savedMacros = ns.Face.CharDB, ns.db.macros
+ns.Face.CharDB = function() return {} end
+ns.db.macros = {}
+ns.Fire("FCT_LAYOUT_CHANGED", "release")
+check(names() == "0.9 1" and not watch.shown, "no macros of ours: names back, watcher off (got " .. names() .. ")")
+ns.db.macros = savedMacros
+fire("UPDATE_MACROS")
+check(watch.shown and names() == "0 1", "a macro registered: watching again (got " .. names() .. ")")
+ns.Face.CharDB = charDB
+fire("UPDATE_MACROS")
+check(names() == "0 0", "the character's macro too")
 
 -- Standing down: panel open, detection running, Gamepad UI off.
 ns.SetPanelOpen(true)
@@ -714,12 +813,17 @@ entry.roles = Layout.Copy(Layout.PRESETS.split)
 ns.db.options.debug = true
 
 -- Error isolation: a failing Blizzard frame stops the overlay and puts everything back.
+local boomLine = debug.getinfo(1, "l").currentline + 1
 U.RightIcon.GetEffectiveAlpha = function() error("boom") end
 run()
 check(glyphAlpha(U.RightIcon) == 3 and U.RightShoulderBackground:GetAlpha() == 1 and not driver.shown, "error: natives restored, driver stopped")
 check(slotNative(right.ActionButton1) and slotNative(right.ActionButton4), "error: slot art restored")
 check(names() == "0.9 1" and not watch.shown, "error: macro names restored, watcher stopped")
 check(ns.Glyphs.Mode() == "off" and lines[#lines]:find("stopped after an error"), "error: Mode() off and one chat line")
+check(lines[#lines]:find("(/reload to retry): glyphs_spec.lua:" .. boomLine .. ": boom", 1, true), "error: the chat line names file:line and the message (got " .. lines[#lines] .. ")")
+local logged
+for _, line in ipairs(debugLog) do logged = logged or line:find("glyphs error: glyphs_spec.lua:" .. boomLine .. ": boom\n", 1, true) and line:find("Glyphs.lua:%d+: in") end
+check(logged, "error: the debug log has the message and the stack")
 local count = #lines
 run()
 check(#lines == count and next(drawn()) == nil, "error: stays off, no repeat line")

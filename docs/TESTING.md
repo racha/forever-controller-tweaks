@@ -4,7 +4,7 @@ The specs (see [CONTRIBUTING.md](../CONTRIBUTING.md)) cover the logic. This chec
 
 ## Setup
 
-1. Link or copy `ForeverControllerTweaks/` into `_forever_/Interface/AddOns/`. **Restart the game completely** after adding new files.
+1. Link or copy `ForeverControllerTweaks/` and its three `ForeverControllerTweaks_*` module folders into `_forever_/Interface/AddOns/`. **Restart the game completely** after adding new files.
 2. Turn on **Enable Gamepad UI (Beta)**, and turn off any other addon that writes the controller config.
 3. In chat:
    - `/fct selftest`
@@ -42,13 +42,9 @@ The specs (see [CONTRIBUTING.md](../CONTRIBUTING.md)) cover the logic. This chec
 Use only the controller for this part, except where a step names Options.
 
 1. **Shortcut:** hold L2 + R2 and press Create (PlayStation) or View (Xbox). The settings open on **Bindings**. The same press closes them. Create or View alone, without the triggers, still does what the game does.
-2. **Minimap button** and the minimap **AddOns** menu open the settings. Hide the minimap button from Modifiers → More, and show it again.
-3. **Options → AddOns → Forever Controller Tweaks:**
-   - **Open Settings** opens the settings, and Options goes invisible underneath. Close the settings: Options is visible and usable again;
-   - **Run setup guide** starts the first-start guide;
-   - from the Game Menu, Log Out (then cancel) and Return to Game still work;
-   - nothing is blocked afterwards.
-4. **Navigation:** the D-pad moves the focus everywhere, and holding it repeats. The sticks don't move it. L1/R1 switch Bindings → Modifiers → Touch and back. Every footer lists working buttons.
+2. **Minimap button** and the minimap **AddOns** menu open the settings. Hide the minimap button from More, and show it again.
+3. **Options:** open Options and type in its search box. No "blocked" message or popup names this addon, and the AddOns list in Options has no Forever Controller Tweaks page. From the Game Menu, Log Out (then cancel) and Return to Game still work.
+4. **Navigation:** the D-pad moves the focus everywhere, and holding it repeats. The sticks don't move it. L1/R1 switch Bindings → Touch → Keyboard → Rings → Tweaks and back. Every footer lists working buttons.
 5. **Look:** every window, dialog, tooltip and footer matches the game's own windows. At UI scale 1.15 and at 1280×800, nothing is cut off.
 
 ## C. Bindings and the picker
@@ -104,6 +100,75 @@ Use only the controller for this part, except where a step names Options.
 ## G. Other controllers
 
 Repeat part A, steps 1–3, and part C, step 3, on every controller you have: Xbox, a Steam Input pad over Steam Link, Switch Pro, a pad with paddles, Steam Deck. Note in your report which controllers you used, with the lines `/fct selftest` prints.
+
+## H. Rings
+
+1. Build a ring of 8 slots and put **Open ring** on a face cell and on a D-pad cell. A new ring aims with the **Right** stick.
+2. The ring looks like the game's own radial menu: the wheel only, no title or band.
+3. **Show: Toggle.**
+   - Press the button: the ring opens. Flick the stick to a slot and let the stick go: it fires and the ring closes.
+   - Open it, aim, press **Cross**: it fires.
+   - Open it and let go of the button with the stick centred: the ring stays open. Circle, a stick press or the button again closes it, and nothing fires.
+4. **Show: Hold.** The ring shows only while the button is held. Let go while aiming: it fires. Let go with nothing aimed: it closes and nothing fires.
+5. Let go of the button and the stick at the same moment: the slot fires once.
+6. Aim at every diagonal in turn. No direction sticks, and the next open starts clean.
+7. **Stale pick:** push the stick to a slot first, then press the ring's button. That slot isn't lit and doesn't fire. Centre the stick or move it to another slot, and that one works.
+8. Repeat 3 and 4 in combat. After a ring closes, the aiming stick doesn't walk you or turn the camera until it's centred.
+9. **Style: Compact.** Set a ring to Compact in the tab: the preview and the ring in game look like the game's radial flyout (a paladin's aura picker): the round base, the icons in round slots and an empty socket where a slot is empty, no names. Aiming lights the slot, turns the indicator towards it and points the arrow at it.
+   - Open it from a face cell and from a D-pad cell, each on two layers (no modifier and a modifier, say L2 + R1). It opens centred on that crossbar button, with the ring's icon in the middle and the layer's modifier glyphs under it (none on the base layer). Known gap: a ring on a face cell's base layer opens in the middle of the screen.
+   - Change the UI scale and open it again: still on the button. Each slot points the same way as in Full.
+   - Try it with Show Toggle and with Hold, out of combat and in combat.
+   - Open it from a touch button and click a slot with the mouse: the slot under the pointer fires.
+   - In combat, open a Compact ring, close it, then open a Full ring (and back): each ring's slots click where they're drawn.
+10. `/fct ringlog` prints the last ring events.
+
+## I. Keyboard and chat
+
+1. **Keyboard tab:** On, Open, Layout, Scale and Word suggestions, one per row. **Reset keyboard to defaults** is in More. Compact shows each set's letters.
+2. **Quick messages:** open it from the Keyboard tab.
+   - The situations are on the left and their lines on the right; left / right switch columns.
+   - Add a line with the on-screen keyboard: Send saves, Close cancels. The suggestion list offers fill-ins such as `{target}` with their current value.
+   - Edit, move and delete your own line. Square on a built-in line hides it; **Restore** brings it back.
+   - Your line comes first in that situation's suggestions.
+3. **Sending chat**, with the on-screen keyboard. After each Send the keyboard closes, the chat box stays open and empty, and one more Circle closes it:
+   - **say** (`/s`);
+   - **party** (`/p`, in a group);
+   - **guild** (`/g`);
+   - a **whisper** (`/w Name`);
+   - a **reply** (`/r`) to a whisper you got.
+   Each line arrives once, on the right channel. Try both Chat Styles (Options → Social): Classic and IM both send.
+4. **In combat:** party, guild and a whisper send. A say line stays in the box with a note; send it after the fight.
+5. After all of the above, `/reload`. `Logs/taint.log` with `/console taintLog 2` has no line naming ForeverControllerTweaks.
+
+## J. Tweaks
+
+Turn each tweak on in the **Tweaks** tab, try it, then turn it off again. Every one is off on a new install.
+
+1. **The tab:** four columns. Up / down move within a column. Left / right change a dropdown or slider, and at its end move to the next column. Triangle opens More. Tooltips stay beside their row.
+2. **Bags & vendors:** the Sort button on the combined bags' title bar (and on separate bags), not over the search box. At a merchant: junk sells and one chat line lists the items; gear repairs, from guild funds first when allowed. **Buy a full stack** buys a stack; on a sold-out item it says so.
+3. **Quests & NPCs:**
+   - a flight master, vendor or banker with one option opens that service;
+   - an NPC with a single chat-bubble option (a teleport, an event, a story skip) is left to you;
+   - Learn all at a trainer; Open all at the mailbox.
+4. **Group & social:** a guildmate's invite is accepted; the same invite while you're queued for a dungeon or battleground is left to you. A friend's summon is accepted outside an instance and left to you inside one. A duel is declined. A whisper shows its card.
+5. **Loot & gear:** fast loot, an upgrade arrow on a better piece in the bags and the loot window, Pass on an item your class can't use, and the reward card after a quest (hold Triangle to wear).
+6. **Picker actions:** put each new action on a button and use it: Cancel, the potions and grenade (in combat too), Look behind and Peek map (hold, then let go), Mark next (in combat too), Eat & drink, Quest item, Track nearest quest, Ready check, Pull countdown and Minimap zoom.
+
+## K. Rumble, light bar and battery
+
+1. **Rumble:** turn on **Rumble on events**. Cross on **Strength** plays a Double tap; change the strength and press again. Cross on each group's row plays its pattern. Off silences a group.
+2. Trigger a few events: a whisper (twice in quick succession: one rumble), a ready check, a trade request, a level up. Each plays its group's pattern. With **Procs** set to a pattern and not in a group: critical hits on an enemy target rumble, at most once a second; normal hits, and crits while in a group, don't.
+3. **Light bar** (a pad with a light bar, such as a DualSense, not over Steam): Class colour, Custom with each colour, and Combat flash (red in combat). Game default gives the light back.
+4. **Battery:** on a wireless pad that reports its charge, the battery button sits on the minimap's ring with the other buttons and shows the charge. Unplug or switch pads: it follows. The low-battery line shows once when the charge drops.
+
+## L. Next to Controller Forever
+
+1. Install Controller Forever next to this addon, both enabled, and log in.
+2. No Lua error and no "blocked" message from this addon. `taint.log` has no line naming ForeverControllerTweaks.
+3. Note which addon's layout is active, and that both keep working as far as they can (don't change both addons' layouts at once).
+
+4. Disable this addon and restart: Controller Forever's own setup is back and works.
+5. Report what you saw, with the `/fct selftest` lines.
 
 ## Reporting results
 

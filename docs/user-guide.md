@@ -41,7 +41,6 @@ Each bar has eight buttons: the four face buttons and the four D-pad directions.
 - **On the controller:** hold **L2 + R2** and press **Create** (PlayStation), **View** (Xbox) or **Minus** (Switch). L2 and R2 here are the physical triggers, whatever your layout gives them.
 - The addon's **minimap button**. Drag it to move it, or hide it from **More** (Triangle).
 - The minimap **AddOns** menu.
-- **Options → AddOns → Forever Controller Tweaks**: **Open Settings**, or **Run setup guide**. Options goes invisible underneath the settings and comes back when you close them.
 - **Key Bindings → AddOns → Forever Controller Tweaks**, to put it on a key of your choice.
 - `/fct` or `/controllertweaks`.
 
@@ -52,10 +51,12 @@ In every window:
 - **D-pad:** move the focus. Hold a direction to repeat. The sticks don't move the focus.
 - **Cross:** select.
 - **Circle:** back or close.
-- **L1 / R1:** switch tabs: Bindings, Touch, Keyboard, Rings (the modules' tabs show only while that module is on).
+- **L1 / R1:** switch tabs: Bindings, Touch, Keyboard, Rings and Tweaks (Touch, Keyboard and Rings show only while that module is on).
 - **Triangle:** **More**, the same menu on every screen: presets, undo, controller type and setup, Learn, keyboard settings (with the Keyboard module), minimap icon and reset.
 
 The footer always lists the buttons you can use, and tooltips explain the focused item.
+
+**Settings controls.** The settings rows use the game's own controls, one value per row. **D-pad up / down** move between rows. On a **slider** or **dropdown**, **D-pad left / right** change the value; on a **checkbox**, **Cross** turns it on or off. On the Tweaks tab, left / right at the end of a dropdown or slider move on to the next column.
 
 ## Modules
 
@@ -67,7 +68,7 @@ Forever Controller Tweaks comes as the main addon plus three modules, all in the
 | **Forever Controller Tweaks: Keyboard** | The on-screen keyboard, its suggestions, the **Keyboard** tab and the keyboard entries in More and Options. |
 | **Forever Controller Tweaks: Rings** | Action rings, the **Rings** tab, `/fct rings` and **Open ring** in the action picker. |
 
-The main addon (bindings, modifiers, glyphs, controller setup) works on its own. To turn a module off, untick it in the AddOns list (or on the character screen's **AddOns** button) and `/reload`. Its tab, menu entries and commands go away; its settings stay saved and come back when you turn it on again. A module needs the main addon, so turning the main addon off turns them all off.
+The main addon (bindings, modifiers, glyphs, controller setup and the **Tweaks** tab) works on its own. To turn a module off, untick it in the AddOns list (or on the character screen's **AddOns** button) and `/reload`. Its tab, menu entries and commands go away; its settings stay saved and come back when you turn it on again. A module needs the main addon, so turning the main addon off turns them all off.
 
 With **Rings** off, a button that holds **Open ring** does nothing. Its cell is greyed in Bindings and Touch, and its tooltip says the Rings module is off.
 
@@ -149,10 +150,10 @@ Roles are set on the Bindings screen, in the bumper, trigger and paddle rows at 
 
 Two bars of tap buttons on the left and right edges of the screen, for playing through Steam Link on a phone or tablet: a tap there is a click. They're **off** until you turn them on.
 
-- **On / Off** and **Show** in the header. Show can be **Always**, **Gamepad UI** (while it's on), **In combat** or **Never**.
+- **On / Off** and **Show** are the first rows under the preview. Show can be **Always**, **Gamepad UI** (while it's on), **In combat** or **Never**.
 - The middle shows your screen with both bars at their real size and place.
 - The edge columns list each bar's buttons, with four cells per button: one per bar (top, left, right, bottom), like the Bindings rows. A tap uses the action for the bar your modifiers have open. An empty cell hides its button on that bar. **Cross** opens the action picker, **Square** clears a cell.
-- Under the preview, switch between **Left bar** and **Right bar**, then D-pad left / right change that side's buttons per bar (1–12), button size, spacing, distance from the edge, up / down, opacity, **Shape** (Circle or Square) and **Empty buttons** (Hide or Show).
+- Under them, switch between **Left bar** and **Right bar**, then D-pad left / right change that side's buttons per bar (1–12), button size, spacing, distance from the edge, up / down, opacity, **Shape** (Circle or Square) and **Empty buttons** (Hide or Show).
 
 Touch buttons look and behave like native crossbar slots. They're saved per character, and they work in combat.
 
@@ -162,14 +163,17 @@ An on-screen keyboard for chat and text boxes, while the Gamepad UI is on. It op
 
 - **Typing:** the letters sit in clusters of four around the disc. Point a stick at a cluster and press the face button for the letter. **L1** is Shift, **L2** Symbols. The hub has Space, Send, Erase and Close, each on a face button.
 - **Suggestions** show in the tab beside the disc. **D-pad up / down** choose, **R1** inserts. A word goes in with a space, so pressing R1 again takes the next word.
-  - An empty chat box shows quick phrases for where you are and what's happening: 263 lines for 25 situations, such as a ready check, a resurrect, a dungeon, a city or your guild.
-  - Lines aimed at you in chat get replies, on the right channel: "inv?", "LF healer", "ready?" and 125 other phrases are recognised.
+  - An empty chat box shows quick phrases for where you are and what's happening: 137 built-in lines for 31 situations plus **Always**, such as a ready check, a resurrect, a dungeon, a city or your guild.
+  - Lines aimed at you in chat get replies (76 of them), on the right channel. 31 rules recognise 165 phrases and words, such as "inv?", "LF healer" and "ready?".
+
   - The quest you follow adds its progress, at most two lines: "Need 5 more Wolf Pelts", "Done with the quest, turning in".
   - While you type: word completion, a correction for a typo, the next word (it learns how you write), and shorthands such as lf, brb and omw.
   - Other boxes get their own list: item names in bag search, names in mail "To" and /who, nothing in number boxes.
-- **Your own quick messages:** **Keyboard tab → Quick messages**. Step through the situations with the **D-pad** left / right (**Always** shows everywhere), then **Add a line** and type it with the keyboard; **Send** saves, **Close** cancels. On a line, **Cross** edits, **Square** deletes, **Triangle** picks it up to move. Up to 20 per situation; fill-ins such as `{target}` work. Your lines come first in that situation's suggestions, and **Show in suggestions** hides the built-in ones. Reset keyboard to defaults keeps them.
-- Nothing is ever sent for you, and nothing leaves your PC. Only your own sent messages are learned from.
-- **Keyboard tab:** On / Off, when it opens, **Layout** (Ring or Compact), **Scale**, **Word suggestions** on or off, **Position** (Auto places it between the text box and the screen centre, clear of the chat and your bars; Centre; or Custom with offsets), every button, and **Reset keyboard to defaults**.
+- **Your own quick messages:** **Quick messages** button at the top right of the Keyboard tab. The situations are on the left (**Always** shows everywhere, the number is how many lines of your own it has); **D-pad up / down** pick one, **right** goes to its lines: yours first (marked **Yours**), then the built-in ones, then **Add a line**, which you type with the keyboard; **Send** saves, **Close** cancels. On your line, **Cross** edits, **Square** deletes, **Triangle** picks it up to move. **Square** on a built-in line hides it; **Restore hidden built-in lines** brings them back. Up to 20 of your own per situation. The suggestion list beside the keyboard shows the fill-ins (such as `{target}`, your target's name) with what each gives right now; type `{` or a fill-in's first letters to narrow them, **R1** puts one in. Your lines come first in that situation's suggestions, and hidden built-in lines are left out. Reset keyboard to defaults keeps them.
+- **Sending chat:** **Send** puts your line out through the addon's own secure button, so the game's chat box itself is never written to. The keyboard closes, and the chat box stays open and empty; one more **Circle** closes it. Any Chat Style (Classic or IM) works. A slash command other than a channel switch stays in the box with a note.
+- **In combat** only party, raid, instance, guild and whispers can be sent. A say, yell or channel line stays in the box with a note, and you send it after the fight.
+- Nothing is ever sent for you, and nothing leaves your PC. Words are learned only from chat you send.
+- **Keyboard tab:** **On**, **Open** (With the controller or Always), **Layout** (Ring or Compact), **Scale** and **Word suggestions**, with a preview of the keyboard. **Reset keyboard to defaults** is in **More** (Triangle). The keyboard places itself between the text box and the screen centre, clear of the chat and your bars, and its buttons are fixed.
 - A few boxes the game blocks addons from typing into (the Options search, the Group Finder's boxes, spellbook search) are left to a real keyboard; the keyboard says so instead of opening. Slash commands other than channel switches (`/s`, `/p`, `/g`, `/w` …) need a real keyboard.
 
 ## Rings
@@ -177,11 +181,99 @@ An on-screen keyboard for chat and text boxes, while the Gamepad UI is on. It op
 Radial menus of actions you build yourself. Open the **Rings** tab, or `/fct rings`.
 
 - **New ring** adds one, up to 12. **Rename**, **Icon** (a grid of every macro icon) and **Delete** work on the selected ring.
-- **Slots:** 4 to 12. **Cross on a slot** opens the action picker: spells (with Highest Rank), items, toys, mounts, macros, game actions and other addons' bindings.
-- **Stick:** which stick aims, per ring. **Right**, **Left**, or **Dynamic**: a ring opened from a D-pad button aims with the right stick, one opened from a face button with the left.
-- **Using a ring:** put **Open ring** on any face, D-pad or touch cell in Bindings or Touch. Press the button and the ring opens. Flick the stick to a slot and let the stick go to use it, like the game's own radial menu; letting go of the button while aiming, or **Cross**, uses it too. With the stick centred the ring stays open. **Circle**, a stick press or the ring's button again closes it without using anything. While a ring is open the addon turns on the game's stick-as-buttons setting (`GamePadStickAxisButtons`) and puts your own value back when it closes. The other stick keeps moving or looking, and the aiming stick is held back after release until it's centred. Works in combat.
+- **Slots:** 4 to 8. **Cross on a slot** opens the action picker: spells (with Highest Rank), items, toys, mounts, macros, game actions and other addons' bindings.
+- **Stick:** which stick aims, per ring. **Right** (the default for a new ring), **Left**, or **Dynamic**: a ring opened from a D-pad button aims with the right stick, one opened from a face button with the left.
+- **Show:** how the ring stays up, per ring.
+  - **Toggle** (the default): a press opens the ring, and it stays open until you use a slot, press its button again or press **Circle**.
+  - **Hold:** the ring shows only while you hold its button.
+- **Style:** how the ring looks, per ring. **Full** (the default) is the game's radial wheel, with each slot's name. **Compact** is the small round picker the game uses for flyouts (the aura and stance picker). It opens on the crossbar button you pressed, with the ring's icon and that bar's modifier buttons in the middle; the slot you aim at gets the highlight and an arrow points at it. From a touch button it opens in the middle of the screen. Both aim the same way.
+- **Using a ring:** put **Open ring** on any face, D-pad or touch cell in Bindings or Touch. In **Full** the ring looks like the game's own radial menu. Flick the stick to a slot and let the stick go to use it. Letting go of the button and the stick at the same moment uses it too.
+  - **Toggle:** **Cross** uses the lit slot. Letting go of the button while aiming uses the slot; with nothing aimed the ring stays open, so you can still aim. **Circle**, a stick press or the ring's button again closes it without using anything.
+  - **Hold:** let go of the button to use the slot you aim at. With nothing aimed, the ring just closes.
+  - If the stick was already pushed when the ring opened, that slot isn't used until you centre the stick or move it off that slot.
+- While a ring is open the addon turns on the game's stick-as-buttons setting (`GamePadStickAxisButtons`) and puts your own value back when it closes. The other stick keeps moving or looking, and the aiming stick is held back after release until it's centred. Works in combat.
 - **On a touch button:** a tap opens the ring, a tap on a slot uses it, a tap outside closes it.
 - Slots show cooldowns, charges, range and whether they're usable. Rings are shared by all your characters and use no hidden action slots.
+- `/fct ringlog` prints the last ring events. Add those lines to a ring bug report.
+
+## Tweaks
+
+Small conveniences, on the **Tweaks** tab (the last tab). **Each one is off until you turn it on**, they're saved for all your characters, and they work only while the Gamepad UI is on. The tab has four columns; hover or focus a row for its tooltip.
+
+### Bags & vendors
+
+- **Sort bags button:** a Sort button on your bags. With the controller, use **Clean Up** in the bag menu, or the picker's **Sort bags** action.
+- **Sell junk:** sells your grey items when you talk to a merchant. One chat line lists what sold and for how much.
+- **Repair:** repairs your gear at a merchant who repairs. **Use guild funds first** pays from the guild bank when the guild allows it, else from your own money.
+- **Buy a full stack:** a **Stack** button on stackable merchant items (for touch and mouse). With the controller, put the picker's **Buy a full stack** action on a button and press it while the cursor is on the item. A stack that costs 150 gold or more is left to the game's own Multi-buy, which asks first. It says when the item is sold out, and buys only what your money covers.
+
+### Quests & NPCs
+
+- **Skip one-option talk:** when an NPC offers only one thing, it's picked for you: a single quest, or a vendor, trainer, flight map or bank. It never picks a teleport, an event start, a story skip, an option that costs money, or an ignored quest. Once per conversation.
+- **Trainer: Learn all:** a **Learn all** button on the trainer for every skill you can afford.
+- **Mail: Open all:** an **Open all** button on the mailbox. It skips cash-on-delivery mail and stops when your bags are full.
+
+### Rumble
+
+- **Rumble on events** turns it on. **Strength** sets how strong every rumble is (10% to 100%); Cross on it plays a Double tap.
+- Each group has its own pattern: Tap, Double tap, Triple tap, Long buzz, Heartbeat, Ramp up, Fade out, or **Off**. **D-pad left / right** change it, **Cross** plays it.
+
+| Group | Rumbles for | Starts as |
+|---|---|---|
+| Group | a ready check, a group invite, a summon, a resurrection offer | Double tap |
+| Whisper | someone whispers you | Tap |
+| Trade & duel | a trade or duel request | Tap |
+| Danger | you die, get stunned or feared, gain aggro, or your cast is interrupted | Long buzz |
+| Enemies | an enemy player's name plate shows (needs enemy name plates on) | Double tap |
+| Rare nearby | a rare on the minimap or by its name plate | Heartbeat |
+| Level ups | a level up or an achievement | Ramp up |
+| Procs | a spell on your bars lights up, your target dies, or you land a critical strike (solo) | Off |
+
+- Only events you still have to answer rumble: an invite or duel a tweak already answered doesn't.
+- Busy events wait before they rumble again: whispers, invites and trades 3 seconds, enemy players 10.
+- The game's own vibration setting isn't read, so turn Rumble on events off if you don't want it.
+
+### Controller
+
+- **Low battery warning:** one chat line when the controller's battery runs low.
+- **Battery on the minimap:** a round button on the minimap's ring, next to the others, with the controller's charge. Hidden for pads that don't report one.
+- **Rare nearby alert:** a line on screen and a rumble when a rare is near. Once per rare, never in a fight, on a flight or while dead.
+- **Light bar:** **Game default**, **Class colour** or **Custom**, with **Colour** picking one of 10 colours. **Combat flash** turns the light red while you're in combat. For pads with a light bar, such as the DualSense; Steam may take the light over.
+
+### Loot & gear
+
+- **Fast loot:** takes all loot at once. Bind-on-pickup items still ask; with full bags only coins are taken.
+- **Pass on unusable rolls:** passes on armour or weapons your class can never use. When it's unsure, you roll.
+- **Upgrade arrows:** a green arrow on gear with a higher item level than what you wear there, in your bags, the loot window and loot rolls.
+- **Wear quest rewards:** after a quest, an upgrade reward gets a card for 10 seconds. Hold the top face button (Triangle) for 1 to 3 seconds to wear it.
+
+### Group & social
+
+- **Accept friend & guild invites:** joins a group when a friend, Battle.net friend or guild member invites you. Never a role check, a quest session invite, or an invite that would drop your dungeon or PvP queue.
+- **Decline duels:** turns down every duel request.
+- **Accept resurrect and summon:** out of combat only. A resurrection is accepted unless it brings resurrection sickness. A summon is accepted only from a friend or guild member, and never while you're inside an instance.
+- **Whisper alert:** a card with who whispered you and how the message starts.
+
+### Picker actions
+
+These are in the action picker for any face, D-pad or paddle cell, touch button or ring slot:
+
+| Category | Action | What it does |
+|---|---|---|
+| Combat | **Cancel** | Stops a cast, a ground target, and clears your target |
+| Combat | **Best healing potion**, **Best mana potion**, **Best grenade** | Uses the best one in your bags you can use; works in combat |
+| Movement | **Look behind (hold)** | The camera turns round while you hold the button |
+| Windows | **Peek map (hold)** | The map shows while you hold the button |
+| Targeting | **Mark next** | The next raid mark on your target, in kill order (skull, cross, square…), in combat too; back to skull after combat |
+| Misc | **Sort bags** | Sorts your bags |
+| Misc | **Buy a full stack** | Buys a stack of the merchant item under the cursor |
+| Misc | **Eat & drink** | Your best food, and your best drink if you use mana; out of combat |
+| Misc | **Quest item** | The item of the quest you follow, else of the nearest quest that has one |
+| Misc | **Track nearest quest** | Tracks the nearest quest; press again for the next nearest |
+| Misc | **Ready check**, **Pull countdown (5 s)** | The game's ready check and a 5-second countdown |
+| Misc | **Minimap zoom** | Zooms the minimap in step by step, then back out |
+
+The two hold actions work while you hold the button. On a touch button or ring slot a tap turns them on and off. The potion, grenade and food actions find items by their English names, so they need an English game client.
 
 ## Glyphs
 

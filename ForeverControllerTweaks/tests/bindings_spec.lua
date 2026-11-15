@@ -35,6 +35,8 @@ end
 local function nodeOf(region)
 	for _, n in ipairs(b.nodes) do if n.region == region then return n end end
 end
+-- A layout change redraws the window on the next frame (UI.RefreshSoon).
+local function nextFrame() W.advance(0.05) end
 local function pickerRows()
 	local out = {}
 	for _, f in ipairs(W.frames) do
@@ -77,6 +79,7 @@ W.press(b, "PAD4")
 UI.ActionPicker.Choose(1)
 UI.ActionPicker.Choose(1)
 UI.Dialog():Press(1)
+nextFrame()
 local mod = rowOf("P1")
 check(ns.Layout.Roles().P1 == "leftmod" and mod.kind == "mod" and mod.plate and mod.name.text == "Left bar", "Change role: P1 is a role row")
 check(b.focus.region == mod.plate, "the focus follows to the role row")
@@ -85,6 +88,7 @@ check(ns.Face.CellEntry("P1", "R").id == "face:jump", "its cells are kept")
 -- None from the role row: back to the action row with the kept cells, focus on its first cell.
 nodeOf(mod.plate).select()
 UI.ActionPicker.Choose(5)
+nextFrame()
 p1 = rowOf("P1")
 check(ns.Layout.Roles().P1 == nil and p1.kind == "slot" and b.focus.region == p1.cells[1], "None: action row again, focus on its first cell")
 check(p1.cells[3].entry and p1.cells[3].entry.id == "face:jump", "the kept cell is back")
@@ -94,7 +98,9 @@ b:Focus(nodeOf(rowOf("P2").cells[1]))
 W.press(b, "PAD4")
 UI.ActionPicker.Choose(1)
 UI.ActionPicker.Choose(2)
-check(not UI.DialogShown() and ns.Layout.Roles().P2 == "rightmod" and rowOf("P2").kind == "mod", "no actions: the role is set at once")
+nextFrame()
+check(
+not UI.DialogShown() and ns.Layout.Roles().P2 == "rightmod" and rowOf("P2").kind == "mod", "no actions: the role is set at once")
 
 -- None on a trigger hands its role to a free paddle without actions first (P3, not P1).
 local r2 = rowOf("R2")

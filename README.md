@@ -2,7 +2,7 @@
 
 # Forever Controller Tweaks
 
-**Play WoW Forever on a controller your way.** Choose which bumper or trigger opens each crossbar bar and targeting mode, put any spell, item or action on any face or D-pad button, type in chat with an on-screen keyboard, open your own action rings, and tap spells on screen when you play through Steam Link. The glyphs always match the buttons you press, and you set everything up with the controller.
+**Play WoW Forever on a controller your way.** Choose which bumper or trigger opens each crossbar bar and targeting mode, put any spell, item or action on any face or D-pad button, type in chat with an on-screen keyboard, open your own action rings, turn on small conveniences like Sell junk and controller rumble, and tap spells on screen when you play through Steam Link. The glyphs always match the buttons you press, and you set everything up with the controller.
 
 [CurseForge][curseforge] · [Wago][wago] · [Website][site] · [Download][releases] · [User guide](docs/user-guide.md) · [Controllers](docs/controllers.md) · [Changelog](CHANGELOG.md)
 
@@ -12,9 +12,9 @@ Forever Controller Tweaks builds on WoW Forever's own Gamepad UI instead of repl
 
 ## Features
 
-- **On-screen keyboard.** A radial keyboard in Forever's style opens on any text box: chat, whispers, bag search, mail, macros. Both sticks type, it places itself clear of the chat window, the crossbar and your unit frame, and every button can be rebound.
-- **Smart suggestions.** 263 hand-written lines for 25 situations (ready check, resurrect, summon, invite, trade, dungeon, raid, city, guild and more), replies to chat aimed at you (25 intent rules recognise 125 phrases such as "inv?", "LF healer" and "ready?"), progress for the quest you follow, shorthands like lf, brb and omw, and next-word prediction that learns how you write. Each kind of box gets its own list, like item names in bag search. All offline: nothing is ever sent for you, and only your own sent messages are learned from.
-- **Action rings.** Build up to 12 radial menus of 4 to 12 slots, each with a name and any icon from the game's macro icons, filled from the same action list as the bindings. Put a ring on any face, D-pad or touch button: hold it, aim with the stick, release (centred cancels). Aim with the **Right** stick, the **Left** stick, or **Dynamic** (the hand that isn't on the button), per ring. Works in combat, and uses no hidden action slots.
+- **On-screen keyboard.** A radial keyboard in Forever's style opens on any text box: chat, whispers, bag search, mail, macros. Both sticks type, and it places itself clear of the chat window, the crossbar and your unit frame. Chat goes out through the addon's own secure button, so the game's chat box is never written to.
+- **Smart suggestions.** 137 hand-written lines for 31 situations plus Always (ready check, resurrect, summon, invite, trade, dungeon, raid, city, guild and more), 76 replies to chat aimed at you (31 rules recognise 165 phrases and words such as "inv?", "LF healer" and "ready?"), your own quick messages per situation, progress for the quest you follow, shorthands like lf, brb and omw, and next-word prediction that learns how you write. Each kind of box gets its own list, like item names in bag search. All offline: nothing is ever sent for you, and only your own sent messages are learned from.
+- **Action rings.** Build up to 12 radial menus of 4 to 8 slots, each with a name and any icon from the game's macro icons, filled from the same action list as the bindings. They look like the game's own radial menu. Put a ring on any face, D-pad or touch button: press it, aim with the stick, and let the stick go to use the slot. Per ring, **Show** is **Toggle** (open until you use a slot or close it) or **Hold** (open while you hold the button), and the aiming stick is **Right**, **Left** or **Dynamic** (the hand that isn't on the button). **Style** is **Full** (the radial wheel) or **Compact** (like the game's radial flyout, the aura and stance picker). Works in combat, and uses no hidden action slots.
 - **Remap the modifiers.** Right on the Bindings screen, give the left bar, right bar, friendly targeting and hostile targeting to any of L1, R1, L2, R2 or the back paddles. Picking a role another button already has swaps the two. One preset sets "Left = bars, Right = targeting".
 - **Any action on any button.** Every face and D-pad button, and any back paddle without a role, on every bar (top, left, right and bottom) can hold a spell, item, toy, mount, equipment set, macro or game action. Jump, Interact, Back and Inspect can go anywhere too, and Interact keeps hold-to-loot.
 - **Buttons that behave like native ones.** Moved actions show cooldowns, range, mana, charges, proc glow and tooltips, and respond to mouse clicks, exactly like the game's own slots.
@@ -24,20 +24,22 @@ Forever Controller Tweaks builds on WoW Forever's own Gamepad UI instead of repl
 - **Glyphs that match.** The bar hints, class prompts, targeting markers and on-screen legend show the buttons you actually press, in Xbox, PlayStation or Nintendo style. With both targeting roles on one side, the targeting marker splits into a friendly and a hostile half.
 - **Any controller.** If the game doesn't recognise your pad, pick its layout (PlayStation, Xbox or Switch) from a card, or press each button once to teach it.
 - **Modules you can turn off.** Touch bars, the keyboard and rings are separate modules, listed under Forever Controller Tweaks in the AddOns list. Turn off the ones you don't use; their settings stay saved.
-- **Controller-first settings.** Four tabs (Bindings, Touch, Keyboard, Rings: one per module that's on) in Forever's own look, driven entirely with the D-pad, with the controller drawn in the middle so you see which button you're editing. Triangle opens **More** on every screen.
+- **Controller-first settings.** Five tabs (Bindings, Touch, Keyboard and Rings, one per module that's on, and Tweaks) in Forever's own look, driven entirely with the D-pad, with the controller drawn in the middle so you see which button you're editing. Triangle opens **More** on every screen.
+- **Tweaks.** Small conveniences, each off until you turn it on: sort bags, sell junk, repair, buy a full stack, skip one-option NPC talk, learn all at the trainer, open all mail, fast loot, upgrade arrows, accept friend and guild invites, decline duels, whisper alerts, controller rumble on events, the light bar colour and a battery button on the minimap. Plus new picker actions such as Best healing potion, Mark next, Peek map and Eat & drink.
 - **Leaves no trace.** Logging out or disabling the addon puts the game's controller setup back to default.
 
 ## Screenshots
 
 | | |
 |---|---|
-| ![An action ring open in game](site/img/shot-ring.png) | ![On-screen keyboard suggesting the next word](site/img/shot-keyboard.png) |
-| ![Quick phrases on an empty chat box](site/img/shot-phrases.png) | ![Rings tab](site/img/shot-rings-tab.png) |
+| ![An action ring open in game](site/img/shot-ring.png) | ![A Compact ring open on its crossbar button](site/img/shot-ring-compact.png) |
+| ![Tweaks tab](site/img/shot-tweaks-tab.png) | ![Rings tab](site/img/shot-rings-tab.png) |
+| ![On-screen keyboard suggesting the next word](site/img/shot-keyboard.png) | ![Quick phrases on an empty chat box](site/img/shot-phrases.png) |
+| ![Quick messages page](site/img/shot-quick-messages.png) | ![Keyboard tab](site/img/shot-keyboard-tab.png) |
 | ![Bindings tab with a focused face button](site/img/shot-bindings.png) | ![Bindings tab with the role list open](site/img/shot-modifiers.png) |
-| ![Keyboard tab](site/img/shot-keyboard-tab.png) | ![Touch tab](site/img/shot-touch-tab.png) |
-| ![Action picker on the Spells category](site/img/shot-picker-ranks.png) | ![Touch bars in game](site/img/shot-touch-bars.png) |
+| ![Touch tab](site/img/shot-touch-tab.png) | ![Touch bars in game](site/img/shot-touch-bars.png) |
+| ![Action picker on a spell's ranks](site/img/shot-picker-ranks.png) | ![AddOns category in the picker](site/img/shot-addons.png) |
 | ![First-start layout choice](site/img/shot-setup.png) | ![Crossbar with matching glyphs](site/img/shot-glyphs.png) |
-| ![AddOns category in the picker](site/img/shot-addons.png) | |
 
 ## Install
 
@@ -69,7 +71,6 @@ Updating from 1.1 or earlier: install the new version over the old one. Your set
 3. Open the settings any time:
    - on the controller: hold **L2 + R2** and press **Create** (PlayStation), **View** (Xbox) or **Minus** (Switch);
    - the addon's **minimap button**, or the minimap **AddOns** menu;
-   - **Options → AddOns → Forever Controller Tweaks**: **Open Settings**, or **Run setup guide** for the first-start guide;
    - a key of your choice: **Key Bindings → AddOns → Forever Controller Tweaks**;
    - `/fct`.
 
@@ -105,10 +106,12 @@ More detail, including how to report a controller, is in [docs/controllers.md](d
 | `/fct preset native` · `split` | Game default, or Left = bars, Right = targeting |
 | `/fct role <L1 R1 L2 R2 P1-P4> <leftmod rightmod friendly hostile none>` | Sets one role |
 | `/fct face <bottom right left top> <interact inspect back jump>` | Moves a face action on the first page |
+| `/fct learn <L1 R1 L2 R2 P1-P4>` · `cancel` | Learns which raw input that button sends (like More → Learn controller) |
 | `/fct reset` | Game default roles and face actions for this controller |
 | `/fct release` | Clears the addon's hidden slots and `FCT:` macros before you uninstall it |
 | `/fct status` | Prints the controller, layout and state |
 | `/fct selftest` | Prints details for a bug report and turns the debug log on |
+| `/fct ringlog` | Prints the last ring events, for a ring bug report (Rings module) |
 | `/fct debug on` · `off` | Debug log, stored in the SavedVariables |
 | `/fct help` | Lists the commands |
 
@@ -120,9 +123,12 @@ More detail, including how to report a controller, is in [docs/controllers.md](d
 - **Game windows in combat.** A game window (bags, talents, map) opened in combat keeps your layout's bumpers until combat ends. Out of combat, game windows get their normal L1/R1 tabs while they're open. In combat the game locks the controller setup, so the switch waits.
 - **Controller setup needs a mouse or keyboard** for Skip, Back, Save and Cancel, because it records every controller button you press.
 - In a vehicle, or while a pet or possess bar replaces a bar, the face buttons keep their native actions.
-- The addon never changes the game's own gamepad options (CVars). Settings such as swapping the target modifiers stay in the game's Options.
+- The addon never changes the game's own gamepad options (CVars), apart from the stick-as-buttons setting a held ring turns on while it's open (your own value comes back when it closes). Settings such as swapping the target modifiers stay in the game's Options.
+- **In combat the keyboard sends only party, raid, instance, guild and whispers.** A say, yell or channel line stays in the box, and you send it after the fight.
+
 - **The keyboard can't type everywhere.** The game blocks addons from typing into a few boxes, such as the Options search, the Group Finder's boxes and spellbook search. There the keyboard stays closed and says so; use a real keyboard. Slash commands other than channel switches (`/s`, `/p`, `/g`, `/w` …) need a real keyboard.
-- English only.
+- English only. The potion, grenade and food actions find items by their English names.
+
 
 ## Uninstalling
 

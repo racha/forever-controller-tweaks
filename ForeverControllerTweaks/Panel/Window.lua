@@ -76,7 +76,7 @@ function Window:Move(dx, dy, repeats)
 	for _, node in ipairs(self.nodes or {}) do
 		local region = node.region
 		local x, y = region:GetCenter()
-		-- noSide nodes (Touch's settings, where left/right change a value) are reached with up/down only.
+		-- noSide nodes (setting rows, where left/right change a value) are reached with up/down only.
 		if node ~= self.focus and x and region:IsVisible() and not (dx ~= 0 and node.noSide) then
 			local along = (x - fx) * dx + (y - fy) * dy
 			local across = math.abs((x - fx) * dy) + math.abs((y - fy) * dx)
@@ -118,8 +118,10 @@ function Window:Pad(key)
 	if self.OnKey and self:OnKey(key) then return end
 
 	-- A focused control may use left/right itself (the page selector, a setting); false hands the press back to
-	-- focus movement (a setting at its end).
-	if (key == "PADDLEFT" or key == "PADDRIGHT") and self.focus and self.focus.onDir and self.focus.onDir(key == "PADDLEFT" and -1 or 1) ~= false then return end
+	-- focus movement. A noSide row (one setting per row) keeps left/right even at its end, so walking the rows never
+	-- lands on, or changes, another setting.
+	local focus = self.focus
+	if (key == "PADDLEFT" or key == "PADDRIGHT") and focus and (focus.onDir and focus.onDir(key == "PADDLEFT" and -1 or 1) ~= false or focus.noSide) then return end
 	local dir = DIRS[key]
 	if dir then
 		self.repeatKey = key
@@ -348,7 +350,20 @@ ns.On("FCT_ACTIVE_CHANGED", function(active)
 	if not active and current and not current.notice then UI.CloseAll() end
 end)
 
+-- One redraw of a window on the next frame, however many changes asked for it in this one (a preset or a Learn run
+-- changes many slots at once).
+local soon = {}
+function UI.RefreshSoon(window)
+	if soon[window] then return end
+	soon[window] = true
+	C_Timer.After(0, function()
+		soon[window] = nil
+		if window:IsShown() then window:Refresh() end
+	end)
+end
+
 -- Layout edits (here, from /fct or from Learn) redraw the open window.
 ns.On("FCT_LAYOUT_CHANGED", function()
-	if current and current:IsShown() then current:Refresh() end
+	if current and current:IsShown() then UI.RefreshSoon(current) end
 end)
+

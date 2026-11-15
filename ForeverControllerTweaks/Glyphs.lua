@@ -12,18 +12,20 @@
 -- press). Clicks and hover go to Face.lua's catcher (Face.Catcher); the mirror keeps the mouse off. A mirrored slot's
 -- prompt is redrawn on top.
 -- Hiding the native glyph: SetAlpha(0) on its five state textures (Normal, Hover, Pressed,
--- Active, Disabled), the only kind of write to Blizzard objects. It is safe here because it touches no Lua field or table,
--- only texture regions of the non-protected icon frames (PageUnit.ModifierIcons, the class-action prompts, the
+-- Active, Disabled), the only kind of write to Blizzard objects. It touches no Lua field or table and no frame, only
+-- texture regions: here of the non-protected icon frames (PageUnit.ModifierIcons, the class-action prompts, the
 -- legend entries' InputIcon1/2), never their bars, buttons, PageUnit or the legend. The icon frame itself keeps its
 -- alpha, so the crossbar focus FX Blizzard parents to it (ActionBarFocusFX.lua animatedGlowTop/animatedGlowBottom)
 -- still play there, under and over our glyph. Each texture's alpha is saved before the first hide and put back when
 -- the glyph leaves the overlay; while hidden it is re-asserted every frame. `/fct glyphhide overlay` (debug)
 -- keeps the fallback: our glyph on top, the native one untouched.
--- The same write, under the same rules, goes to the shoulder tab textures (below) and to a mirrored slot's own
--- texture regions (every one but the alpha-animated focus FX, SLOT_FX), only while a mirror stands on that slot, so
--- a pressed-in mirror shows no native ring around it. A mirrored slot's prompt (its five state textures) too.
--- And to a crossbar slot's macro-name FontString (Name) while that slot holds a registered game macro of ours, so
--- "FCT:Bags" never shows as text on the button; the player's own macros keep their names.
+-- The same write goes to the shoulder tab textures (below) and to a mirrored slot's own texture regions (every one but
+-- the alpha-animated focus FX, SLOT_FX), only while a mirror stands on that slot, so a pressed-in mirror shows no
+-- native ring around it. A mirrored slot's prompt (its five state textures) too. And to a crossbar slot's macro-name
+-- FontString (Name) while that slot holds a registered game macro of ours, so "FCT:Bags" never shows as text on the
+-- button; the player's own macros keep their names. Those slots are the crossbar's action buttons, which are
+-- protected, and these writes also run in combat: SetAlpha on a region is not a protected call, but it is a write to a
+-- protected button's region, so it is the one place to check first if a taint log ever names the crossbar buttons.
 -- Targeting shoulder markers: Blizzard's friendly / hostile tabs (PageUnit.Left/RightShoulderBackground, Icon,
 -- Highlight) sit at L1 / R1. When the layout moves those roles, the native tabs go to alpha 0 (texture regions only,
 -- as above) and ours show the side of the button that holds each role. Both roles on one side become one split tab in
@@ -105,18 +107,60 @@ local namesDirty = true
 
 local function hideMode() return ns.db.options.glyphHide == "overlay" and "overlay" or "alpha" end
 
+-- Midnight secret values: a Blizzard region drawn from secret data (Inspect's raid marker, SetRaidTargetIconTexture)
+-- reads back secret, and addon code can't compare, test or do arithmetic on one, only pass it to a setter.
+local function isSecret(value) return issecretvalue ~= nil and issecretvalue(value) end
+local function anySecret(...)
+	for i = 1, select("#", ...) do
+		if isSecret((select(i, ...))) then return true end
+	end
+	return false
+end
+
+-- to[method](to, ...); a setter handed a secret runs under pcall, so one that refuses it skips that copy only.
+local function apply(to, method, secret, ...)
+	if secret then return pcall(to[method], to, ...) end
+	return to[method](to, ...)
+end
+
+-- Whether the values read from a Blizzard region differ from the ones last copied (kept in last[key]). A secret is
+-- never kept, so its copy runs every frame. Returns changed, secret.
+local function changed(last, key, ...)
+	local n = select("#", ...)
+	if anySecret(...) then
+		last[key] = nil
+		return true, true
+	end
+	local list = last[key]
+	if list and list.n == n then
+		local same = true
+		for i = 1, n do same = same and list[i] == select(i, ...) end
+		if same then return false, false end
+	end
+	list = list or {}
+	list.n = n
+	for i = 1, n do list[i] = select(i, ...) end
+	last[key] = list
+	return true, false
+end
+
+-- A secret alpha is kept boxed in saved, so the nil checks never touch it.
 local function hideTexture(texture)
 	if not texture then return end
-	if saved[texture] == nil then saved[texture] = texture:GetAlpha() end
+	if saved[texture] == nil then
+		local alpha = texture:GetAlpha()
+		saved[texture] = isSecret(alpha) and { alpha } or alpha
+	end
 	texture:SetAlpha(0)
 end
 
 local function showTexture(texture)
-	local alpha = texture and saved[texture]
-	if alpha == nil then return end
+	local kept = texture and saved[texture]
+	if kept == nil then return end
 
-	texture:SetAlpha(alpha)
 	saved[texture] = nil
+	if type(kept) == "table" then return apply(texture, "SetAlpha", true, kept[1]) end
+	texture:SetAlpha(kept)
 end
 
 -- A mirrored slot's own art: every texture region of the button but the animated FX. Child frames (prompt,
@@ -198,8 +242,16 @@ local function addPrompt(prompt)
 	for _, icon in ipairs(prompt and prompt.InputIcons or {}) do addIcon(icon) end
 end
 
--- Every Blizzard glyph that can name a remapped key: the modifier glyphs, the class-action prompts (L1+L2 / R1+R2)
--- and the legend. Per-button prompts only name face and D-pad keys, which the addon never moves.
+-- A prompted-binding footer's prompts (PromptedBindingFooter.lua RefreshInputLegend): its legend is made lazily.
+local function addFooter(footer)
+	local legend = footer and footer.inputLegend
+	for _, prompt in pairs(legend and legend.promptFrames or NO_UNITS) do addPrompt(prompt) end
+end
+
+-- Every Blizzard glyph that can name a remapped key: the modifier glyphs, the class-action prompts (L1+L2 / R1+R2),
+-- the legend, and the HUD footers on the friendly targeting key: the party/raid frames' "open group targeting"
+-- (RaidTargetDPAD.lua SetupFooter) and Group Targeting's "close" (GroupTargeting.lua SetupFooters). Per-button
+-- prompts only name face and D-pad keys, which the addon never moves; window footers show while the remap is native.
 local function collect()
 	wipe(icons)
 	local unit = pageUnit()
@@ -215,6 +267,8 @@ local function collect()
 	for _, group in pairs(legend and legend.groups or {}) do
 		for _, frame in ipairs(group) do addPrompt(frame) end
 	end
+	addFooter(RaidTargetingFreeSelection and RaidTargetingFreeSelection.raidTargetingFooter)
+	addFooter(GroupTargeting and GroupTargeting.targetingActiveDPadFooter)
 end
 
 -- Fills entry with what to draw over native: the physical button now outputting its key. Returns false when
@@ -296,7 +350,8 @@ local function clearOverlayOf(button)
 	found = false
 	for i = 1, select("#", button:GetRegions()) do
 		local region = select(i, button:GetRegions())
-		if region ~= button.PermaboundOverlay and region.GetAtlas and region:GetAtlas() == CLEAR_OVERLAY_ATLAS then found = region end
+		local atlas = region ~= button.PermaboundOverlay and region.GetAtlas and region:GetAtlas()
+		if not isSecret(atlas) and atlas == CLEAR_OVERLAY_ATLAS then found = region end
 	end
 	clearOverlays[button] = found
 	return found or nil
@@ -374,6 +429,8 @@ local function wantMirror(id, target, source, action, catalog, code, layer)
 end
 
 local function poll()
+	-- Each poll: footers make their prompt frames when a group forms, with no event of ours.
+	collect()
 	local manager = InputDeviceIconSetManager
 	local iconSet = manager and manager.GetActiveInputDeviceIconSet and manager:GetActiveInputDeviceIconSet()
 	if iconSet ~= lastIconSet then
@@ -492,25 +549,30 @@ local function lastCopy(to, key, gen)
 end
 
 -- Copies anchors given relative to the region's own button onto ours relative to the mirror.
+-- Secret offsets are set as read and not kept: last.count stays nil, so the next frame copies again without comparing.
 local function copyPoints(from, to, frame, gen)
 	local last = lastCopy(to, "psPoints", gen)
-	local count = from and from:GetNumPoints() or -1
-	local same = last.from == from and last.frame == frame and last.count == count
+	local count = from and from:GetNumPoints()
+	if isSecret(count) then return end
+
+	count = count or -1
+	local same, secret = last.from == from and last.frame == frame and last.count == count, false
 	for i = 1, count do
 		local point, _, relativePoint, x, y = from:GetPoint(i)
 		local k = i * 4
-		same = same and last[k - 3] == point and last[k - 2] == relativePoint and last[k - 1] == x and last[k] == y
+		secret = secret or anySecret(point, relativePoint, x, y)
+		same = same and not secret and last[k - 3] == point and last[k - 2] == relativePoint and last[k - 1] == x and last[k] == y
 		last[k - 3], last[k - 2], last[k - 1], last[k] = point, relativePoint, x, y
 	end
 	if same then return end
 
-	last.from, last.frame, last.count = from, frame, count
+	last.from, last.frame, last.count = from, frame, not secret and count or nil
 	to:ClearAllPoints()
 	if not from then return to:SetAllPoints() end
 
 	for i = 1, count do
 		local k = i * 4
-		to:SetPoint(last[k - 3], frame, last[k - 2], last[k - 1], last[k])
+		apply(to, "SetPoint", secret, last[k - 3], frame, last[k - 2], last[k - 1], last[k])
 	end
 end
 
@@ -521,8 +583,12 @@ local function copyTexture(from, to, cursorUnits, gen)
 
 	local last = lastCopy(to, "psTexture", gen)
 	local atlas, file = from:GetAtlas(), from:GetTexture()
-	if not (atlas or file) or last.atlas ~= atlas or last.file ~= file then
-		last.atlas, last.file, last.left = atlas, file, nil
+	local new, secret = changed(last, "art", atlas, file)
+	if secret then
+		last.coords = nil
+		if isSecret(atlas) or atlas then apply(to, "SetAtlas", true, atlas) else apply(to, "SetTexture", true, file) end
+	elseif new or not (atlas or file) then
+		last.coords = nil
 		if atlas then
 			to:SetAtlas(atlas)
 		elseif file then
@@ -535,27 +601,21 @@ local function copyTexture(from, to, cursorUnits, gen)
 		end
 	end
 	local ulX, ulY, llX, llY, urX, urY, lrX, lrY = from:GetTexCoord()
-	if last.left ~= ulX or last.ulY ~= ulY or last.llX ~= llX or last.llY ~= llY or last.urX ~= urX or last.urY ~= urY or last.lrX ~= lrX or last.lrY ~= lrY then
-		last.left, last.ulY, last.llX, last.llY, last.urX, last.urY, last.lrX, last.lrY = ulX, ulY, llX, llY, urX, urY, lrX, lrY
-		to:SetTexCoord(ulX, ulY, llX, llY, urX, urY, lrX, lrY)
-	end
+	new, secret = changed(last, "coords", ulX, ulY, llX, llY, urX, urY, lrX, lrY)
+	if new then apply(to, "SetTexCoord", secret, ulX, ulY, llX, llY, urX, urY, lrX, lrY) end
 	local r, g, b, a = from:GetVertexColor()
-	if last.r ~= r or last.g ~= g or last.b ~= b or last.a ~= a then
-		last.r, last.g, last.b, last.a = r, g, b, a
-		to:SetVertexColor(r, g, b, a)
-	end
+	new, secret = changed(last, "color", r, g, b, a)
+	if new then apply(to, "SetVertexColor", secret, r, g, b, a) end
 	local desaturated = from:IsDesaturated()
-	if last.desaturated ~= desaturated then
-		last.desaturated = desaturated
-		to:SetDesaturated(desaturated)
-	end
+	new, secret = changed(last, "desaturated", desaturated)
+	if new then apply(to, "SetDesaturated", secret, desaturated) end
+	-- The region's own alpha, the saved one while we hide it (boxed when secret).
 	local alpha = saved[from]
-	if alpha == nil then alpha = from:GetAlpha() end
-	if last.alpha ~= alpha then
-		last.alpha = alpha
-		to:SetAlpha(alpha)
-	end
+	if type(alpha) == "table" then alpha = alpha[1] elseif alpha == nil then alpha = from:GetAlpha() end
+	new, secret = changed(last, "alpha", alpha)
+	if new then apply(to, "SetAlpha", secret, alpha) end
 	local shown = from:IsShown()
+	if isSecret(shown) then return apply(to, "SetShown", true, shown) end
 	if to:IsShown() ~= shown then to:SetShown(shown) end
 end
 
@@ -632,7 +692,8 @@ local function showMirror(mirror, mirrorFace)
 		mirror:Hide()
 		return true
 	end
-	if not (catalog or from:IsShown()) then
+	local fromShown = not catalog and from:IsShown()
+	if not (catalog or isSecret(fromShown) or fromShown) then
 		mirror:Hide()
 		return false
 	end
@@ -677,7 +738,8 @@ local function showMirror(mirror, mirrorFace)
 	local checkedArt = source:GetCheckedTexture()
 	copyPoints(checkedArt, checked, body, gen)
 	copyTexture(checkedArt, checked, nil, gen)
-	checked:SetShown(source:GetChecked())
+	local isChecked = source:GetChecked()
+	apply(checked, "SetShown", isSecret(isChecked), isChecked)
 	return true
 end
 
@@ -753,7 +815,8 @@ local function drawMarker(marker, side, rows, unit)
 		row.wash:SetShown(split and down)
 		row.pressed:SetShown(down)
 		if role then
-			setAtlas(row.icon, unit[tab.icon]:GetAtlas() or ROLE_ICON[role])
+			local tabAtlas = unit[tab.icon]:GetAtlas()
+			setAtlas(row.icon, not isSecret(tabAtlas) and tabAtlas or ROLE_ICON[role])
 			if setAtlas(row.pressed, TAB[side].pressedAtlas) and split then
 				local left, top, _, bottom, right = row.pressed:GetTexCoord()
 				local crop, width, height = row.crop, right - left, bottom - top
@@ -876,17 +939,43 @@ end
 local namesWatch = CreateFrame("Frame")
 namesWatch:Hide()
 
+-- The name watcher runs only while there is an FCT: macro of ours to hide (Actions' registries).
+local function hasMacros()
+	local char = ns.Face.CharDB()
+	return not not (next(ns.db.macros or NO_UNITS) or char and next(char.macros or NO_UNITS))
+end
+
+-- Stopping, every slot is judged again, so the names it hid come back.
+local function watchNames()
+	local on = active() and hasMacros()
+	if not on then namesDirty = true end
+	syncNames()
+	namesWatch:SetShown(on)
+end
+
+-- The error's first line, shortened to "File.lua:line: message", and the stack under it for the debug log.
+local function traced(err)
+	local stack = debugstack and debugstack(2, 6, 0) or debug and debug.traceback and debug.traceback("", 2) or ""
+	return { message = tostring(err):match("^[^\n]*"):gsub("^.-([%w_]+%.lua:%d+:)", "%1"), stack = stack }
+end
+
 local function fail(err)
 	failed = true
 	if driver then driver:Hide() end
 	namesWatch:Hide()
 	pcall(restoreAll)
-	ns.log("glyph overlay stopped after an error; Blizzard's glyphs are back (/reload to retry)")
-	ns.debug("glyphs error: %s", tostring(err))
+	local message = type(err) == "table" and err.message or tostring(err)
+	ns.log("glyph overlay stopped after an error; Blizzard's glyphs are back (/reload to retry): " .. message)
+	ns.debug("glyphs error: %s\n%s", message, type(err) == "table" and err.stack or "")
 end
 
-local function guarded(fn, ...)
-	local ok, err = pcall(fn, ...)
+-- xpcall keeps the stack; the call goes through upvalues, as Lua 5.1's xpcall passes no arguments (no closure per frame).
+local guardedFn, guardedArg
+local function callGuarded() return guardedFn(guardedArg) end
+local function guarded(fn, arg)
+	guardedFn, guardedArg = fn, arg
+	local ok, err = xpcall(callGuarded, traced)
+	guardedFn, guardedArg = nil, nil
 	if not ok then fail(err) end
 end
 
@@ -906,12 +995,10 @@ driver:SetScript("OnUpdate", function(_, elapsed) guarded(step, elapsed) end)
 namesWatch:SetScript("OnUpdate", function() guarded(syncNames) end)
 
 local function doRefresh()
-	collect()
 	since = 0
 	poll()
 	sync()
-	syncNames()
-	namesWatch:SetShown(active())
+	watchNames()
 end
 
 local function refresh()
@@ -926,23 +1013,23 @@ function Glyphs.Mode()
 	return hideMode()
 end
 
--- The settings screen (and controller detection) open and close through SetPanelOpen, which sends no message.
-local setPanelOpen = ns.SetPanelOpen
-function ns.SetPanelOpen(open)
-	setPanelOpen(open)
-	refresh()
-end
-
 ns.On("PLAYER_ENTERING_WORLD", refresh)
 ns.On("FCT_ACTIVE_CHANGED", refresh)
 ns.On("FCT_LAYOUT_CHANGED", refresh)
 ns.On("FCT_COMBAT_START", refresh)
-ns.On("CVAR_UPDATE", function(name) if name == "GamepadSwapTargetModifiers" then refresh() end end)
+-- The settings screen and controller detection.
+ns.On("FCT_PANEL_OPEN", refresh)
+ns.On("CVAR_UPDATE", function(name) if type(name) == "string" and name:lower() == "gamepadswaptargetmodifiers" then refresh() end end)
 ns.On("PLAYER_LOGOUT", function() pcall(restoreAll) end)
 
 -- Our own event frame: macro or slot changes re-judge the macro names on the next watcher frame.
 local nameEvents = CreateFrame("Frame")
-nameEvents:SetScript("OnEvent", function() namesDirty = true end)
+-- Judged now (a registry may have filled or emptied) and again on the next frame, once the slot reads its new action.
+nameEvents:SetScript("OnEvent", function()
+	namesDirty = true
+	if ns.db and not failed then guarded(watchNames) end
+	namesDirty = true
+end)
 pcall(nameEvents.RegisterEvent, nameEvents, "ACTIONBAR_SLOT_CHANGED")
 pcall(nameEvents.RegisterEvent, nameEvents, "UPDATE_MACROS")
 

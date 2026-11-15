@@ -53,7 +53,7 @@ local BAR_RETRIES = 10
 -- An override bar replaces its layer only on its page; restricted code can't read the page, but the bar's
 -- (protected) button is visible exactly when Blizzard shows that bar in place of the layer's bar.
 local ROUTER_SNIPPET = [[
-	local name, layer
+	local name, layer, slot
 	if down then
 		local state = GetGamePadState()
 		local held = state and state.buttons
@@ -83,9 +83,18 @@ local ROUTER_SNIPPET = [[
 				end
 			end
 		end
-		if self:GetAttribute("ps-action-" .. layer) then name = "action"
+		slot = self:GetAttribute("ps-action-" .. layer)
+		if slot then name = "action"
 		elseif self:GetAttribute("ps-entry-" .. layer) then name = "entry"
-		elseif self:GetAttribute("ps-ring-" .. layer) then name = "ring" end
+		elseif self:GetAttribute("ps-ring-" .. layer) then name = "ring"
+		else
+			-- Since 11.0.2 a macro can't /click a button that runs another macro (dropped without an error), so a
+			-- player macro in the native slot fires as that slot, as Blizzard's button would. Anything else keeps the
+			-- /click: the button's flyout radial and press dent. ID 0: an empty or reserved slot.
+			local native = self:GetFrameRef("slot-" .. layer)
+			local id = native and native:GetName() == name and native:GetID() or 0
+			if id > 0 and GetActionInfo(id) == "macro" then name, slot = "action", id end
+		end
 		self:SetAttribute("ps-cur", name)
 		self:SetAttribute("ps-curlayer", name and layer or nil)
 	else
@@ -103,14 +112,14 @@ local ROUTER_SNIPPET = [[
 		if rings and not down then rings:RunAttribute("_release", self:GetName()) end
 		return
 	end
-	-- A shadow slot: the pair Blizzard's action buttons use, UseAction on press and ReleaseAction on release
-	-- (hold-to-cast, empower). The release keeps what the press set.
+	-- A shadow slot, or a macro's native slot: the pair Blizzard's action buttons use, UseAction on press and
+	-- ReleaseAction on release (hold-to-cast, empower). The release keeps what the press set.
 	-- The cast checks only on that route: on a macro press they'd look up a stale or default action.
 	if name == "action" then
 		if down then
 			self:SetAttribute("type", "action")
 			self:SetAttribute("typerelease", "actionrelease")
-			self:SetAttribute("action", self:GetAttribute("ps-action-" .. layer))
+			self:SetAttribute("action", slot)
 			self:SetAttribute("checkselfcast", true)
 			self:SetAttribute("checkfocuscast", true)
 			self:SetAttribute("checkmouseovercast", true)
@@ -139,13 +148,21 @@ function Face.ClickBoth(name) return Face.CLICK_BOTH:format(name, name) end
 -- Self, focus and mouseover cast modifiers, as Blizzard's action buttons set them (ActionButton.lua OnLoad).
 Face.CHECK_CASTS = { "checkselfcast", "checkfocuscast", "checkmouseovercast" }
 
--- This character's table in ns.db.chars["Name-Realm"], and its key; nil before the name is known.
-function Face.CharDB()
+local function charKey()
 	local name = UnitName and UnitName("player")
 	local realm = GetNormalizedRealmName and GetNormalizedRealmName()
-	if not (ns.db and name and realm) then return nil end
+	return name and realm and name .. "-" .. realm
+end
 
-	local key = name .. "-" .. realm
+-- The character can't change before a reload, so its key is read once from PLAYER_LOGIN on.
+local loggedKey
+ns.On("PLAYER_LOGIN", function() loggedKey = charKey() end)
+
+-- This character's table in ns.db.chars["Name-Realm"], and its key; nil before the name is known.
+function Face.CharDB()
+	local key = loggedKey or charKey()
+	if not (ns.db and key) then return nil end
+
 	ns.db.chars = ns.db.chars or {}
 	ns.db.chars[key] = ns.db.chars[key] or {}
 	return ns.db.chars[key], key
@@ -439,6 +456,7 @@ local function catcherFor(actionBars, code, layer, slot)
 	catcher:SetScript("OnEnter", catcherTooltip)
 	-- A post-hook on our own frame: one debug line per mouse click, to tell a catcher click from a pad press.
 	catcher:HookScript("OnClick", function(self, mouseButton, down)
+		if not ns.db.options.debug then return end
 		ns.debug("face catcher %s/%s %s %s: %s", code, layer, mouseButton, down and "down" or "up", tostring(self:GetAttribute("type") == "action" and "action " .. tostring(self:GetAttribute("action")) or self:GetAttribute("macrotext")))
 	end)
 	catcher:SetScript("OnLeave", catcherLeave)
@@ -457,7 +475,8 @@ local function aimCatcher(catcher, route, actionBars)
 	local how, value = route and route[1], route and route[2]
 	local click = how == "click" and button(actionBars, "topBar", ACTION_SLOT[value])
 	local name = click and click:GetName()
-	local text = name and Face.ClickBoth(name) or how == "text" and value or nil
+	-- A hold action's button, clicked once from a catcher: its toggle (RightButton).
+	local text = name and Face.ClickBoth(name) or how == "text" and value or how == "hold" and "/click " .. value .. " RightButton" or nil
 	catcher:SetAttribute("type", how == "action" and "action" or text and "macro" or nil)
 	catcher:SetAttribute("typerelease", how == "action" and "actionrelease" or nil)
 	catcher:SetAttribute("action", how == "action" and value or nil)
@@ -499,11 +518,17 @@ local function modifierIndexes()
 end
 Face.ModifierIndexes = modifierIndexes
 
--- How a routed cell runs: ("click", face action), ("ring", ring id) or ("text", secure macro text); nil when the
--- entry no longer resolves.
+-- How a routed cell runs: ("click", face action), ("hold", our hold button's name: clicked down on the press and up
+-- on the release, like a face action), ("ring", ring id) or ("text", secure macro text); nil when the entry no
+-- longer resolves.
 local function resolve(entry)
 	local action = tostring(entry.id):match("^face:(%a+)$")
 	if action then return ACTION_SLOT[action] and "click", action end
+	local hold = tostring(entry.id):match("^hold:(%a+)$")
+	if hold then
+		local name = ns.Actions and ns.Actions.HoldButton(hold)
+		return name and "hold", name
+	end
 	local ring = tonumber(tostring(entry.id):match("^ring:(%d+)$"))
 	if ring then
 		if ns.Rings and ns.Rings.Get(ring) then return "ring", ring end
@@ -521,14 +546,20 @@ local function aim(router, actionBars, code, action, routes, mods, unresolved)
 		local target = slot and button(actionBars, barKey, slot)
 		router:SetAttribute("ps-" .. layer, target and target:GetName() or nil)
 		if TARGET_LAYERS[layer] and target then SecureHandlerSetFrameRef(router, "bar-" .. layer, target) end
+		-- The snippet reads the slot a native target fires, to run a macro there without /click.
+		if target then SecureHandlerSetFrameRef(router, "slot-" .. layer, target) end
 	end
 	-- Top: a face button's chosen face action, a D-pad button's own top-bar slot.
 	local top = slot and button(actionBars, "topBar", action and ACTION_SLOT[action] or slot)
 	router:SetAttribute("ps-top", top and top:GetName() or nil)
+	-- A face button's top target is a reserved button: its scripts act, not a slot.
+	if top and not action then SecureHandlerSetFrameRef(router, "slot-top", top) end
 	for cellLayer, route in pairs(routes) do
 		if route[1] == "click" then
 			local target = button(actionBars, "topBar", ACTION_SLOT[route[2]])
 			router:SetAttribute("ps-" .. CELL_LAYER[cellLayer], target and target:GetName())
+		elseif route[1] == "hold" then
+			router:SetAttribute("ps-" .. CELL_LAYER[cellLayer], route[2])
 		end
 	end
 	for role, index in pairs(mods) do router:SetAttribute("ps-i" .. role, index) end
@@ -549,21 +580,35 @@ local driver, summary, retries, refresh = nil, "not applied yet", 0, nil
 -- Back and Inspect used to be PS: game macros (Actions.LEGACY_FACE). Once per character, with the Gamepad UI on and
 -- out of combat: routed cells with the old id become the face action, and crossbar slots holding the old macro become
 -- routed cells (on every page, as routed cells are) and are cleared, so the registry deletes the macro.
-local function migrateLegacyFace()
-	local Actions, char = ns.Actions, Face.CharDB()
-	local legacy, list = Actions.LEGACY_FACE, cells(true)
-	if not (legacy and char and list) or char.legacyFaceDone then return end
+-- The 96 slots are scanned once; a write that failed (Clear, ReleaseShadow) is kept in legacyLeft for the session and
+-- only those are tried again on the next applies, so the scan and its chat lines don't repeat.
+local legacyLeft
 
+local function retryLegacy(Actions)
+	for what, cell in pairs(legacyLeft) do
+		local ok = type(cell) == "table" and Actions.ReleaseShadow(cell[1], cell[2]) or type(cell) ~= "table" and Actions.Clear(what)
+		if ok then legacyLeft[what] = nil end
+	end
+	return next(legacyLeft) == nil
+end
+
+local function migrateLegacyFace(char)
+	local Actions, list = ns.Actions, cells(true)
+	local legacy = Actions.LEGACY_FACE
+	if not (legacy and list) then return false end
+	if legacyLeft and next(legacyLeft) then return retryLegacy(Actions) end
+
+	legacyLeft = {}
 	local function faceEntry(oldID)
 		local entry = Actions.Find(legacy[oldID])
 		return entry and { id = entry.id, name = entry.name, icon = entry.icon, kind = "face" }
 	end
-	local done, changed = true, false
+	local changed = false
 	for code, row in pairs(list) do
 		for layer, entry in pairs(row) do
 			if legacy[entry.id] then
 				row[layer], changed = faceEntry(entry.id) or entry, true
-				if not Actions.ReleaseShadow(code, layer) then done = false end
+				if not Actions.ReleaseShadow(code, layer) then legacyLeft[code .. "/" .. layer] = { code, layer } end
 			end
 		end
 	end
@@ -583,21 +628,21 @@ local function migrateLegacyFace()
 				if oldID and legacy[oldID] then
 					list[code] = list[code] or {}
 					list[code][layer], changed = list[code][layer] or faceEntry(oldID), true
-					if not Actions.Clear(slot) then done = false end
+					if not Actions.Clear(slot) then legacyLeft[slot] = true end
 					ns.debug("face: %s on page %d moved from a macro slot to a routed cell %s/%s", oldID, page, code, layer)
 				end
 			end
 		end
 	end
-	char.legacyFaceDone = done or nil
 	-- Panel and glyphs redraw; the refresh it asks for is covered by the apply running now.
 	if changed then ns.Fire("FCT_LAYOUT_CHANGED", "layout") end
+	return next(legacyLeft) == nil
 end
 
 -- Once per character: cells routed before SetCellEntry emptied the slot underneath may still have a FCT: macro there.
 local function clearUnderRouted()
-	local char, list = Face.CharDB(), cells()
-	if not (char and list and GamepadActionBarBindingUtil) or char.routedUnderDone then return end
+	local list = cells()
+	if not (list and GamepadActionBarBindingUtil) then return false end
 
 	local done = true
 	for code, row in pairs(list) do
@@ -605,7 +650,7 @@ local function clearUnderRouted()
 			if not clearUnder(code, layer) then done = false end
 		end
 	end
-	char.routedUnderDone = done or nil
+	return done
 end
 
 -- ignorePanel: combat is starting and the settings screen closes in the same frame.
@@ -625,8 +670,8 @@ local function applyNow(ignorePanel)
 	local Actions = ns.Actions
 	local writable = known and Actions and ns.Active() and not ignorePanel and not InCombatLockdown()
 	if writable then
-		migrateLegacyFace()
-		clearUnderRouted()
+		ns.MigrateChar("legacyFaceDone", migrateLegacyFace)
+		ns.MigrateChar("routedUnderDone", clearUnderRouted)
 	end
 	for i, code in ipairs(CODES) do
 		local router, key, pos, row = routers[i], CODE_KEY[code], CODE_POS[code], list[code] or {}
@@ -705,17 +750,23 @@ local function applyNow(ignorePanel)
 	ns.debug("face %s: %s; states %s", enabled and "routed" or "off", #parts > 0 and table.concat(parts, " ") or "nothing moved", states)
 end
 
--- A Lua error must not leave busy set (it would freeze the router until /reload): it is logged once and the next
--- apply runs normally.
+-- A Lua error must not leave busy set (it would freeze the router until /reload). Each one goes to the debug log; the
+-- first after a working apply also gets one chat line, and the next apply runs normally.
 local failed
 local function apply(ignorePanel)
 	if busy or (ns.Actions and ns.Actions.Busy()) then return end
 	busy = true
 	local ok, err = pcall(applyNow, ignorePanel)
 	busy = false
-	if ok or failed then return end
-	failed = true
+	if ok then
+		failed = nil
+		return
+	end
+
+	local message = tostring(err):match("^[^\n]*"):gsub("^.-([%w_]+%.lua:%d+:)", "%1")
 	ns.debug("face apply failed: %s", tostring(err))
+	if not failed then ns.log("button routing skipped an update after an error (/reload to retry): " .. message) end
+	failed = true
 end
 
 -- A short state for /fct selftest, e.g. "routed PAD1=interact PAD3=jump PADDUP/L=jump, state routed".
@@ -752,13 +803,8 @@ function refresh()
 	ns.whenPadFree("face router", apply)
 end
 
--- The settings screen owns the pad while open; Core's SetPanelOpen sends no message, so follow it here.
-local setPanelOpen = ns.SetPanelOpen
-function ns.SetPanelOpen(open)
-	local was = ns.panelOpen
-	setPanelOpen(open)
-	if ns.panelOpen ~= was then refresh() end
-end
+-- The settings screen owns the pad while open.
+ns.On("FCT_PANEL_OPEN", function() refresh() end)
 
 -- /fct debug on|off adds or drops the per-press route line.
 local debugCommand = ns.commands.debug

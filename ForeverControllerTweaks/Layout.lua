@@ -30,8 +30,9 @@ Layout.PRESETS = {
 }
 
 -- SDL GameController raw order, which WTF/GamePadConfig_Default.json follows: 9/10 shoulders, 16-19 paddles,
--- raw axes 4/5 the triggers.
+-- raw axes 0-3 the sticks, 4/5 the triggers.
 Layout.TRIGGER_AXES = { [4] = "LTrigger", [5] = "RTrigger" }
+Layout.STICK_AXES = { [0] = "LStickX", [1] = "LStickY", [2] = "RStickX", [3] = "RStickY" }
 local SDL_RAW = { L1 = { button = 9 }, R1 = { button = 10 }, L2 = { axis = "LTrigger" }, R2 = { axis = "RTrigger" } }
 local SDL_PADDLES = { P1 = { button = 16 }, P2 = { button = 17 }, P3 = { button = 18 }, P4 = { button = 19 } }
 

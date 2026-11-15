@@ -51,6 +51,7 @@ function Frame:Show() self.shown = true end
 function Frame:Hide() self.shown = false end
 function Frame:IsShown() return self.shown end
 function Frame:GetName() return self.name end
+function Frame:GetID() return self.id or 0 end
 function Frame:SetScript(s, fn) self.scripts[s] = fn end
 function Frame:HookScript(s, fn) self.hooks[s] = fn end
 function Frame:IsProtected() return self.protected end
@@ -593,6 +594,17 @@ ns.SetPanelOpen(false)
 local upCatcher = ns.Face.Catcher("DU", "L")
 check(upCatcher and upCatcher.parent == actionBars.leftBar.actionButtons[2] and upCatcher.attrs.type == "macro" and upCatcher.attrs.macrotext == both(name(TOP, 8)), "catcher: left bar Up slot clicks Jump")
 check(upCatcher.attrs.action == nil and upCatcher.attrs.typerelease == nil and ns.Face.Catcher("DU", "T") == nil and ns.Face.Slot("DU", "L") == nil, "a face action: no shadow slot, no catcher on Up base")
+-- A hold action (Peek map) routes like Jump: its own button clicked down on the press and up on the release; a
+-- catcher (a mouse click) taps it once, its toggle.
+ForeverControllerTweaksPeekMap = {}
+assert(ns.Face.SetCellEntry("DD", "R", { id = "hold:peekmap", name = "Peek map", icon = 1, kind = "hold" }))
+hold("PADRTRIGGER")
+check(press("PADDDOWN", true) == "/click ForeverControllerTweaksPeekMap LeftButton 1", "R2 + down: Peek map's press")
+hold()
+check(press("PADDDOWN", false) == "/click ForeverControllerTweaksPeekMap LeftButton", "and its release")
+check(ns.Face.Catcher("DD", "R").attrs.macrotext == "/click ForeverControllerTweaksPeekMap RightButton" and ns.Face.Slot("DD", "R") == nil, "catcher: a tap; no shadow slot")
+assert(ns.Face.SetCellEntry("DD", "R", nil))
+ForeverControllerTweaksPeekMap = nil
 -- Catchers follow the header: hidden in a vehicle (in combat too) and while the panel is open.
 W.combat = true
 cond("vehicleui", true)
@@ -619,6 +631,35 @@ hold()
 check(press("PADDDOWN", true) == "/click " .. name(TOP, 5) .. " LeftButton 1", "down -> interact")
 check(frames.ForeverControllerTweaksDpadDown.attrs["ps-entry-top"] == nil, "a face action is a click, not macro text")
 
+-- The reported case: a macro on L2 + Down while Down's base cell is routed. Since 11.0.2 a macro can't /click a
+-- button that runs another macro (dropped without an error), so the router fires that native slot itself, press
+-- and release, as Blizzard's button would. A spell there still goes through the native button (flyout radial, dent).
+local leftDown, rightDown = actionBars.leftBar.actionButtons[4], actionBars.rightBar.actionButtons[4]
+leftDown.id, rightDown.id = 260, 284
+slots[260] = { kind = "macro", id = 2, name = "Heal" }
+slots[284] = { kind = "spell", id = 133 }
+hold("PADLTRIGGER")
+check(press("PADDDOWN", true) == "use 260", "L2 + down, a macro in the native slot: fired as its action slot")
+check(frames.ForeverControllerTweaksDpadDown.attrs.checkmouseovercast == true, "with the cast checks Blizzard's buttons use")
+hold()
+check(press("PADDDOWN", false) == "release 260", "its release on the same slot")
+hold("PADRTRIGGER")
+check(press("PADDDOWN", true) == "/click " .. name("RightCenteredAnchorRightBar", 4) .. " LeftButton 1", "R2 + down, a spell: the native button")
+check(press("PADDDOWN", false) == "/click " .. name("RightCenteredAnchorRightBar", 4) .. " LeftButton", "spell release on the native button")
+hold("PADLTRIGGER", "PADRTRIGGER")
+check(press("PADDDOWN", true) == "/click " .. name("BottomCenteredAnchorBottomBar", 4) .. " LeftButton 1", "an empty slot (ID 0): the native button")
+-- A face action routed on the macro's layer wins over the slot under it.
+assert(ns.Face.SetCellEntry("DD", "L", { id = "face:jump", name = "Jump" }))
+hold("PADLTRIGGER")
+check(press("PADDDOWN", true) == "/click " .. name(TOP, 8) .. " LeftButton 1", "a routed cell on that layer still wins")
+assert(ns.Face.SetCellEntry("DD", "L", nil))
+-- A face button's modified layer has the same native replay.
+actionBars.leftBar.actionButtons[6].id, slots[262] = 262, { kind = "macro", id = 2, name = "Heal" }
+check(press("PAD4", true) == "/click " .. name(TOP, 8) .. " LeftButton 1", "L2 + Y: its routed Jump")
+actionBars.leftBar.actionButtons[8].id, slots[264] = 264, { kind = "macro", id = 2, name = "Heal" }
+check(press("PAD1", true) == "use 264", "L2 + A, a macro under a moved face: its action slot")
+hold()
+
 -- A cell's entry gives way to a stance bar Blizzard shows on that layer.
 W.cvars.GamepadStanceBarOverride = "2"
 ns.Fire("GAMEPAD_STANCE_BAR_OVERRIDE_CHANGED")
@@ -626,7 +667,9 @@ W.combat = true
 cond("bonusbar", true)
 actionBars.stanceBar.shown = true
 hold("PADLTRIGGER")
+actionBars.stanceBar.actionButtons[2].id, slots[2] = 2, { kind = "macro", id = 2, name = "Heal" }
 check(press("PADDUP", true) == "/click " .. name("TopCenteredAnchorStanceBar", 2) .. " LeftButton 1", "stance shown: the stance slot wins")
+actionBars.stanceBar.actionButtons[2].id, slots[2] = nil, nil
 actionBars.stanceBar.shown = false
 check(press("PADDUP", true) == "/click " .. name(TOP, 8) .. " LeftButton 1", "stance hidden: the cell again")
 cond("bonusbar", false)
@@ -694,6 +737,26 @@ ns.Fire("PLAYER_ENTERING_WORLD")
 check(#printed == said + 1, "not told again")
 W.slots[backSlot] = nil
 table.remove(macros)
+
+-- A Clear refused (the cursor holds something): the 96 slots aren't scanned again on the next applies, only the
+-- refused slot is tried again until it works.
+macros[#macros + 1] = { "PS:Back", 1, "/click X" }
+ns.db.macros["PS:Back"] = { id = "game:back", chars = { ["Ann-Realm"] = true } }
+W.slots[backSlot] = { kind = "macro", id = #macros, name = "PS:Back" }
+ns.db.chars["Ann-Realm"].legacyFaceDone = nil
+W.cursor = { kind = "item", id = 1 }
+ns.Fire("PLAYER_ENTERING_WORLD")
+check(W.slots[backSlot] and ns.Face.CellEntry("FR", "L").id == "face:back" and not ns.db.chars["Ann-Realm"].legacyFaceDone, "cursor held: routed, the slot kept, not done")
+local realAdopt, scans = ns.Actions.AdoptLegacy, 0
+ns.Actions.AdoptLegacy = function(...) scans = scans + 1 return realAdopt(...) end
+said = #printed
+ns.Fire("PLAYER_ENTERING_WORLD")
+check(scans == 0 and W.slots[backSlot] and #printed == said, "next apply: no scan, no chat line, the slot still refused")
+W.cursor = nil
+ns.Fire("PLAYER_ENTERING_WORLD")
+check(scans == 0 and W.slots[backSlot] == nil and not hasMacro("PS:Back") and ns.db.chars["Ann-Realm"].legacyFaceDone, "cursor free: only that slot cleared, done")
+ns.Actions.AdoptLegacy = realAdopt
+assert(ns.Face.SetCellEntry("FR", "L", nil))
 
 -- A routed entry empties the cell's storage slot on the page being edited, whatever it holds; on the other pages only
 -- The addon's own FCT: macros go (through the registry), never the player's actions.
@@ -782,16 +845,29 @@ check(W.slots[yShadow] == nil and ns.db.chars["Ann-Realm"].shadow[yShadow] == ni
 assert(ns.Face.SetCellEntry("FR", "T", nil))
 assert(ns.Face.SetCellEntry("FT", "T", { id = "spell:133", name = "Fireball" }))
 
--- A Lua error in an apply is logged once and doesn't freeze the router.
+-- A Lua error in an apply goes to the debug log each time and to chat once, and doesn't freeze the router; after a
+-- working apply the next error is told again.
+local function routingLines()
+	local n = 0
+	for _, line in ipairs(printed) do if line:find("button routing skipped an update", 1, true) then n = n + 1 end end
+	return n
+end
 local realFace = ns.Layout.Face
+local failedBefore, toldBefore = failures(), routingLines()
 ns.Layout.Face = function() error("boom") end
 ns.Fire("PLAYER_ENTERING_WORLD")
 ns.Fire("PLAYER_ENTERING_WORLD")
-check(failures() == 1, "error logged once")
+check(failures() >= failedBefore + 2 and routingLines() == toldBefore + 1, "error: every one in the debug log, one chat line")
+check(printed[#printed]:find("%(/reload to retry%): face_spec%.lua:%d+: boom$"), "the chat line names the error and where")
 ns.Layout.Face = realFace
 W.bindings = {}
 ns.Fire("PLAYER_ENTERING_WORLD")
 check(W.bindings.PAD4 and ns.Face.State():find("^routed"), "the next apply runs normally")
+ns.Layout.Face = function() error("boom") end
+ns.Fire("PLAYER_ENTERING_WORLD")
+ns.Layout.Face = realFace
+ns.Fire("PLAYER_ENTERING_WORLD")
+check(routingLines() == toldBefore + 2, "an error after a working apply is told again")
 
 local realShadow = ns.Actions.Shadow
 ns.Actions.Shadow = function() error("boom") end

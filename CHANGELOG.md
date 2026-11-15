@@ -1,5 +1,102 @@
 # Changelog
 
+## 1.3.0 — 2026-11-15
+
+### New: the Tweaks tab
+A fifth settings tab with small conveniences for every character. **Each one is off until you turn it on**, and they work only while the Gamepad UI is on.
+
+- **Bags & vendors**
+  - **Sort bags button:** a Sort button on your bags' title bar. With the controller, use Clean Up in the bag menu or the picker's **Sort bags** action.
+  - **Sell junk:** sells your grey items when you talk to a merchant. One chat line lists what sold and for how much.
+  - **Repair:** repairs your gear at a merchant who repairs. **Use guild funds first** pays from the guild bank when the guild allows it.
+  - **Buy a full stack:** a Stack button on stackable merchant items, and a picker action that buys a stack of the item under the cursor. It never spends 150 gold or more in one press, and says when the item is sold out.
+- **Quests & NPCs**
+  - **Skip one-option talk:** when an NPC offers only one thing, it's picked for you: a single quest, or a vendor, trainer, flight map or bank. Never a teleport, an event start, a story skip or an option that costs money.
+  - **Trainer: Learn all:** a Learn all button for every skill you can afford.
+  - **Mail: Open all:** an Open all button on the mailbox. It skips cash-on-delivery mail and stops when your bags are full.
+- **Rumble:** the controller rumbles on events, in eight groups, each with its own pattern (or Off), and one **Strength** for all. See below.
+- **Controller**
+  - **Low battery warning:** one chat line when the controller's battery runs low.
+  - **Battery on the minimap:** a round button on the minimap's ring, next to the others, with the controller's charge. Hidden for pads that don't report one.
+  - **Rare nearby alert:** a line on screen and a rumble when a rare is near. Once per rare, never in a fight.
+  - **Light bar:** Game default, Class colour or Custom (10 colours), plus **Combat flash** (red while you're in combat). For pads with a light bar; Steam may take it over.
+- **Loot & gear**
+  - **Fast loot:** takes all loot at once. Bind-on-pickup items still ask; with full bags only coins are taken.
+  - **Pass on unusable rolls:** passes on armour or weapons your class can never use. When unsure, you roll.
+  - **Upgrade arrows:** a green arrow on gear in your bags, the loot window and loot rolls that has a higher item level than what you wear there.
+  - **Wear quest rewards:** after a quest, an upgrade reward gets a card for 10 seconds: hold the top face button 1 to 3 seconds to wear it.
+- **Group & social**
+  - **Accept friend & guild invites:** joins a group when a friend, Battle.net friend or guild member invites you. Never a role check, a quest session invite, or an invite that would drop your dungeon or PvP queue.
+  - **Decline duels:** turns down every duel request.
+  - **Accept resurrect and summon:** out of combat. A resurrection only without resurrection sickness. A summon only from a friend or guild member, and never while you're inside an instance.
+  - **Whisper alert:** a card with who whispered you and how the message starts.
+
+### Rumble
+- The groups and their starting patterns: **Group** (ready check, invite, summon, resurrect: Double tap), **Whisper** (Tap), **Trade & duel** (Tap), **Danger** (death, stun or fear, aggro, interrupted cast: Long buzz), **Enemies** (an enemy player nearby: Double tap), **Rare nearby** (Heartbeat), **Level ups** (level up, achievement: Ramp up) and **Procs** (a spell lights up, your target dies, you land a critical strike (solo): Off).
+- Patterns: Tap, Double tap, Triple tap, Long buzz, Heartbeat, Ramp up, Fade out, or Off. Cross on a group's row plays its pattern; Cross on Strength plays a Double tap.
+- Only events you still have to answer rumble: an invite a tweak accepted doesn't.
+- Busy events wait before they rumble again: whispers, invites and trades 3 seconds, procs 2, critical strikes 1, aggro 3, enemy players 10.
+- The light motor never runs below half power, so every pattern can be felt.
+
+### New picker actions
+- **Combat:** **Cancel** (stops a cast, a ground target and clears your target), **Best healing potion**, **Best mana potion**, **Best grenade**. They work in combat.
+- **Movement:** **Look behind (hold)**: the camera turns round while you hold the button.
+- **Windows:** **Peek map (hold)**: the map shows while you hold the button.
+- **Targeting:** **Mark next**: the next raid mark on your target, in kill order (skull, cross, square…), in combat too.
+- **Misc:** **Sort bags**, **Buy a full stack**, **Eat & drink** (your best food, and drink if you use mana), **Quest item** (the item of the quest you follow, else the nearest one), **Track nearest quest** (again for the next nearest), **Ready check**, **Pull countdown (5 s)** and **Minimap zoom**.
+- The two hold actions work on face, D-pad and paddle buttons. On a touch button or ring slot a tap toggles them.
+- The potion, grenade and food actions find items by their English names, so they need an English game client.
+
+### Rings
+- **The native radial look:** rings now look like the game's own radial menu, with just the wheel: no title and no band. The Rings tab shows the same wheel.
+- **Let go of the stick to use the slot.** Letting go of the button and the stick at the same moment uses it too.
+- **Show, per ring: Toggle or Hold.**
+  - **Toggle** (the default): a press opens the ring, and it stays until you use a slot, press its button again or press Circle.
+  - **Hold:** the ring shows while you hold the button. Let go to use the slot you aim at; with nothing aimed it just closes.
+- New rings aim with the **Right** stick.
+- Fixed: a ring could get stuck on a diagonal, or stay open with nothing used.
+- A held ring opened with the stick already pushed ignores that slot until the stick is centred again or moves off it.
+- A ring released with nothing picked stays open (Toggle), so you can still aim.
+- Rings now have 4 to 8 slots, the most the game's radial art has. A ring saved with more keeps its first 8.
+- **Style, per ring: Full** (the radial wheel) **or Compact** (like the game's radial flyout, the aura and stance picker). A Compact ring opens on the crossbar button that holds it, with that button's icon and its modifier glyphs in the middle.
+
+### Keyboard
+- **Chat goes out through the addon's own secure button.** The game's chat box is never written to. After a send the chat box stays open and empty; one more Circle closes it.
+- **Chat Style no longer matters:** Send works with Classic and IM.
+- **In combat** only party, raid, instance, guild and whispers can be sent. Other lines stay in the box with a note until combat ends.
+- Words are learned only from chat you send.
+- **Simpler Keyboard tab:** On, Open, Layout, Scale and Word suggestions. The buttons can no longer be rebound, and the keyboard always places itself.
+- **Quick messages** is now a page with two columns: the situations on the left, their lines on the right. Built-in lines can be hidden one by one (Square), and **Restore** brings them back.
+- In the quick message editor, the suggestion list shows the fill-ins such as `{target}` with what each gives right now.
+- Fixed: Compact showed empty keys instead of each set's letters.
+
+### Settings
+- Native sliders, dropdowns and checkboxes on every tab, one value per row: up and down move between rows, left and right change the focused value, Cross toggles a checkbox.
+- Tooltips wrap at the game's own width and stay beside their row.
+- On the Tweaks tab, a dropdown or slider at its end passes left and right on, so you can move between its columns. **Triangle** opens **More** there too.
+
+### Fixes
+- A macro on a remapped D-pad or face button works again (the game had been dropping it silently).
+- No more glyph error with secret icons, for example Inspect's raid marker in Midnight.
+- The party and raid frames' group-targeting prompt shows your remapped button.
+- Bags: the Sort button sits on the combined bags' title bar, clear of the search box, and our buttons never block bag navigation.
+- Sell junk's chat line lists the items that sold.
+- Upgrade arrows now show (no gear passed the check before).
+- A failed controller config write now backs off (1 s, 5 s, 30 s) instead of retrying ten times a second.
+- Layout switches wait until the stick is let go.
+- Less polling while nothing changes.
+- `/fct help` lists every command.
+- The setup guide closed with its X button counts as **Not now**, so it doesn't come back on every controller event.
+- With the Touch module turned off, its message says it's turned off instead of "not in this build".
+- Removed the Options → AddOns page: searching in Options made the game block an action and blame this addon. Open the settings with L2 + R2 + Create/View, the minimap button or `/fct`.
+
+### No longer true from earlier versions
+- 1.0: "Every button can be rebound" and the keyboard's centre or custom position. The keyboard's buttons are fixed and it always places itself.
+- 1.0 and the README: "release with the stick centred to cancel". A centred release keeps a Toggle ring open, and a Hold ring just closes.
+- 1.2.1-beta.1: "Send in chat needs Chat Style IM". Any chat style works now.
+- 1.2.1-beta.2: letting go of a ring's button with the stick centred no longer always keeps it open. That now depends on the ring's **Show** setting.
+- 1.0: "Options → AddOns → Forever Controller Tweaks" (Open Settings, Run setup guide). That page is gone; `/fct setup` runs the setup guide.
+
 ## 1.2.1-beta.2 — 2026-11-14
 
 ### Rings

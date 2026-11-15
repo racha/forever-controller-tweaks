@@ -27,15 +27,17 @@ local function rawState(id)
 	if ok and type(raw) == "table" and type(raw.rawButtons) == "table" then return raw end
 end
 
--- The device list as a 1-based array: like the raw tables, it may come 0-based, and ipairs would miss device [0].
-local function listed()
-	local ok, ids = pcall(C_GamePad.GetAllDeviceIDs)
+-- An ID list (devices, or fn = C_GamePad.GetAllConfigIDs) as a 1-based array: like the raw tables, it may come
+-- 0-based, and ipairs would miss [0].
+function Device.Listed(fn)
+	local ok, ids = pcall(fn or C_GamePad.GetAllDeviceIDs)
 	local list = ok and type(ids) == "table" and ids or {}
 	local out = {}
 	if list[0] ~= nil then out[1] = list[0] end
 	for _, id in ipairs(list) do out[#out + 1] = id end
 	return out
 end
+local listed = Device.Listed
 
 -- The active device wins when it has a raw state. It is often the combined device, which has none; then the device
 -- chosen before stays (the watch below moves it to the one that sends input), else combined, else the first listed.
@@ -88,8 +90,8 @@ local function entryFor(key, raw, defaults)
 
 	entry = { raw = defaults.raw, roles = {}, face = {} }
 	ns.db.devices[key] = entry
-	local setup = defaults.known and "/fct learn L1 confirms its buttons" or "unknown vendor: /fct family playstation|xbox|switch or /fct detect sets it up"
-	ns.log(string.format("new controller %s (%s, %s); %s", tostring(raw.name), key, defaults.family, setup))
+	local setup = defaults.known and "" or "; unknown vendor: /fct family playstation|xbox|switch or /fct detect sets it up"
+	ns.log(string.format("new controller %s (%s, %s)%s", tostring(raw.name), key, defaults.family, setup))
 	return entry
 end
 
@@ -99,11 +101,22 @@ function Device.Current() return current end
 function Device.NeedsSetup() return not not (current and not current.confirmed) end
 
 -- A trigger counts as held from a quarter pull, well under the game's 0.5 button threshold, so a press near the
--- threshold can't straddle a config switch either.
-local TRIGGER_HELD = 0.25
+-- threshold can't straddle a config switch either. A stick sends keys only with GamePadStickAxisButtons on (a held
+-- ring turns it on), from half way.
+local TRIGGER_HELD, STICK_HELD = 0.25, 0.5
+local NO_AXES = {}
 
--- The first input down on the pad (raw button, trigger, detected axis D-pad), else nil. Remap doesn't switch configs
--- while one is held: its release would come under the other mapping and the game would never see it.
+-- A logical axis as the game reads it: without a detection the SDL raw index, else the detected axis, scaled as its
+-- config does. 0 when the pad has no such axis.
+local function axisValue(axes, detect, index, name)
+	local axis = detect and (detect.axes or NO_AXES)[name]
+	local value = axes[axis and axis.raw or not detect and index]
+	if type(value) ~= "number" then return 0 end
+	return axis and (value + (axis.shift or 0)) * (axis.scale or 1) or value
+end
+
+-- The first input down on the pad (raw button, trigger, detected axis D-pad, a stick key), else nil. Remap doesn't
+-- switch configs while one is held: its release would come under the other mapping and the game would never see it.
 function Device.Held()
 	local _, raw = Device.Raw()
 	if not raw then return nil end
@@ -113,16 +126,18 @@ function Device.Held()
 	for i = 0, buttonCount - 1 do
 		if buttons[i] then return "raw button " .. i end
 	end
-	-- Without a detection the triggers are SDL raw axes 4/5 in 0..1; a detected one is scaled as its config does.
 	local detect = current and current.detect
 	for index, name in pairs(ns.Layout.TRIGGER_AXES) do
-		local axis = detect and (detect.axes or {})[name] or (not detect and { raw = index })
-		local value = axis and axes[axis.raw]
-		if type(value) == "number" and (value + (axis.shift or 0)) * (axis.scale or 1) > TRIGGER_HELD then return name end
+		if axisValue(axes, detect, index, name) > TRIGGER_HELD then return name end
 	end
-	for target, hat in pairs(detect and detect.hats or {}) do
+	for target, hat in pairs(detect and detect.hats or NO_AXES) do
 		local value = axes[hat.raw]
 		if type(value) == "number" and value * hat.value > 0.5 then return target end
+	end
+	-- Read only: Rings owns the CVar.
+	if not (GetCVarBool and GetCVarBool("GamePadStickAxisButtons")) then return nil end
+	for index, name in pairs(ns.Layout.STICK_AXES) do
+		if math.abs(axisValue(axes, detect, index, name)) > STICK_HELD then return name end
 	end
 end
 
@@ -281,8 +296,6 @@ function Device.LearnCancel()
 	return true
 end
 
-function Device.Learning() return learning and learning.phys end
-
 function ns.commands.learn(args)
 	local phys = (args[1] or ""):upper()
 	if phys == "CANCEL" then return Device.LearnCancel() or ns.log("learn: not running") end
@@ -318,6 +331,7 @@ local function stopDetection()
 	detectFrame:Hide()
 	detection = nil
 	if run and run.ownsPanel then ns.SetPanelOpen(false) end
+	if run then ns.Fire("FCT_DETECTING", false) end
 	return run
 end
 
@@ -388,7 +402,7 @@ local function choose(step, acc)
 end
 
 -- A raw button, a whole axis, or one direction of a hat axis can serve one step per run.
-local function usedBy(input)
+local function capturedBy(input)
 	for _, capture in pairs(detection.captures) do
 		local other = capture.input
 		if input.button and other.button == input.button then return capture.step.id end
@@ -421,7 +435,7 @@ local function advance()
 end
 
 local function capture(step, input)
-	local used = usedBy(input)
+	local used = capturedBy(input)
 	if used then return emit("rejected", step, "already used for " .. used, used) end
 
 	detection.captures[detection.index] = { step = step, input = input }
@@ -484,6 +498,7 @@ function Device.DetectStart(onEvent)
 		ns.SetPanelOpen(true)
 	end
 	detectFrame:Show()
+	ns.Fire("FCT_DETECTING", true)
 	emit("calibrating")
 	return true
 end
@@ -537,8 +552,7 @@ function Device.DetectReset(deviceKey)
 	local entry = key and ns.db.devices[key]
 	if not (entry and entry.detect) then return false end
 
-	local defaults = ns.Layout.DeviceDefaults(tonumber(key:sub(1, 4), 16), tonumber(key:sub(6, 9), 16))
-	entry.detect, entry.raw = nil, defaults.raw
+	entry.detect, entry.raw = nil, ns.Layout.DefaultsForKey(key).raw
 	if current and current.key == key then Device.Refresh(true) end
 	return true
 end

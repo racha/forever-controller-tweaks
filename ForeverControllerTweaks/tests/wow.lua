@@ -61,7 +61,8 @@ return function(dir, opts)
 		function t:Cancel() self.cancelled = true end
 		W.tickers[#W.tickers + 1] = t
 		return t
-	end }
+	end, After = function(delay, fn) W.timers[#W.timers + 1] = { at = W.now + delay, fn = fn } end }
+	W.timers = {}
 
 	C_GamePad = {
 		GetActiveDeviceID = function() return 1 end,
@@ -119,6 +120,9 @@ return function(dir, opts)
 				if f.shown and f.scripts.OnUpdate then f.scripts.OnUpdate(f, 1 / 30) end
 			end
 			for _, t in ipairs(W.tickers) do if not t.cancelled then t.fn() end end
+			local due = {}
+			for i = #W.timers, 1, -1 do if W.timers[i].at <= W.now then table.insert(due, 1, table.remove(W.timers, i)) end end
+			for _, t in ipairs(due) do t.fn() end
 		end
 	end
 

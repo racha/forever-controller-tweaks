@@ -1,6 +1,7 @@
 -- Forever Controller Tweaks panel entry points: /fct, the pad shortcut (hold L2 + R2, press Create), the Key Bindings
--- entry, Options > AddOns and the compartment open the Bindings window; /fct setup
--- the guide. Blocked-action reports are Core's (ns.OnBlocked).
+-- entry, the minimap button and the compartment open the Bindings window; /fct setup the guide. No page in Options:
+-- Options' search reads every category, and one registered by addon code taints it (the search's protected
+-- IsUserOAuthed() was blocked and blamed on us). Blocked-action reports are Core's (ns.OnBlocked).
 local _, ns = ...
 local UI = ns.UI
 
@@ -67,12 +68,6 @@ ns.On("PLAYER_ENTERING_WORLD", updateListener)
 ns.On("PLAYER_REGEN_ENABLED", updateListener)
 ns.On("PLAYER_REGEN_DISABLED", function() listener:Hide() end)
 
-local coreHelp = ns.commands.help
-function ns.commands.help(args)
-	coreHelp(args)
-	ns.log(UI.OpenWays() .. UI.L.HELP_MORE)
-end
-
 -- Addon compartment (minimap AddOns button), declared in the TOC. Blizzard calls these globals after
 -- forceinsecure(); the window opens on the next frame, outside the compartment menu's own click handling.
 function ForeverControllerTweaks_OnCompartmentClick()
@@ -85,33 +80,6 @@ end
 
 function ForeverControllerTweaks_OnCompartmentLeave(_, button) UI.HideTooltip(button) end
 
--- Options > AddOns > Forever Controller Tweaks: one native vertical-layout category with native button rows only, so the
--- Settings panel's own gamepad navigation runs it and the addon adds nothing to it. A row opens the addon above the
--- panel (FULLSCREEN_DIALOG over HIGH) on the next frame, outside the row button's click. Registered once at login,
--- out of combat; a missing API logs and skips it.
--- Options can't be closed from addon code: every close path (Close, CloseButton, Escape, ExitWithCommit) ends in
--- HideUIPanel (Blizzard_SettingsPanel.lua 40-45, 64-69, 256-302), which taints the gamepad binding stack. It goes
--- transparent under the addon instead (SetAlpha only, no Lua fields written), a shield takes its mouse, the addon's
--- window keeps every pad press, and it comes back when the addon closes, like a native sub-window's parent.
-local settingsDone = false
-local shield = CreateFrame("Frame", nil, UIParent)
-shield:SetAllPoints()
-shield:SetFrameStrata("DIALOG")
-shield:EnableMouse(true)
-shield:EnableMouseWheel(true)
-shield:Hide()
-
-local function nextFrame(fn)
-	return function()
-		C_Timer.After(0, function()
-			fn()
-			if not (ns.panelOpen and SettingsPanel and SettingsPanel:IsShown()) then return end
-			SettingsPanel:SetAlpha(0)
-			shield:Show()
-		end)
-	end
-end
-
 -- Interact off its native face button: the world's interact prompts still show the native glyph (the game draws
 -- them from its own binding), so say so once per new button, over our open window, unless turned off.
 local function interactAt(code)
@@ -122,7 +90,9 @@ end
 
 local function checkInteract()
 	local options, owner = ns.db and ns.db.options, UI.Current()
-	if not options or options.interactNoticeOff or InCombatLockdown() or not owner or owner.notice or UI.DialogShown() then return end
+	-- Not over controller setup: Esc there presses a dialog's second button, here "Don't show again".
+	if not options or options.interactNoticeOff or InCombatLockdown() or not owner or owner.notice or owner.detect or UI.DialogShown() then return end
+
 
 	local native
 	for code, pos in pairs(UI.CODE_POS) do if ns.Layout.NATIVE_FACE[pos] == "interact" then native = code end end
@@ -144,7 +114,7 @@ end
 local function laterCheckInteract() C_Timer.After(0, checkInteract) end
 ns.On("FCT_LAYOUT_CHANGED", laterCheckInteract)
 
--- Blizzard leftovers behind our window, whatever opened it (Options, the game menu, the compartment, the
+-- Blizzard leftovers behind our window, whatever opened it (the game menu, the compartment, the
 -- shortcut, the minimap button): the last tooltip (GameTooltip, or Options' SettingsTooltip) unless one of ours owns
 -- it, and SmartNavigation's gamepad focus arrow. All go transparent while the addon is open (SetAlpha only, saved and
 -- given back): a Hide from here would run GameTooltip's OnHide, which writes its fields, under the addon's taint. The
@@ -176,10 +146,6 @@ local setPanelOpen = ns.SetPanelOpen
 function ns.SetPanelOpen(open)
 	local was = ns.panelOpen
 	if not open and was then restoreLeftovers() end
-	if not open and shield:IsShown() then
-		shield:Hide()
-		SettingsPanel:SetAlpha(1)
-	end
 	setPanelOpen(open)
 	if open and not was then
 		hideLeftovers()
@@ -251,29 +217,6 @@ function UI.ToggleMinimapButton()
 end
 
 ns.On("PLAYER_LOGIN", UI.UpdateMinimapButton)
-
-local function registerSettings()
-	local L = UI.L
-	local category, layout = Settings.RegisterVerticalLayoutCategory(L.SETTINGS_TITLE)
-	layout:AddInitializer(CreateSettingsButtonInitializer(L.SETTINGS_OPEN_LABEL, L.SETTINGS_OPEN, nextFrame(UI.Bindings.Open), string.format(L.SETTINGS_OPEN_TIP, UI.ToggleKeyText(nil, true)), true))
-	layout:AddInitializer(CreateSettingsButtonInitializer(L.SETTINGS_SETUP_LABEL, L.SETTINGS_SETUP, nextFrame(UI.Onboarding.Start), L.SETTINGS_SETUP_TIP, true))
-	if ns.Keyboard then layout:AddInitializer(CreateSettingsButtonInitializer(L.KEYBOARD, L.KEYBOARD_OPEN, nextFrame(function() ns.Keyboard.SettingsTab.Open() end), L.KEYBOARD_TIP, true)) end
-	Settings.RegisterAddOnCategory(category)
-end
-
-local function addSettingsPage()
-	if settingsDone or InCombatLockdown() then return end
-
-	settingsDone = true
-	local ok, err = pcall(function()
-		if not (Settings and Settings.RegisterVerticalLayoutCategory and Settings.RegisterAddOnCategory and CreateSettingsButtonInitializer) then error("Settings API missing") end
-		registerSettings()
-	end)
-	if not ok then ns.log(string.format(UI.L.SETTINGS_FAILED, tostring(err))) end
-end
-
-ns.On("PLAYER_LOGIN", addSettingsPage)
-ns.On("PLAYER_REGEN_ENABLED", addSettingsPage)
 
 -- A small native message window: text and one or two buttons (A presses the focused one, B the last).
 -- buttons = { { label, fn }, ... }; it is "notice"-class, so it opens while the Gamepad UI is off too.

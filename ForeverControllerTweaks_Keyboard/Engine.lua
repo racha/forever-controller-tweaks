@@ -1,5 +1,5 @@
 -- Forever Controller Tweaks keyboard engine (design/keyboard.md): charsets, stick sectors, UTF-8 safe editing on
--- (text, byte cursor), the word list and its ranking, quick phrases and placement. No frames: Keyboard/View.lua draws
+-- (text, byte cursor), the word list and its ranking, the chat line Send runs, and placement. No frames: Keyboard/View.lua draws
 -- and drives it, tests/keyboard_spec.lua runs it under plain Lua.
 local ns = ForeverControllerTweaks
 local K = {}
@@ -122,6 +122,49 @@ function K.SwitchCommand(channel)
 	return alias:lower() .. " " .. (kind == "WHISPER" and target .. " " or "")
 end
 
+-- The channel switch a chat box takes while typed into (ProcessChatType): a command, a space, and for a whisper the
+-- name and a space ("/p rest", "/w Name rest", "/4 rest"). Returns the channel ({ kind, target, id }) and the rest of
+-- the line, or nil.
+function K.TakeSwitch(text)
+	local command, rest = text:match("^(/%S+)%s(.*)$")
+	if not command then return end
+	local id = tonumber(command:match("^/(%d+)$"))
+	if id then
+		if id >= 1 and id <= channels() then return { kind = "CHANNEL", id = id }, rest end
+		return
+	end
+	local kind = aliases()[command:upper()]
+	if kind ~= "WHISPER" and kind ~= "SMART_WHISPER" then return kind and { kind = kind } or nil, rest end
+	local name, after = rest:match("^(%S+)%s(.*)$")
+	if name then return { kind = "WHISPER", target = name }, after end
+end
+
+-- The macro line Send runs for a chat line (View.lua sends it through a secure button, so the game's own code sends
+-- it): one line; a channel switch typed at its start (/p hi, /w Name hi, /r hi, /1 hi) as it is, else the command of
+-- the box's channel ({ kind, target, id }) in front. Returns the line, the message alone and where it goes
+-- ({ kind, target, id }); or nil and why: "empty", "command" (not a channel switch), "channel" (the box's channel has
+-- no command: a Battle.net whisper), "long" (past the chat's LINE_MAX bytes).
+K.LINE_MAX = 255
+
+function K.ChatLine(text, channel)
+	local line = type(text) == "string" and text:gsub("[\r\n]", " "):match("^%s*(.-)%s*$") or ""
+	if line == "" then return nil, "empty" end
+	if line:sub(1, 1) ~= "/" then
+		local command = K.SwitchCommand(channel or {})
+		if #line > K.LINE_MAX then return nil, "long" end
+		if not command then return nil, "channel" end
+		return command .. line, line, channel
+	end
+	if K.Slash(line, true) ~= "switch" then return nil, "command" end
+	local command, rest = line:match("^(/%S+)%s*(.*)$")
+	local id = tonumber(command:match("^/(%d+)$"))
+	local kind, target = id and "CHANNEL" or aliases()[command:upper()], nil
+	if kind == "WHISPER" or kind == "SMART_WHISPER" then kind, target, rest = "WHISPER", rest:match("^(%S+)%s*(.*)$") end
+	if not rest or rest == "" then return nil, "empty" end
+	if #rest > K.LINE_MAX then return nil, "long" end
+	return line, rest, { kind = kind, target = target, id = id }
+end
+
 local function angle(x, y) return math.deg(math.atan2 and math.atan2(x, y) or math.atan(x, y)) % 360 end
 
 -- Left stick: 8 sectors of 45° clockwise from north; nil at or below SET_ON.
@@ -213,8 +256,18 @@ local function lowerWords(line, fn) for word in line:gmatch("%a[%w']*") do if #w
 
 function K.Seed(dict) lowerWords(K.BASE, function(word) dict[word] = dict[word] or 1 end) end
 
+-- One sent line adds at most LEARN_NEW new words, none past LEARN_LONG letters; a line with "|" (a link, a colour
+-- code) teaches nothing: its words are the game's.
+K.LEARN_NEW, K.LEARN_LONG = 8, 20
+
 function K.Learn(dict, line)
-	lowerWords(line or "", function(word) dict[word] = (dict[word] or 0) + 1 end)
+	if type(line) ~= "string" or line:find("|", 1, true) then return end
+	local added = 0
+	lowerWords(line, function(word)
+		if dict[word] then dict[word] = dict[word] + 1 return end
+		if added >= K.LEARN_NEW or #word > K.LEARN_LONG then return end
+		dict[word], added = 1, added + 1
+	end)
 	K.Cap(dict, K.CAP)
 end
 
@@ -293,68 +346,10 @@ function K.Correction(dict, typed, results)
 	return 1
 end
 
--- Quick phrases: situations most specific first, with their defaults. Tokens: {quest} {target} {zone} {dungeon}.
-K.SITUATIONS = { "combat", "whisper", "dungeon", "raid", "quest", "group", "city", "anywhere" }
-K.PHRASES = {
-	combat = { "Help!", "Heal please", "Run!" },
-	whisper = { "Sure, invite me", "Sorry, busy right now", "Give me a minute", "Thanks!" },
-	dungeon = { "Ready to pull?", "Need mana, one moment", "Wait, I'm out of range", "Good run, thanks all!", "Can someone summon me to {dungeon}?" },
-	raid = { "Ready", "Need a res please", "AFK 2 min", "Invite to raid please" },
-	quest = { "Can anyone help with {quest}?", "Group up for {quest}?", "Are you doing {quest}?", "Where do I go for {quest}?" },
-	group = { "Wait for me", "Follow me", "Where are you?", "Need a break, 2 min", "Ready" },
-	city = { "Looking for a group for {quest}", "Anyone going to {dungeon}?", "Selling, whisper me" },
-	anywhere = { "Can you help me?", "Invite me please", "Thanks!", "On my way", "One moment please", "Sorry, typing on a controller" },
-}
-
--- ctx: { combat, whisper, instance = "party" | "raid" | ..., raid, group, resting, quest = the super-tracked quest's
--- link (nil when the player follows none), zone, dungeon }.
-function K.Situations(ctx)
-	local inInstance = ctx.instance and ctx.instance ~= "none"
-	local on = {
-		combat = ctx.combat, whisper = ctx.whisper, dungeon = ctx.instance == "party", raid = ctx.instance == "raid" or ctx.raid,
-		quest = ctx.quest ~= nil, group = ctx.group and not ctx.raid, city = ctx.resting and not inInstance, anywhere = true,
-	}
-	local list = {}
-	for _, id in ipairs(K.SITUATIONS) do if on[id] then list[#list + 1] = id end end
-	return list
-end
-
--- A phrase with its tokens filled, or nil when one can't be.
-function K.Fill(phrase, ctx)
-	local values, missing = { quest = ctx.quest, target = "%t", zone = ctx.zone, dungeon = ctx.dungeon }, false
-	local text = phrase:gsub("{(%a+)}", function(token)
-		local value = values[token]
-		if value == nil or value == "" then missing = true end
-		return value
-	end)
-	if not missing then return text end
-end
-
--- Every true situation's phrases (saved lists over the defaults), joined, filled, deduplicated: { text, situation }.
--- At most QUEST_MAX lines name the quest and PHRASE_MAX in all, so the list stays short and mostly situational.
-K.QUEST_MAX, K.PHRASE_MAX = 2, 8
-
-function K.Phrases(ctx, saved)
-	local list, seen, quests = {}, {}, 0
-	for _, id in ipairs(K.Situations(ctx)) do
-		for _, phrase in ipairs(saved and saved[id] or K.PHRASES[id]) do
-			local text = #list < K.PHRASE_MAX and K.Fill(phrase, ctx)
-			local quest = phrase:find("{quest}", 1, true) ~= nil
-			if quest and quests >= K.QUEST_MAX then text = nil end
-			if text and not seen[text] then
-				if quest then quests = quests + 1 end
-				seen[text] = true
-				list[#list + 1] = { text = text, situation = id }
-			end
-		end
-	end
-	return list
-end
-
 -- Placement (UIParent units, origin bottom-left). The block is 674 x 408 at k: the disc (centre 187,221 from its
 -- top-left, radius 187), the tab beside it (to 674, or mirrored to the left) and the modifier row over it. Rects are
 -- { left, bottom, right, top }. box: the edit box; chat: the whole chat frame (log, tab, box); avoid: the player
--- frame, the crossbar, the touch bars. pin: { position = "auto" | "centre" | "custom", x, y }.
+-- frame, the crossbar, the touch bars.
 -- Auto walks the disc's centre from the box's centre E toward the screen centre C and stops at the first point where
 -- the disc, tab and modifier row clear the chat frame by GAP (clamped to the screen); the tab goes on the side the
 -- line heads to (away from the chat), else the other. Past C it keeps going if it still covers the chat; a point that
@@ -374,7 +369,7 @@ local function circleHits(x, y, r, rect)
 end
 K.CircleHits = circleHits
 
-function K.Place(box, chat, avoid, width, height, k, pin, noTab)
+function K.Place(box, chat, avoid, width, height, k, noTab)
 	avoid, chat = avoid or {}, chat or box
 	local scale = k
 	if K.BLOCK_H * scale > height - 2 * EDGE then scale = (height - 2 * EDGE) / K.BLOCK_H end
@@ -406,13 +401,6 @@ function K.Place(box, chat, avoid, width, height, k, pin, noTab)
 		for _, rr in ipairs(avoid) do if rr[2] < height / 2 and rr[1] < l + w and l < rr[3] then b = math.max(b, rr[4] + 16) end end
 		b = math.max(EDGE, math.min(height - EDGE - h, b))
 		return l + K.DISC_X * scale, b + below
-	end
-
-	pin = pin or {}
-	if pin.position == "centre" or pin.position == "custom" then
-		local x, y = centre()
-		if pin.position == "custom" then x, y = clampD(x + (pin.x or 0), y + (pin.y or 0), false) end
-		return result(x, y, false, "centre")
 	end
 
 	local ex, ey = (box[1] + box[3]) / 2, (box[2] + box[4]) / 2
@@ -466,14 +454,14 @@ K.BUTTONS = {
 	space = "PAD1", send = "PAD2", erase = "PAD3", close = "PAD4", shift = "PADLSHOULDER", symbols = "PADLTRIGGER",
 	insert = "PADRSHOULDER", prev = "PADDUP", next = "PADDDOWN", left = "PADDLEFT", right = "PADDRIGHT",
 }
-K.DEFAULTS = { enabled = true, open = "controller", layout = "ring", scale = 1, suggestions = true, position = "auto", x = 0, y = 0 }
+K.DEFAULTS = { enabled = true, open = "controller", layout = "ring", scale = 1, suggestions = true }
 
--- The saved table with every default filled in (button by button, so an old save gains new actions).
+-- The saved table with every default filled in. The buttons are always K.BUTTONS and the placement always Auto, so
+-- an older save's custom buttons and position pin are dropped.
 function K.Settings(saved)
 	saved = type(saved) == "table" and saved or {}
 	for key, value in pairs(K.DEFAULTS) do if saved[key] == nil then saved[key] = value end end
-	saved.buttons = type(saved.buttons) == "table" and saved.buttons or {}
-	for action, key in pairs(K.BUTTONS) do if not saved.buttons[action] then saved.buttons[action] = key end end
+	saved.buttons, saved.position, saved.x, saved.y = nil, nil, nil, nil
 	saved.dictionary = type(saved.dictionary) == "table" and saved.dictionary or {}
 	if not next(saved.dictionary) then K.Seed(saved.dictionary) end
 	if K.Library then K.Library.Repair(saved) end
@@ -483,11 +471,4 @@ end
 -- The action a button runs (buttons: action -> key).
 function K.ActionOf(buttons, key)
 	for action, bound in pairs(buttons) do if bound == key then return action end end
-end
-
--- Rebinding swaps: the action that had the key takes the old one.
-function K.Bind(buttons, action, key)
-	local other, old = K.ActionOf(buttons, key), buttons[action]
-	buttons[action] = key
-	if other and other ~= action then buttons[other] = old end
 end

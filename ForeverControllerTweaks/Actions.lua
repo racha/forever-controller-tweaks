@@ -9,6 +9,8 @@
 --   game's own buttons for windows, never /run). The addon only ever deletes macros it made (the registry below),
 --   and only once no character uses them.
 --   face: Jump and Interact need press and release, which a macro can't send: routed cells only (Face.Routable).
+--   hold: the same for our own hold buttons (Look behind, Peek map, TweaksActions.lua): the router clicks the button
+--   down on the press and up on the release; a touch button or ring slot taps it once (a toggle, its RightButton).
 -- On a routed cell (Face.lua) an entry sits in a shadow slot on the hidden keyboard bars 6-8 (Actions.Shadow) and
 -- fires natively; macro text (TextFor) is the fallback while no shadow slot can be placed.
 -- All writes (PlaceAction, CreateMacro, DeleteMacro) happen out of combat only.
@@ -44,6 +46,13 @@ toggleFPS:SetScript("OnClick", function()
 	if FramerateFrame and FramerateFrame.Toggle then return FramerateFrame:Toggle() end
 	if ToggleFramerate then ToggleFramerate() end
 end)
+-- Sort bags and Buy a full stack: the same, our own plain buttons running the Tweaks code (Tweaks.lua). A full stack is
+-- of the merchant item under the gamepad cursor. Eat & drink and Quest item click our own secure buttons, made in
+-- TweaksGear.lua (their macro text changes with the bags and quests).
+local sortBags = CreateFrame("Button", "ForeverControllerTweaksSortBags", UIParent)
+sortBags:SetScript("OnClick", function() ns.Tweaks.SortBags() end)
+local buyStack = CreateFrame("Button", "ForeverControllerTweaksBuyStack", UIParent)
+buyStack:SetScript("OnClick", function() ns.Tweaks.BuyStack() end)
 
 -- Game commands. short = macro name after "FCT:" (macro names hold 16 characters). button = a Blizzard button
 -- whose existence is checked at build time. press = when the button acts: "up" (default, plain buttons) or "both"
@@ -52,6 +61,7 @@ local GAME = {
 	{ "Movement", "jump", "Jump", "Ability_Rogue_Sprint", face = "jump" },
 	{ "Movement", "sit", "Sit", "Spell_Nature_Sleep", text = "/sit", short = "Sit" },
 	{ "Movement", "stand", "Stand", "Ability_Warrior_Charge", text = "/stand", short = "Stand" },
+	{ "Movement", "lookbehind", "Look behind (hold)", "Ability_Hunter_EagleEye", hold = "ForeverControllerTweaksLookBehind" },
 
 	{ "Targeting", "targetenemy", "Target nearest enemy", "Ability_Hunter_SniperShot", text = "/targetenemy", short = "Enemy" },
 	{ "Targeting", "targetfriend", "Target nearest friend", "Spell_Holy_FlashHeal", text = "/targetfriend", short = "Friend" },
@@ -67,11 +77,16 @@ local GAME = {
 	{ "Targeting", "interact", "Interact", "Ability_Hunter_Pathfinding", face = "interact" },
 	{ "Targeting", "inspect", "Inspect", "INV_Misc_Spyglass_02", face = "inspect" },
 	{ "Targeting", "ping", "Ping", "Ability_Hunter_Pathfinding", text = "/ping", short = "Ping" },
+	{ "Targeting", "marknext", "Mark next (skull, cross, square...)", "INV_Misc_Gem_Variety_01", button = "ForeverControllerTweaksMarkNext", short = "MarkNext" },
 
 	{ "Combat", "startattack", "Start attack", "Ability_SteelMelee", text = "/startattack", short = "Attack" },
 	{ "Combat", "stopattack", "Stop attack", "Spell_ChargeNegative", text = "/stopattack", short = "StopAttack" },
 	{ "Combat", "stopcasting", "Stop casting", "Spell_Frost_Stun", text = "/stopcasting", short = "StopCast" },
 	{ "Combat", "back", "Back (stop, clear)", "Spell_ChargeNegative", face = "back" },
+	{ "Combat", "cancel", "Cancel (stop cast, ground target, target)", "Spell_Frost_Stun", text = "/stopcasting\n/stopspelltarget\n/cleartarget", short = "Cancel" },
+	{ "Combat", "healpotion", "Best healing potion", "INV_Potion_54", button = "ForeverControllerTweaksHealPotion", short = "HealPotion" },
+	{ "Combat", "manapotion", "Best mana potion", "INV_Potion_76", button = "ForeverControllerTweaksManaPotion", short = "ManaPotion" },
+	{ "Combat", "grenade", "Best grenade", "INV_Misc_Bomb_08", button = "ForeverControllerTweaksGrenade", short = "Grenade" },
 	{ "Combat", "petattack", "Pet attack", "Ability_GhoulFrenzy", text = "/petattack", short = "PetAttack" },
 	{ "Combat", "petfollow", "Pet follow", "Ability_Tracking", text = "/petfollow", short = "PetFollow" },
 	{ "Combat", "petstay", "Pet stay", "Spell_Nature_TimeStop", text = "/petstay", short = "PetStay" },
@@ -87,6 +102,7 @@ local GAME = {
 	{ "Windows", "talents", "Talents", "Ability_Marksmanship", button = "TalentMicroButton", short = "Talents" },
 	{ "Windows", "professions", "Professions", "Trade_Engineering", button = "ProfessionMicroButton", short = "Professions" },
 	{ "Windows", "questlog", "Map & Quest Log", "INV_Misc_Map_01", button = "QuestLogMicroButton", short = "QuestLog" },
+	{ "Windows", "peekmap", "Peek map (hold)", "INV_Misc_Map02", hold = "ForeverControllerTweaksPeekMap" },
 	{ "Windows", "groupfinder", "Group finder", "INV_Misc_GroupNeedMore", button = "LFDMicroButton", short = "GroupFinder" },
 	{ "Windows", "collections", "Collections", "Ability_Mount_RidingHorse", button = "CollectionsMicroButton", short = "Collections" },
 	{ "Windows", "guild", "Guild & Communities", "INV_Shirt_GuildTabard_01", button = "GuildMicroButton", short = "Guild" },
@@ -104,6 +120,14 @@ local GAME = {
 	{ "Misc", "bow", "Bow", "Spell_Holy_Heal", text = "/bow", short = "Bow" },
 	{ "Misc", "hello", "Hello", "Spell_Holy_Heal", text = "/hello", short = "Hello" },
 	{ "Misc", "fps", "Toggle FPS", "INV_Misc_PocketWatch_01", button = "ForeverControllerTweaksToggleFPS", short = "FPS" },
+	{ "Misc", "sortbags", "Sort bags", "INV_Misc_Bag_10", button = "ForeverControllerTweaksSortBags", short = "SortBags" },
+	{ "Misc", "buystack", "Buy a full stack", "INV_Misc_Coin_02", button = "ForeverControllerTweaksBuyStack", short = "BuyStack" },
+	{ "Misc", "eatdrink", "Eat & drink", "INV_Misc_Food_15", button = "ForeverControllerTweaksEatDrink", short = "EatDrink" },
+	{ "Misc", "questitem", "Quest item", "INV_Misc_Bag_07", button = "ForeverControllerTweaksQuestItem", short = "QuestItem" },
+	{ "Misc", "tracknearest", "Track nearest quest", "INV_Misc_Map_01", button = "ForeverControllerTweaksTrackQuest", short = "TrackQuest" },
+	{ "Misc", "readycheck", "Ready check", "INV_Misc_Note_01", text = "/readycheck", short = "ReadyCheck" },
+	{ "Misc", "pull", "Pull countdown (5 s)", "INV_Misc_PocketWatch_02", text = "/countdown 5", short = "Pull" },
+	{ "Misc", "minimapzoom", "Minimap zoom", "INV_Misc_Spyglass_03", button = "ForeverControllerTweaksMinimapZoom", short = "MinimapZoom" },
 }
 for i = 0, 8 do
 	local name = i == 0 and "Clear raid marker" or ("Raid marker " .. i)
@@ -142,6 +166,8 @@ local function gameEntries(add)
 		local category, key, name, icon = spec[1], spec[2], spec[3], ICONS .. spec[4]
 		if spec.face then
 			add({ id = "face:" .. spec.face, category = category, name = name, icon = icon, kind = "face", payload = spec.face })
+		elseif spec.hold then
+			if _G[spec.hold] then add({ id = "hold:" .. key, category = category, name = name, icon = icon, kind = "hold", payload = spec.hold }) end
 		else
 			local text = gameText(spec)
 			-- CreateMacro takes the icon as a bare icon name.
@@ -616,7 +642,7 @@ local NOT_EMPTY = "That action slot isn't free after all; Controller Tweaks left
 -- (expected); if PlaceAction hands back anything else, it goes back into the slot and nothing is deleted.
 local function place(slot, entry, guard, expected)
 	if InCombatLockdown() then return nil, COMBAT end
-	if entry.kind == "face" then return nil, ROUTED:format(entry.name) end
+	if entry.kind == "face" or entry.kind == "hold" then return nil, ROUTED:format(entry.name) end
 	if entry.disabled then return nil, entry.note end
 	if GetCursorInfo() then return nil, HOLDING end
 
@@ -910,13 +936,23 @@ function Actions.TextFor(id)
 		local spec = GAME_BY_KEY[value]
 		return spec and gameText(spec)
 	end
+	if kind == "hold" then
+		local button = Actions.HoldButton(value)
+		return button and "/click " .. button .. " RightButton"
+	end
 	if kind == "addon" then
 		local entry = Actions.Find(id)
 		return entry and entry.kind == "game" and entry.payload.text or nil
 	end
 end
 
-local DESCRIBE = { spell = "Spell", pet = "Pet spell", item = "Item with a use effect", toy = "Toy", set = "Equipment set", mount = "Mount", macro = "Your macro", face = "Face action (press and hold)", ring = "Ring: hold the button, aim with the right stick, release to use (a touch button: tap)" }
+-- The global name of a hold action's own button ("lookbehind" -> ForeverControllerTweaksLookBehind), or nil.
+function Actions.HoldButton(key)
+	local spec = GAME_BY_KEY[key]
+	return spec and spec.hold and _G[spec.hold] and spec.hold or nil
+end
+
+local DESCRIBE = { hold = "Hold action: held on a controller button, a toggle on a touch button or ring slot", spell = "Spell", pet = "Pet spell", item = "Item with a use effect", toy = "Toy", set = "Equipment set", mount = "Mount", macro = "Your macro", face = "Face action (press and hold)", ring = "Ring: hold the button, aim with the right stick, release to use (a touch button: tap)" }
 
 function Actions.Describe(entry)
 	if entry.kind == "game" then return "Game command: " .. entry.payload.text end
@@ -941,9 +977,6 @@ end
 -- the player's and stays as it is; a new name already taken leaves that one as it was (it is still found by its id).
 local OLD_PREFIX = "PS:"
 local function renamePrefix()
-	local char = ns.Face.CharDB()
-	if not char or char.macroPrefixDone or InCombatLockdown() then return end
-
 	local account, character = registries()
 	for list, perChar in pairs({ [account] = false, [character] = true }) do
 		local old = {}
@@ -959,10 +992,30 @@ local function renamePrefix()
 			end
 		end
 	end
-	char.macroPrefixDone = true
+	return true
 end
-ns.On("PLAYER_ENTERING_WORLD", guard(renamePrefix))
-ns.On("PLAYER_REGEN_ENABLED", guard(renamePrefix))
+local function migratePrefix()
+	if not InCombatLockdown() then ns.MigrateChar("macroPrefixDone", renamePrefix) end
+end
+ns.On("PLAYER_ENTERING_WORLD", guard(migratePrefix))
+ns.On("PLAYER_REGEN_ENABLED", guard(migratePrefix))
+
+-- DeleteMacro raises UPDATE_MACROS synchronously, so the loop runs as a slot write (guard).
+local deleteOurMacros = guard(function()
+	local account, character = registries()
+	local count = 0
+	for list, perChar in pairs({ [account] = false, [character] = true }) do
+		for name in pairs(list) do
+			local index = findMacro(name, perChar)
+			if index then
+				DeleteMacro(index)
+				count = count + 1
+			end
+			list[name] = nil
+		end
+	end
+	return count
+end)
 
 -- /fct release: before uninstalling, gives back every slot the addon holds (shadow and touch slots, cleared while
 -- they still hold its action) and deletes its registered FCT: macros, which leaves its game commands off the crossbar.
@@ -971,22 +1024,12 @@ function ns.commands.release()
 	if InCombatLockdown() then return ns.log(COMBAT) end
 	if GetCursorInfo() then return ns.log(HOLDING) end
 
-	local slots, macros = 0, 0
+	local slots = 0
 	for _, info in pairs(shadowSlots() or {}) do
 		if Actions.ReleaseShadow(info.code, info.layer) then slots = slots + 1 end
 	end
 	released = true
-	local account, character = registries()
-	for list, perChar in pairs({ [account] = false, [character] = true }) do
-		for name in pairs(list) do
-			local index = findMacro(name, perChar)
-			if index then
-				DeleteMacro(index)
-				macros = macros + 1
-			end
-			list[name] = nil
-		end
-	end
+	local macros = deleteOurMacros()
 	ns.log(("gave back %d action slots and deleted %d FCT: macros. /reload to place them again."):format(slots, macros))
 	ns.Fire("FCT_LAYOUT_CHANGED", "release")
 end

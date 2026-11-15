@@ -218,7 +218,7 @@ function Touch.SetEntry(side, i, entry, layer)
 	if entry and entry.disabled then return nil, entry.note end
 	local Actions = ns.Actions
 	local kind = entry and Actions.KindOf(entry)
-	if entry and not (Actions.SLOT_KINDS[kind] or kind == "face" or kind == "ring") then return nil, tostring(entry.name) .. " can't go on a touch button." end
+	if entry and not (Actions.SLOT_KINDS[kind] or kind == "face" or kind == "ring" or kind == "hold") then return nil, tostring(entry.name) .. " can't go on a touch button." end
 	local config = Touch.Config()
 	if not config then return nil, "no character yet" end
 
@@ -305,6 +305,8 @@ local function resolve(side, i, layer, entry, writable)
 		local target = ns.Face.ActionButton(tostring(entry.id):match("^face:(%a+)$"))
 		return nil, target and ns.Face.ClickBoth(target:GetName())
 	end
+	-- A hold action (Look behind, Peek map): a tap is its toggle.
+	if kind == "hold" then return nil, Actions.TextFor(entry.id) end
 end
 
 -- Out of combat: every layer's action or text on the button for the tap snippet, and T as the click before any.
@@ -424,13 +426,19 @@ local function applyNow()
 end
 
 -- Placing a slot makes and deletes FCT: macros, whose UPDATE_MACROS would apply again mid-swap; a Lua error must not
--- leave busy set.
+-- leave busy set. An apply during another module's slot write (Actions.Busy, synchronous) runs next frame instead.
 local busy, failed
 function apply()
-	if busy or ns.Actions.Busy() then return end
+	if busy then return end
+	if ns.Actions.Busy() then
+		if not pending then C_Timer.After(0, function() if pending then apply() end end) end
+		pending = true
+		return
+	end
 	busy = true
 	local ok, err = pcall(applyNow)
 	busy = false
+	if ok then failed = nil end
 	if ok or failed then return end
 	failed = true
 	ns.debug("touch apply failed: %s", tostring(err))

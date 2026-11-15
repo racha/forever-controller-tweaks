@@ -416,9 +416,12 @@ local focusCode
 -- Picking a role another button holds swaps the two; the note under the drawing says so in one line.
 local function setRole(phys, role)
 	local before = Layout.Roles()
+	-- Redrawn here, not on the layout event's next-frame redraw, so the focus can follow while focusCode is set.
 	focusCode = phys
 	assign(phys, role)
+	if window:IsShown() then window:Refresh() end
 	focusCode = nil
+
 	local after = Layout.Roles()
 	window.note:SetText("")
 	for _, other in ipairs(Layout.PHYSICAL) do
@@ -620,7 +623,7 @@ local function build()
 	window.device = UI.Text(window, "GameFontHighlight", 24, 30)
 	window.sub = UI.Text(window, "GameFontDisableSmall", 24, 47)
 
-	-- Page selector: L2 glyph, "Page n of N", R2 glyph; D-pad left/right on it or an L2/R2 tap switch pages.
+	-- Page selector: L2 glyph, "Page n of N" in a dropdown box, R2 glyph; D-pad left/right on it or an L2/R2 tap switch pages.
 	local selector = CreateFrame("Button", nil, window)
 	selector:SetSize(200, 28)
 	UI.At(selector, window, WIDTH - 230, 24)
@@ -628,6 +631,11 @@ local function build()
 	selector.previous:SetPoint("LEFT")
 	selector.next = UI.Glyph(selector, 24, "R2")
 	selector.next:SetPoint("RIGHT")
+	-- The stepper dropdown's value box (150 x 25, its art 7 past each side) between the glyphs, which are its steppers.
+	local box = selector:CreateTexture(nil, "BACKGROUND")
+	box:SetAtlas("common-dropdown-c-button")
+	box:SetSize(150 + 14, 25 + 14)
+	box:SetPoint("CENTER")
 	selector.text = selector:CreateFontString(nil, "OVERLAY", "GameFontNormal")
 	selector.text:SetPoint("CENTER")
 	selector:SetScript("OnClick", function() B.SetPage(page % pageCount() + 1) end)
@@ -1059,5 +1067,6 @@ function B.EndGuided()
 end
 
 ns.On("ACTIONBAR_SLOT_CHANGED", function()
-	if window and window:IsShown() then window:Refresh() end
+	if window and window:IsShown() then UI.RefreshSoon(window) end
 end)
+

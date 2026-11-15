@@ -27,11 +27,18 @@ local QUEST_TAG, REPLY_TAG, YOURS_TAG, PHRASE_TAG, NEXT_TAG, ITEM_TAG, RECENT_TA
 -- Fields: chat phrases and replies only where the player talks; the next word also in other free text; a typed
 -- search is remembered for its kind of box.
 local TALK = { chat = true, whisper = true }
-local PROSE = { chat = true, whisper = true, text = true }
+local PROSE = { chat = true, whisper = true, text = true, quick = true }
 local SEARCHES = { bag = true, auction = true, search = true }
 -- Fields whose rows never come from the word list: the view skips its word search there.
 S.LOOKUP = { numeric = true, bag = true, auction = true, name = true }
 local ROLE = { tank = "tank", healer = "healer", damage = "DPS" }
+-- The fill-ins a quick message may use (Keyboard tab, Quick messages), in the order the editor's list shows them.
+S.FILLS = {
+	{ "target", "Your target's name" }, { "player", "Your name" }, { "zone", "Zone" }, { "subzone", "Subzone" }, { "instance", "Dungeon or raid" },
+	{ "quest", "Quest you follow" }, { "class", "Your class" }, { "role", "Group role" }, { "level", "Your level" }, { "spec", "Your spec" },
+	{ "ilvl", "Item level" }, { "from", "Who you reply to" },
+}
+local FILL_TAG = 18
 -- The switch row: the best line is for another channel. R1 types that channel's own command (/w Aria, /p), which the
 -- chat box turns into its channel; with no such command it is a hint only.
 S.HINT_REPLY, S.HINT_LINES = "Reply to %s: switch to %s", "%s lines: switch to %s"
@@ -584,7 +591,28 @@ local function hintRow(elsewhere)
 	}
 end
 
-local HEADS = { words = { kind = "words" }, items = { kind = "items" }, names = { kind = "names" }, searches = { kind = "searches" }, none = { kind = "none" } }
+local HEADS = { fills = { kind = "fills" }, words = { kind = "words" }, items = { kind = "items" }, names = { kind = "names" }, searches = { kind = "searches" }, none = { kind = "none" } }
+
+-- Our quick message box (field "quick"): the fill-ins, each with what it gives now, while one is typed ("{ta": those
+-- only; "ta": those ahead of the words) or at a word boundary (all, ahead of the next words); words as in free text.
+-- A fill-in row replaces bytes start..finish with its token.
+local quickList
+local function fillRows(ctx, text, cur)
+	local brace, word, first, last = text:sub(1, cur):match("{(%a*)$"), K.WordAt(text, cur)
+	local typed = (brace or word or ""):lower()
+	local start, finish = brace and cur - #brace or word and first or cur + 1, brace and cur or word and last or cur
+	local values, rows = valuesOf(ctx), {}
+	for _, fill in ipairs(S.FILLS) do
+		local token = fill[1]
+		if token:sub(1, #typed) == typed then
+			local value = values[token]
+			value = value and (tostring(value):gsub("|c%x%x%x%x%x%x%x%x", ""):gsub("|H.-|h", ""):gsub("|[hr]", "")) or ""
+			if #value > FILL_TAG then value = value:sub(1, FILL_TAG - 1) .. "…" end
+			rows[#rows + 1] = { text = "{" .. token .. "}  " .. fill[2], token = "{" .. token .. "}", mode = "fill", category = "Fill-in", tag = value, start = start, finish = finish }
+		end
+	end
+	return rows, brace ~= nil
+end
 
 local function plainWords(list, results, first, last) for i = first or 1, math.min(#results, last or S.WORDS) do list[#list + 1] = { text = results[i].word, mode = "word", category = "Word", tag = "" } end end
 
@@ -602,6 +630,7 @@ local function plainWords(list, results, first, last) for i = first or 1, math.m
 -- row to pre-focus as a correction.
 function S.List(settings, ctx, text, cur, results)
 	local field, store = ctx.field, S.Store(settings)
+	if field == "quick" then return quickList(settings, ctx, text, cur, results) end
 	local recent, blank = store.recent[field] or NONE, text:match("^%s*$") ~= nil
 	if field == "numeric" then return {}, HEADS.none end
 	if field == "bag" then return lookup(text, blank and { { recent, RECENT_TAG, most = 3 }, { ctx.items, ITEM_TAG } } or { { ctx.items, ITEM_TAG }, { recent, RECENT_TAG } }), HEADS.items end
@@ -654,6 +683,15 @@ function S.List(settings, ctx, text, cur, results)
 	return list, head, fix
 end
 
+function quickList(settings, ctx, text, cur, results)
+	local fills, only = fillRows(ctx, text, cur)
+	if only or text:match("^%s*$") then return fills, HEADS.fills end
+	local words, head, fix = S.List(settings, setmetatable({ field = "text" }, { __index = ctx }), text, cur, results)
+	local n = #fills
+	append(fills, words)
+	return fills, #words == 0 and n > 0 and HEADS.fills or head, fix and fix + n
+end
+
 ---------------------------------------------------------------------------------------------------------------------
 -- Inserting, and learning from what the player does.
 
@@ -665,6 +703,12 @@ end
 function S.Apply(item, text, cur)
 	local mode, value, start = item.mode, item.text, item.start or 1
 	if mode == "hint" then return text, cur end
+	if mode == "fill" then
+		local before = text:sub(1, start - 1)
+		local gap = before:match("[%w%p]$") and " " or ""
+		before = before .. gap .. item.token .. " "
+		return before .. text:sub(item.finish + 1), #before
+	end
 	if mode == "switch" then
 		local line = item.command .. text:gsub("^%s+", "")
 		return line, #line

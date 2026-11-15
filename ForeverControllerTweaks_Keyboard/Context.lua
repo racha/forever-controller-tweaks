@@ -282,6 +282,9 @@ local function pathOf(box)
 end
 
 local function classify(box)
+	-- Our own boxes say what they are (the quick message editor: "quick").
+	local own = rawget(box, "ForeverControllerTweaksField")
+	if own then return own end
 	if box.IsNumeric and plain(box:IsNumeric()) then return "numeric" end
 	if box.GetAttribute and plain(box:GetAttribute("chatType")) then return "chat" end
 	local path, parent = pathOf(box), box.GetParent and box:GetParent()
@@ -336,15 +339,16 @@ end
 -- Chat is a supported box: a block seen while typing there (ChatFrame1EditBox, ...) is never blamed on it.
 local function chatKey(key) return (key .. " "):find("^chatframe%d+editbox ") ~= nil end
 
--- The game blocked an action right after the keyboard changed this box's text: never type into it again. Its key
--- is saved (the newest C.BLOCKED); a box with no name anywhere in its parents is remembered for the session only.
-function C.Deny(box, settings)
+-- The game blocked an action right after the keyboard changed this box's text: no more typing into it this session.
+-- With save (the blocked function was the box's own) its key is saved too (the newest C.BLOCKED), so it stays denied
+-- after a reload; a box with no name anywhere in its parents can't be saved.
+function C.Deny(box, settings, save)
 	local parent = box.GetParent and box:GetParent()
 	local which = parent and plain(parent.which) or false
 	local key = keyOf(box, which)
 	if chatKey(key) then return end
 	verdicts[box] = { which = which, denied = true }
-	if key == "" or listed(settings, key) then return end
+	if not save or key == "" or listed(settings, key) then return end
 	settings.blocked = type(settings.blocked) == "table" and settings.blocked or {}
 	table.insert(settings.blocked, 1, key)
 	settings.blocked[C.BLOCKED + 1] = nil
@@ -362,10 +366,11 @@ end
 function C.Focus(box) focused, focus = box, classify(box) end
 
 -- The situation now, for the box being typed in. The returned table is the live state: read it, don't keep it.
-function C.Snapshot(box)
+-- channel ({ kind, target, id }): where a chat line goes when the keyboard's own line switched it, over the box's.
+function C.Snapshot(box, channel)
 	local s, now = state, GetTime()
 	if box ~= focused then C.Focus(box) end
-	local kind = focus == "chat" and plain(box:GetAttribute("chatType")) or nil
+	local kind = focus == "chat" and (channel and channel.kind or plain(box:GetAttribute("chatType"))) or nil
 	s.field = kind and ((kind == "WHISPER" or kind == "BN_WHISPER") and "whisper" or "chat") or focus ~= "chat" and focus or "unknown"
 	for _, section in ipairs(SECTIONS) do
 		if dirty[section] and (not ONLY[section] or ONLY[section][s.field]) then
@@ -385,7 +390,8 @@ function C.Snapshot(box)
 	s.lowMana = low(api("UnitPower", "player", 0), api("UnitPowerMax", "player", 0), 0.25)
 	s.npc = target and not target.player and target.friendly and not target.dead and { name = target.name, kind = target.npc }
 		or nearby and now - nearby.at < C.NEARBY_TTL and nearby or nil
-	s.box = kind and { chat = true, kind = kind, target = plain(box:GetAttribute("tellTarget")), channel = plain(box:GetAttribute("channelTarget")) } or { chat = false }
+	local from = channel and channel.kind and channel
+	s.box = kind and { chat = true, kind = kind, target = from and from.target or plain(box:GetAttribute("tellTarget")), channel = from and from.id or plain(box:GetAttribute("channelTarget")) } or { chat = false }
 	return s
 end
 

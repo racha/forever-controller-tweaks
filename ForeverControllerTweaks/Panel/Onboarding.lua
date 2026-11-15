@@ -490,12 +490,14 @@ local function build()
 	window.OnHoldTick = function()
 		if step == "try" then pages.try:Hold() end
 	end
-	-- Combat closes every window; the guide comes back at the same step when combat ends.
+	-- Combat closes every window; the guide comes back at the same step when combat ends. Closed any other way (X,
+	-- a close key) it counts as Not now, so a pad event doesn't bring it back; the Gamepad UI going off doesn't.
 	window.OnClosed = function()
 		if active and not window.handoff and UI.combatClosing then
 			local name = step
 			UI.resume = { text = L.RESUME_GUIDE, fn = function() O.Show(name) end }
 		elseif not window.handoff then
+			if active and ns.Active() then O.Decline() end
 			active = false
 		end
 		window.handoff = nil
@@ -548,15 +550,19 @@ end
 
 -- Not now: keep the game's layout as it is and don't ask again for this controller (the welcome note's promise);
 -- Setup guide, /fct setup and Bindings > More > Controller type still open it.
-function O.NotNow()
+function O.Decline()
 	local device = ns.Device.Current()
-	if device then
-		ns.db.declined = ns.db.declined or {}
-		ns.db.declined[device.key] = true
-	end
+	if not device then return end
+	ns.db.declined = ns.db.declined or {}
+	ns.db.declined[device.key] = true
+end
+
+function O.NotNow()
+	O.Decline()
 	O.Finish()
 	UI.CloseAll()
 end
+
 
 function O.Finish()
 	active = false

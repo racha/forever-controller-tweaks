@@ -85,6 +85,7 @@ local stores = new({
 			cells = { ["054c/0ce6"] = { FT = { T = { id = "spell:133" }, B = 5 }, FR = true, P1 = { R = { id = "face:jump" }, L = "x" }, P3 = 4 } },
 			legacyFaceDone = "yes",
 			routedUnderDone = true,
+			macroPrefixDone = 1,
 		},
 		["Bob-Realm"] = "not a table",
 		[7] = {},
@@ -99,7 +100,7 @@ assert(ann.macros["FCT:Sit"] and ann.macros["FCT:Bad"] == nil and ann.highest[14
 assert(ann.cells["054c/0ce6"].FT.T.id == "spell:133" and ann.cells["054c/0ce6"].FT.B == nil and ann.cells["054c/0ce6"].FR == nil)
 -- Back paddle cells sit next to the face cells and are repaired the same way.
 assert(ann.cells["054c/0ce6"].P1.R.id == "face:jump" and ann.cells["054c/0ce6"].P1.L == nil and ann.cells["054c/0ce6"].P3 == nil)
-assert(ann.legacyFaceDone == nil and ann.routedUnderDone == true and sdb.chars["Bob-Realm"] == nil and sdb.chars[7] == nil)
+assert(ann.legacyFaceDone == nil and ann.routedUnderDone == true and ann.macroPrefixDone == nil and sdb.chars["Bob-Realm"] == nil and sdb.chars[7] == nil)
 assert(stores.said("repaired %d+ damaged saved settings"))
 
 -- An early GAME_PAD_* event before ADDON_LOADED doesn't touch the missing db.
@@ -108,5 +109,85 @@ early.fire("GAME_PAD_CONNECTED")
 assert(early.ns.db == nil and early.ns.Device.Current() == nil)
 early.login()
 assert(early.ns.Device.Current())
+
+-- Panel and onboarding values: a wrong type is dropped (the Panel's default takes over), a good one kept.
+local log = {}
+for i = 1, 520 do log[i] = "line " .. i end
+local opts = new({ version = 2, devices = {}, debugLog = log, onboarded = "x", declined = { ["054c/0ce6"] = true },
+	options = { toggleHold = { "L2", 5 }, minimapAngle = 0 / 0, glyphs = true } })
+opts.login()
+local odb = opts.ns.db
+assert(odb.options.toggleHold == nil and odb.options.minimapAngle == nil and odb.onboarded == nil and odb.declined["054c/0ce6"])
+assert(#odb.debugLog == 500 and odb.debugLog[1] == "line 21" and odb.debugLog[500] == "line 520", "the log keeps its newest 500 lines")
+for _, good in ipairs({ { toggleHold = false, minimapAngle = 45 }, { toggleHold = { "L2", "R2" }, minimapAngle = -10.5 } }) do
+	local kept = new({ version = 2, devices = {}, options = W.copy(good) })
+	kept.login()
+	assert(W.same(kept.ns.db.options.toggleHold, good.toggleHold) and kept.ns.db.options.minimapAngle == good.minimapAngle)
+end
+for _, bad in ipairs({ { "L2", "45" }, { 1, math.huge }, { true, -math.huge }, { { a = "L2" }, true } }) do
+	local fixed = new({ version = 2, devices = {}, options = { toggleHold = bad[1], minimapAngle = bad[2] } })
+	fixed.login()
+assert(fixed.ns.db.options.toggleHold == nil and fixed.ns.db.options.minimapAngle == nil, tostring(bad))
+end
+
+-- The debug log is a ring: full, a new line replaces the oldest in place; at logout it is put back in order.
+odb.options.debug = true
+for i = 1, 3 do opts.ns.debug("new %d", i) end
+assert(#odb.debugLog == 500 and odb.debugLog[1]:find("new 1") and odb.debugLog[3]:find("new 3") and odb.debugLog[4] == "line 24")
+opts.fire("PLAYER_LOGOUT")
+assert(#odb.debugLog == 500 and odb.debugLog[1] == "line 24" and odb.debugLog[497] == "line 520" and odb.debugLog[500]:find("new 3"), "in order at logout")
+
+-- Per-character migrations: run until fn says done, then never again; no character, nothing runs.
+local mig = new({ version = 2, options = {}, devices = {} })
+mig.login()
+local char = {}
+mig.ns.Face = { CharDB = function() return char end }
+local runs = 0
+local function step() runs = runs + 1 return runs >= 2 end
+mig.ns.MigrateChar("testDone", step)
+assert(runs == 1 and char.testDone == nil, "not finished: the flag stays off")
+mig.ns.MigrateChar("testDone", step)
+mig.ns.MigrateChar("testDone", step)
+assert(runs == 2 and char.testDone == true, "finished once, then skipped")
+char = nil
+mig.ns.MigrateChar("otherDone", step)
+assert(runs == 2)
+
+-- /fct help lists every user command.
+mig.slash("help")
+local help = mig.lines[#mig.lines]
+for _, name in ipairs({ "bindings", "rings", "setup", "detect", "family", "preset", "role", "face", "learn", "reset", "release", "status", "selftest", "ringlog", "debug", "help" }) do
+	assert(help:find("%f[%w]" .. name .. "%f[%W]"), "help names " .. name)
+end
+
+-- An event the client doesn't know is skipped instead of breaking the file (C_EventUtils.IsEventValid).
+C_EventUtils = { IsEventValid = function(event) return event ~= "REMOVED_EVENT" end }
+local frame = mig.frames[1]
+mig.ns.On("REMOVED_EVENT", function() end)
+mig.ns.On("NEW_EVENT", function() end)
+assert(not frame.events.REMOVED_EVENT and frame.events.NEW_EVENT)
+C_EventUtils = nil
+
+-- TaintWatch (debug only): the first moment a watched Blizzard field turns insecure is logged once, with the line
+-- before it; /fct selftest lists what is insecure now.
+local tainted = {}
+function issecurevariable(t, key)
+	if t == GamepadSharedUtility.InputBindingManager and tainted[key] then return false, "SomeAddon" end
+	return true
+end
+mig.slash("debug on")
+mig.run(1.1)
+mig.ns.debug("face: placed something")
+tainted.bindingSetStack = true
+mig.run(1.1)
+mig.run(1.1)
+local found = 0
+for _, line in ipairs(mig.ns.db.debugLog) do
+	if line:find("taintwatch: InputBindingManager.bindingSetStack now insecure, by SomeAddon; last before it: 12:00:00 face: placed something", 1, true) then found = found + 1 end
+end
+assert(found == 1, "logged once, with our last line")
+mig.slash("selftest")
+assert(mig.said("selftest: taintwatch: InputBindingManager.bindingSetStack by SomeAddon"))
+issecurevariable = nil
 
 io.stdout:write("db_spec: all checks passed\n")
