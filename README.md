@@ -6,6 +6,8 @@
 
 [CurseForge][curseforge] · [Wago][wago] · [Website][site] · [Download][releases] · [User guide](docs/user-guide.md) · [Controllers](docs/controllers.md) · [Changelog](CHANGELOG.md)
 
+![Forever Controller Tweaks: action rings, any action on any button, on-screen keyboard](site/img/overview.jpg)
+
 ## What it does
 
 Forever Controller Tweaks builds on WoW Forever's own Gamepad UI instead of replacing it. Out of the box the Gamepad UI fixes the crossbar: L2 and R2 open the left and right bars, L1 holds friendly targeting and R1 holds hostile targeting, and Jump, Interact, Back and Inspect sit on fixed face buttons. This addon lets you change all of that. For example, **L2 opens the left bar, L1 the right bar, R1 targets friends and R2 targets enemies.** It changes the game's own controller mapping, so every native bar, glyph and targeting mode keeps working. Only the buttons change.
