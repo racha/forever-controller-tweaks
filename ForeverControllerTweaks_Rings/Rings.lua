@@ -35,6 +35,11 @@
 --   _toggle(id)           a touch tap: opens the ring, or closes it when it is the one open;
 --   _close()              hides it; _arm(ref, which, id, i) writes one slot's action on a button.
 -- No action slot is used: the actions fire through direct secure attributes (spell, item, toy, macrotext).
+-- Healer mode (design/healer-mode.md): a binding with healer = true opens a healer ring, id "h<entry id>", made from the
+-- binding (Rings.HealerRing), not stored in ns.db.rings: always Hold, Dynamic stick, Compact, 7 slots that all fire the
+-- binding's spell or item, slot i on unit HEALER_UNITS[i] (r<id>u<i>). _arm sets the button's unit (and drops the
+-- self/focus/mouseover cast checks there); _pick skips a slot whose unit is missing or can't be helped (dead allies
+-- can), returning false so a kept pick is dropped too; a tapped slot does the same check.
 -- Stick keys: the game sends a stick's directions as keys (PADRSTICKUP...) only while the CVar GamePadStickAxisButtons
 -- is on, so a held ring switches it on while it is open (below). Without the keys it fires on the button's release or A.
 local ns = ForeverControllerTweaks
@@ -128,6 +133,11 @@ function Rings.SectorFile(width) return ("ring-sector-%d.tga"):format(math.floor
 local QUESTION = "Interface\\Icons\\INV_Misc_QuestionMark"
 local COMBAT = "Controller Tweaks changes rings out of combat only."
 local NONE = {}
+-- Fixed places, clockwise from the top: muscle memory. In a raid party1-4 are the player's own subgroup.
+local HEALER_UNITS = { "player", "party1", "party2", "party3", "party4", "target", "focus" }
+Rings.HealerUnits = HEALER_UNITS
+local HEALER_KINDS = { spell = true, spellgroup = true, item = true }
+local KIND_WORD = { mount = "mount", toy = "toy", macro = "macro", set = "equipment set", game = "game action", face = "face action", hold = "hold action", ring = "ring", pet = "pet spell", addon = "key binding" }
 
 local function ringOf(id) return tonumber(tostring(id):match("^ring:(%d+)$")) end
 
@@ -499,6 +509,15 @@ function Rings.Resolve(slot)
 	return slot and ns.Actions.Find(slot.id)
 end
 
+-- Whether a binding's entry can use Healer mode: only spells, spell groups and items cast on a unit. nil and why not.
+function Rings.HealerAllowed(entry)
+	if not entry then return nil, "This button is empty." end
+	local kind = ns.Actions.KindOf(entry)
+	if HEALER_KINDS[kind] then return true end
+	local word = KIND_WORD[kind]
+	return nil, word and ("This button holds a %s."):format(word) or "This button holds another kind of action."
+end
+
 ---------------------------------------------------------------------------------------------------------------------
 -- Secure frames
 
@@ -515,7 +534,9 @@ local ARM = [[
 	button:SetAttribute("toy", nil)
 	button:SetAttribute("macrotext", nil)
 	if actionType then button:SetAttribute(self:GetAttribute(prefix .. "k" .. i), self:GetAttribute(prefix .. "v" .. i)) end
-	local cast = (actionType == "spell" or actionType == "item") or nil
+	local unit = self:GetAttribute(prefix .. "u" .. i)
+	button:SetAttribute("unit", unit)
+	local cast = (actionType == "spell" or actionType == "item") and not unit or nil
 	button:SetAttribute("checkselfcast", cast)
 	button:SetAttribute("checkfocuscast", cast)
 	button:SetAttribute("checkmouseovercast", cast)
@@ -626,6 +647,8 @@ local PICK = ([[
 	local stale = self:GetAttribute("ps-stale")
 	if best == stale then return nil, len end
 	if stale then self:SetAttribute("ps-stale", nil) end
+	local unit = self:GetAttribute("r" .. id .. "u" .. best)
+	if unit and not (UnitExists(unit) and PlayerCanAssist(unit)) then return false, len end
 	return best, len
 ]]):format(DEADZONE * DEADZONE)
 
@@ -650,7 +673,8 @@ local RELEASE = [[
 	local id = self:GetAttribute("ps-ring")
 	if not id or self:GetAttribute("ps-mode") ~= "hold" then return self:SetAttribute("ps-trace", "release " .. ref .. ": no ring") end
 	local now, len = self:RunAttribute("_pick")
-	local pick = now or self:GetAttribute("ps-pick")
+	local pick = now
+	if pick == nil then pick = self:GetAttribute("ps-pick") end
 	local _, held = self:RunAttribute("_held")
 	local show = self:GetAttribute("r" .. id .. "h")
 	self:SetAttribute("ps-trace", format("release %s len=%.2f now=%s kept=%s down=%s show=%s", ref, len or -1, tostring(now), tostring(self:GetAttribute("ps-pick")), held, tostring(show)))
@@ -681,10 +705,11 @@ local KEY = ([[
 	local pick
 	if role == "use" then
 		if down then return end
-		pick = self:RunAttribute("_pick") or self:GetAttribute("ps-pick")
+		pick = self:RunAttribute("_pick")
+		if pick == nil then pick = self:GetAttribute("ps-pick") end
 	else
 		local now, len = self:RunAttribute("_pick", down and not self:GetAttribute("ps-pick") and key or nil)
-		if now then self:SetAttribute("ps-pick", now) end
+		if now ~= nil then self:SetAttribute("ps-pick", now or nil) end
 		self:SetAttribute("ps-dn-" .. key, down or nil)
 		local held, names = self:RunAttribute("_held")
 		local free = not down and len < %s
@@ -705,7 +730,12 @@ local TOGGLE = [[
 ]]
 
 -- The slots' and the catcher's taps: a slot fires its action (its own click), then the ring closes.
-local SLOT_PRE = [[return nil, "close"]]
+-- A healer slot whose unit can't be helped now is tapped in vain: nothing fires and the ring stays.
+local SLOT_PRE = [[
+	local unit = self:GetAttribute("unit")
+	if unit and not (UnitExists(unit) and PlayerCanAssist(unit)) then return false end
+	return nil, "close"
+]]
 -- The key button: whatever an earlier key armed is gone first; the release fires what _key armed.
 local KEY_PRE = [[
 	self:SetAttribute("typerelease", nil)
@@ -813,6 +843,45 @@ end
 
 -- Ring ids whose attributes are written, to clear them when a ring goes.
 local written, pending = {}, nil
+-- Healer rings by id, made from bindings as they apply (Rings.HealerRing); kept for the session, so applyNow writes
+-- them again. One no binding holds any more is harmless: nothing opens it.
+local healers = {}
+
+-- One ring's attributes, out of combat; index: the catalog by id.
+local function write(ring, index)
+	local prefix = "r" .. ring.id
+	frame:SetAttribute(prefix .. "n", ring.count)
+	frame:SetAttribute(prefix .. "s", ring.stick)
+	frame:SetAttribute(prefix .. "h", ring.show)
+	frame:SetAttribute(prefix .. "y", ring.style)
+	for i = 1, ring.count do
+		local slot = ring.slots[i]
+		local actionType, key, value = Rings.Attributes(slot and index[slot.id])
+		frame:SetAttribute(prefix .. "t" .. i, actionType)
+		frame:SetAttribute(prefix .. "k" .. i, actionType and key)
+		frame:SetAttribute(prefix .. "v" .. i, actionType and value)
+		frame:SetAttribute(prefix .. "u" .. i, ring.units and ring.units[i])
+	end
+	written[ring.id] = true
+end
+
+-- The healer ring a binding's entry opens: its id, written now (out of combat). nil when the entry can't use Healer
+-- mode, or in combat for a ring not written yet.
+function Rings.HealerRing(entry)
+	if not (entry and Rings.HealerAllowed(entry)) then return end
+	local id = "h" .. tostring(entry.id):gsub("%W", "")
+	if InCombatLockdown() then return written[id] and id or nil end
+	local slots = {}
+	for i = 1, #HEALER_UNITS do slots[i] = entry end
+	local ring = { id = id, name = entry.name, icon = entry.icon, count = #HEALER_UNITS, stick = "dynamic", show = "hold", style = "compact", healer = true, entry = entry, units = HEALER_UNITS, slots = slots }
+	healers[id] = ring
+	setup()
+	write(ring, { [entry.id] = ns.Actions.Find(entry.id) })
+	return id
+end
+
+-- A healer ring by id (View draws it), or nil.
+function Rings.Healer(id) return healers[id] end
 
 local function applyNow()
 	if InCombatLockdown() then
@@ -829,25 +898,12 @@ local function applyNow()
 		frame:SetAttribute("r" .. id .. "h", nil)
 		frame:SetAttribute("r" .. id .. "y", nil)
 		for i = 1, MAX_SLOTS do
-			for _, part in ipairs({ "t", "k", "v" }) do frame:SetAttribute("r" .. id .. part .. i, nil) end
+			for _, part in ipairs({ "t", "k", "v", "u" }) do frame:SetAttribute("r" .. id .. part .. i, nil) end
 		end
 	end
 	written = {}
-	for _, ring in ipairs(Rings.List()) do
-		local prefix = "r" .. ring.id
-		frame:SetAttribute(prefix .. "n", ring.count)
-		frame:SetAttribute(prefix .. "s", ring.stick)
-		frame:SetAttribute(prefix .. "h", ring.show)
-		frame:SetAttribute(prefix .. "y", ring.style)
-		for i = 1, ring.count do
-			local slot = ring.slots[i]
-			local actionType, key, value = Rings.Attributes(slot and index[slot.id])
-			frame:SetAttribute(prefix .. "t" .. i, actionType)
-			frame:SetAttribute(prefix .. "k" .. i, actionType and key)
-			frame:SetAttribute(prefix .. "v" .. i, actionType and value)
-		end
-		written[ring.id] = true
-	end
+	for _, ring in ipairs(Rings.List()) do write(ring, index) end
+	for _, ring in pairs(healers) do write(ring, index) end
 	-- Face's routers by name, as its header lists them: the open snippet finds the one that opened a ring. Read only.
 	local header, k = _G.ForeverControllerTweaksFaceHeader, 0
 	while header and header:GetAttribute("ps-router" .. (k + 1)) do
@@ -860,7 +916,7 @@ local function applyNow()
 	frame:SetAttribute("ps-rstick", right)
 	-- A ring that is no more can't stay open.
 	local open = frame:GetAttribute("ps-ring")
-	if open and not Rings.Get(open) then frame:Execute(CLOSE) end
+	if open and not (Rings.Get(open) or healers[open]) then frame:Execute(CLOSE) end
 	ns.debug("rings: %d written, sticks left %d right %d", #Rings.List(), left, right)
 end
 

@@ -6,7 +6,7 @@
 -- The modifier rows (shoulders, triggers, the paddles this pad has) show each button's role: A opens the role list
 -- (picking a role another button holds swaps the two). A paddle whose role is None gets layer cells like a D-pad row
 -- instead (its role list is in More); giving it a role back keeps those cells, unused. Presets, controller setup, Learn
--- and Reset are in More. The setup guide's custom step runs here in guided mode: one role at a time, chosen by
+-- and Reset are in More, and a focused cell's Healer mode switch first (Face.SetHealer, its badge on the cell). The setup guide's custom step runs here in guided mode: one role at a time, chosen by
 -- pressing the button.
 local _, ns = ...
 local UI = ns.UI
@@ -168,6 +168,7 @@ local function cellTip(cell)
 	if paddle then actions[3] = { "PAD4", L.PADDLE_ROLE } end
 	local lines = { layerLine(cell.code, cell.layer), kind }
 	lines[3] = UI.EntryOff(cell.entry)
+	if cell.entry and cell.entry.healer then lines[#lines + 1] = L.HEALER_ON end
 	return { title = boundName(cell) or L.EMPTY, lines = lines, actions = actions, side = cell.row.left and "left" or "right" }
 end
 
@@ -189,6 +190,28 @@ end
 local function clearCell(cell)
 	if cell and cell.layer then UI.ActionPicker.ClearCell(cell) end
 end
+
+-- More's Healer mode row (Bindings and Touch, first in the list): entry is what the button holds now; toggle() turns
+-- it the other way. Greyed with the reason when that can't use it, or without the Rings module.
+function B.HealerMore(entry, toggle)
+	local on = entry and entry.healer
+	local row = { id = "healer", name = on and L.HEALER_ON or L.HEALER_OFF, atlas = ns.SlotView.BADGE_ATLAS, detail = on and L.HEALER_ON_TIP or L.HEALER_OFF_TIP, run = toggle }
+	local ok, why = true, nil
+	if ns.Rings then ok, why = ns.Rings.HealerAllowed(entry) end
+	if ns.Rings and (on or ok) then return row end
+	row.disabled, row.note, row.detail = true, L.HEALER_KINDS, ns.Rings and L.HEALER_GREY_TIP .. "\n" .. why or L.HEALER_NO_RINGS
+	return row
+end
+
+-- What a Bindings cell holds now: its routed entry, its face action, or its crossbar slot's catalog entry.
+local function cellAction(cell)
+	if cell.entry then return cell.entry end
+	if cell.reserved then return { id = "face:" .. cell.action, kind = "face" } end
+	if not hasAction(cell.slot) then return end
+	local id = ns.Actions.CurrentId(cell.slot)
+	return id and ns.Actions.Find(id) or { id = "other:" }
+end
+
 
 -- A slot cell's art (Bindings, Touch): the native empty slot, the icon under the slot mask, the focus border.
 function B.SlotCell(parent, size, circle)
@@ -235,6 +258,7 @@ local function fillCell(cell, faceAction)
 	cell.pos = cell.reserved and UI.CODE_POS[cell.code] or nil
 	cell.slot = not cell.reserved and storageSlot(cell.code, cell.layer) or nil
 	cell.entry = UI.ActionPicker.CellEntry(cell)
+	ns.SlotView.HealerBadge(cell, not not (cell.entry and cell.entry.healer))
 	cell.icon:SetDesaturated(UI.EntryOff(cell.entry) ~= nil)
 	cell.icon:ClearAllPoints()
 	cell.icon:SetTexCoord(0, 1, 0, 1)
@@ -360,6 +384,11 @@ end
 
 local function report(ok, err)
 	if not ok and err then ns.log(err) end
+end
+
+local function toggleHealer(cell)
+	local entry = cell.entry
+	report(ns.Face.SetHealer(cell.code, cell.layer, not (entry and entry.healer), page))
 end
 
 local function hasActions(phys)
@@ -997,13 +1026,14 @@ local function setup()
 			return true
 		end
 		if key ~= "PAD4" then return end
-		-- More: on a free paddle's cell its role list first, then the presets (the active one ticked), the pages and the
+		-- More: on a cell its Healer mode row first, on a free paddle's cell its role list next, then the presets (the active one ticked), the pages and the
 		-- common entries.
 		local count, entries = pageCount(), {}
 		local region = window.focus and window.focus.region
 		local row = region and region.layer and region.row
 		local paddleRow = row and UI.MOD_CODES[row.code] and row
-		if paddleRow then entries[1] = { id = "paddlerole", name = string.format(L.ROLES_TITLE, UI.Name(paddleRow.code)), detail = L.PADDLE_ROLE_TIP, run = function() openRoles(paddleRow, region) end } end
+		if row then entries[1] = B.HealerMore(cellAction(region), function() toggleHealer(region) end) end
+		if paddleRow then entries[#entries + 1] = { id = "paddlerole", name = string.format(L.ROLES_TITLE, UI.Name(paddleRow.code)), detail = L.PADDLE_ROLE_TIP, run = function() openRoles(paddleRow, region) end } end
 		for _, name in ipairs({ "native", "split" }) do
 			entries[#entries + 1] = { id = name, name = UI.PresetLabel(name), detail = L.PRESET_TIP, live = true, run = function() report(Layout.SetPreset(name)) end }
 		end

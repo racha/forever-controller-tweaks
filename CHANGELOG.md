@@ -1,5 +1,15 @@
 # Changelog
 
+## 1.4.0 — 2026-11-17
+
+### New: Healer mode
+Any button that holds a heal can open a ring of your group: aim at someone and let go to cast on them.
+
+- **On per button:** focus a cell in Bindings (or a touch button in the Touch tab), press **Triangle** and pick **Healer mode: On**. Spells, spell groups and items can use it. A green cross marks the button in the windows and on your crossbar.
+- **The ring:** the game's small round picker on the button you hold, with 7 places in fixed spots: You, Party 1 to 4, Target and Focus. Let go on someone to cast there, in the middle to cast nothing. Dead allies can be picked for a resurrection; a hostile target can't.
+- **Each place** shows the portrait, a health ring in the class colour, the role, incoming heals, shields, heal absorbs, a red pulse under 30% health, and a debuff you can dispel. The person you aim at gets the game's own tooltip.
+- Works on face buttons, the D-pad, paddles, crossbar slots and touch buttons, in combat too. No settings: it always shows while held and aims with the stick for that button.
+
 ## 1.3.0 — 2026-11-15
 
 ### New: the Tweaks tab

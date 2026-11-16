@@ -196,6 +196,24 @@ Radial menus of actions you build yourself. Open the **Rings** tab, or `/fct rin
 - Slots show cooldowns, charges, range and whether they're usable. Rings are shared by all your characters and use no hidden action slots.
 - `/fct ringlog` prints the last ring events. Add those lines to a ring bug report.
 
+## Healer mode
+
+Any button that holds a heal can open a ring of your group instead: aim at someone and let go to cast on them.
+
+- **Turning it on:** in **Bindings** focus the cell and press **Triangle**: **Healer mode: Off** is the first row in More. Pick it to turn it on, and again to turn it off. In the **Touch** tab it works the same on a touch button. A green cross marks the button in Bindings, in Touch and on your crossbar.
+- **What can use it:** spells, spell groups (Highest Rank) and items. Anything else shows the row in grey, with what the button holds.
+- **A crossbar slot:** turning it on keeps the spell where it is. While Healer mode is on, the button opens the ring on every crossbar page. Turn it off and the slot casts on your target again.
+- **Using it:** hold the button. A small round ring opens on it, with the spell in the middle and 7 places: **You** at the top, then **Party 1** to **Party 4**, **Target** and **Focus**, clockwise. In a raid the party places are your own subgroup. Aim with the right stick on a D-pad button or a paddle, the left stick on a face button. The person you aim at gets the gold border and the game's own tooltip. Let go to cast on them; let go in the middle and nothing is cast.
+- **Who can be picked:** anyone there who can be helped, dead allies too (for a resurrection). An empty place, a hostile target or a missing focus can't be picked, and nothing is cast there.
+- **Each place shows** the portrait, a health ring in the class colour, the role icon, and:
+  - incoming heals as a teal stretch after the health;
+  - a shield as a thin outer arc;
+  - a heal absorb as a darker stretch at the end of the health;
+  - a red pulse under 30% health;
+  - a tinted glow and the type icon when they have a debuff you can dispel.
+- **Touch:** a tap opens the ring, a tap on a place casts there.
+- There are no settings: it always shows while held and always aims with the stick for that button. It works in combat; switching it on or off is out of combat. It needs the Rings module.
+
 ## Tweaks
 
 Small conveniences, on the **Tweaks** tab (the last tab). **Each one is off until you turn it on**, they're saved for all your characters, and they work only while the Gamepad UI is on. The tab has four columns; hover or focus a row for its tooltip.

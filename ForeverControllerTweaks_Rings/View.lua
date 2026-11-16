@@ -27,6 +27,12 @@
 -- InputPromptTwoIcon prompt (24 icons, an 8 plus 4 from each, 35 under the centre). The base layer shows none.
 -- View.Wheel / DrawWheel / Highlight / NewSlot / DrawSlot are shared with the Rings tab's preview, which scales the wheel
 -- to fit its box.
+-- Healer rings (Rings.HealerRing, design/healer-mode.md 2-3): the Compact look with a unit in each of the 7 places
+-- instead of an action: round portrait, a radial health ring in the class colour, incoming heals, shield, heal
+-- absorbs, a critical pulse, the role and the dispellable debuff; the aimed unit gets the game's own tooltip. Health,
+-- absorbs and auras are secret: they go straight into widgets (StatusBar values, texture rotations, alphas and vertex
+-- colours), through curves where a shape is needed, never into a comparison or a sum. Only plain answers (does it
+-- exist, can it be helped, dead, class, role) steer the look; a secret one counts as unknown.
 local ns = ForeverControllerTweaks
 local Rings, UI = ns.Rings, ns.UI
 
@@ -220,9 +226,13 @@ local function hideSegment(pool) hideFrom(pool, 0) end
 -- UpdateSelectionIndicators and SetSelection for slot i at theta.
 function View.Highlight(wheel, n, i, desaturated)
 	if wheel.style == "compact" then
-		local view = i and wheel.slots[i]
-		local filled = view and view.file ~= nil
-		for k, other in ipairs(wheel.slots) do other.fly.over:SetShown(k == i and filled) end
+		local view, healer = i and wheel.slots[i], wheel.healer
+		-- A healer place counts as filled while its unit can be helped; it has its own aimed border.
+		local filled = view and (healer and view.pickable or not healer and view.file ~= nil)
+		for k, other in ipairs(wheel.slots) do
+			other.fly.over:SetShown(k == i and filled and not healer)
+			if other.heal then other.heal.over:SetShown(k == i and filled and healer) end
+		end
 		wheel.indicator:SetShown(i ~= nil)
 		wheel.arrow:SetShown(filled)
 		if not i then return end
@@ -439,6 +449,245 @@ local function drawStates(view, withRange)
 end
 
 ---------------------------------------------------------------------------------------------------------------------
+-- A healer place (design/healer-mode.md 3), on its secure slot button, bottom to top: dispel glow, critical glow, slot
+-- ring, portrait, health track, health + incoming heals, heal absorbs, shield arc, skull, dispel icon, aimed border,
+-- role. Sizes in UI units.
+
+local HEAL = { GLOW = 48, CRIT = 52, SLOT = 56, PORTRAIT = 26, METER = 45, SHIELD = 42, SKULL = 16, DISPEL = 12, OVER = 70, ROLE = 13, RIM = 12 }
+local METER_ATLAS = "gamepad-targetingradial-target-meterbg-64"
+local WHITE = "Interface\\Buttons\\WHITE8X8"
+-- Dispel type ids 1-4 (GetAuraDispelTypeColor's curve x), their DEBUFF_TYPE_*_COLOR (the client's GlobalColor table)
+-- and the raid frames' icons.
+local DISPEL = { { "Magic", 0, 129, 255 }, { "Curse", 159, 6, 228 }, { "Disease", 241, 106, 9 }, { "Poison", 123, 199, 0 } }
+local ROLE_ATLAS = { TANK = "groupfinder-icon-role-micro-tank", HEALER = "groupfinder-icon-role-micro-heal", DAMAGER = "groupfinder-icon-role-micro-dps" }
+-- CUF_MY_HEAL_PREDICTION_COLOR, the raid frames' incoming-heal teal; the tooltip bar's green for a unit without a class.
+local MY_HEAL, NO_CLASS, HOSTILE = { 11 / 255, 136 / 255, 105 / 255 }, { 0, 1, 0 }, { 1, 0, 0 }
+local CRITICAL, DIM, DEAD_SHADE, MISSING_ALPHA, PULSE = 0.3, 0.45, 0.55, 0.5, 0.5
+local HEAL_EVERY = 0.5
+local HEAL_EVENTS = {
+	"UNIT_HEALTH", "UNIT_MAXHEALTH", "UNIT_AURA", "UNIT_PORTRAIT_UPDATE", "UNIT_HEAL_PREDICTION", "UNIT_ABSORB_AMOUNT_CHANGED",
+	"UNIT_HEAL_ABSORB_AMOUNT_CHANGED", "UNIT_CONNECTION", "GROUP_ROSTER_UPDATE", "PLAYER_TARGET_CHANGED", "PLAYER_FOCUS_CHANGED",
+}
+
+-- A plain value, or nil for a secret one (a restricted unit's class, role or state).
+local function plain(value)
+	if issecretvalue and issecretvalue(value) then return nil end
+	return value
+end
+
+-- The curves the secret values go through, made once; false where the client lacks them (no rotation, no pulse, no
+-- dispel tint then). rotation: health fraction -> the turn (radians, clockwise) where the health ends; critical: 1
+-- under CRITICAL, else 0; glow: dispel type -> its colour, others clear; icons[i]: type i opaque, others clear.
+local curves
+local function makeCurves()
+	local util, kind = C_CurveUtil, Enum.LuaCurveType
+	local rotation = util.CreateCurve()
+	rotation:SetType(kind.Linear)
+	rotation:AddPoint(0, 0)
+	rotation:AddPoint(1, -2 * math.pi)
+	local critical = util.CreateCurve()
+	critical:SetType(kind.Step)
+	critical:AddPoint(0, 1)
+	critical:AddPoint(CRITICAL, 0)
+	local clear, glow, icons = CreateColor(1, 1, 1, 0), util.CreateColorCurve(), {}
+	glow:SetType(kind.Step)
+	glow:AddPoint(0, clear)
+	glow:AddPoint(#DISPEL + 1, clear)
+	for i, spec in ipairs(DISPEL) do
+		glow:AddPoint(i, CreateColor(spec[2] / 255, spec[3] / 255, spec[4] / 255, 1))
+		local icon = util.CreateColorCurve()
+		icon:SetType(kind.Step)
+		icon:AddPoint(i - 1, clear)
+		icon:AddPoint(i, CreateColor(1, 1, 1, 1))
+		icon:AddPoint(i + 1, clear)
+		icons[i] = icon
+	end
+	return { rotation = rotation, critical = critical, glow = glow, icons = icons }
+end
+
+local function getCurves()
+	if curves == nil then
+		local ok, made = pcall(makeCurves)
+		curves = ok and made or false
+		if not ok then ns.debug("healer curves: %s", tostring(made)) end
+	end
+	return curves
+end
+
+-- Incoming heals, clamped to the missing health, from the heal-prediction calculator; false without one.
+local calculator
+local function getCalculator()
+	if calculator == nil then
+		local ok, made = pcall(function()
+			local calc = CreateUnitHealPredictionCalculator()
+			calc:SetIncomingHealClampMode(Enum.UnitIncomingHealClampMode.MissingHealth)
+			return calc
+		end)
+		calculator = ok and made or false
+	end
+	return calculator
+end
+
+local function centredTex(parent, layer, size, atlas, sub)
+	local t = parent:CreateTexture(nil, layer, nil, sub)
+	t:SetSize(size, size)
+	t:SetPoint("CENTER")
+	if atlas then t:SetAtlas(atlas) end
+	return t
+end
+
+-- A radial StatusBar size wide, its fill masked to a ring (an atlas, or a file); nil where Radial can't be set: the
+-- place then shows the track only.
+local function radialBar(parent, size, level, mask, file)
+	local bar = CreateFrame("StatusBar", nil, parent)
+	bar:SetSize(size, size)
+	bar:SetPoint("CENTER")
+	bar:SetFrameLevel(level)
+	bar:SetStatusBarTexture(WHITE)
+	local mode = Enum.StatusBarRenderMode
+	if not (mode and pcall(bar.SetRenderMode, bar, mode.Radial)) then
+		bar:Hide()
+		return
+	end
+	local m = bar:CreateMaskTexture()
+	m:SetAllPoints(bar)
+	if file then m:SetTexture(mask, CLAMP, CLAMP) else m:SetAtlas(mask) end
+	bar:GetStatusBarTexture():AddMaskTexture(m)
+	bar:SetMinMaxValues(0, 1)
+	bar:SetValue(0)
+	return bar
+end
+
+-- Frames over the slot button, one per depth, so textures and the bars stack in the design's order.
+local function healLayer(button, depth)
+	local f = CreateFrame("Frame", nil, button)
+	f:SetSize(HEAL.OVER, HEAL.OVER)
+	f:SetPoint("CENTER")
+	f:SetFrameLevel(button:GetFrameLevel() + depth)
+	f:EnableMouse(false)
+	return f
+end
+
+local function newHealer(button)
+	local h = { back = healLayer(button, 1), pulse = healLayer(button, 2), mid = healLayer(button, 3), bars = healLayer(button, 4), top = healLayer(button, 9), icons = {} }
+	h.glow = centredTex(h.back, "BACKGROUND", HEAL.GLOW, "gamepad-targetingradial-target-selected-glow")
+	h.glow:SetDesaturated(true)
+	-- Critical: the frame's alpha is the secret 0/1 from the step curve; the texture's own looping animation pulses.
+	h.crit = centredTex(h.pulse, "ARTWORK", HEAL.CRIT, "gamepad-targetingradial-target-incombat")
+	local group = h.crit:CreateAnimationGroup()
+	group:SetLooping("BOUNCE")
+	local fade = group:CreateAnimation("Alpha")
+	fade:SetFromAlpha(0.25)
+	fade:SetToAlpha(1)
+	fade:SetDuration(PULSE)
+	h.critAnim = group
+	h.ring = centredTex(h.mid, "BACKGROUND", HEAL.SLOT, FLY .. "slot-normal")
+	h.portrait = centredTex(h.mid, "ARTWORK", HEAL.PORTRAIT)
+	h.track = centredTex(h.mid, "OVERLAY", HEAL.METER, METER_ATLAS)
+	local level = h.bars:GetFrameLevel()
+	h.health = radialBar(h.bars, HEAL.METER, level, METER_ATLAS)
+	h.incoming = radialBar(h.bars, HEAL.METER, level + 1, METER_ATLAS)
+	h.absorb = radialBar(h.bars, HEAL.METER, level + 2, METER_ATLAS)
+	h.shield = radialBar(h.bars, HEAL.SHIELD, level + 3, UI.ART .. "healer-shield-mask.tga", true)
+	if h.incoming then h.incoming:SetStatusBarColor(MY_HEAL[1], MY_HEAL[2], MY_HEAL[3]) end
+	if h.absorb then
+		h.absorb:SetReverseFill(true)
+		pcall(h.absorb.SetStatusBarTexture, h.absorb, "raidframe-absorb-fill")
+		h.absorb:SetStatusBarColor(1, 1, 1, 0.75)
+	end
+	if h.shield then pcall(h.shield.SetStatusBarTexture, h.shield, "raidframe-shield-fill") end
+	h.skull = centredTex(h.top, "ARTWORK", HEAL.SKULL)
+	h.skull:SetTexture("Interface\\TargetingFrame\\UI-TargetingFrame-Skull")
+	for i, spec in ipairs(DISPEL) do
+		local icon = centredTex(h.top, "ARTWORK", HEAL.DISPEL, "RaidFrame-Icon-Debuff" .. spec[1], 1)
+		icon:SetPoint("CENTER", HEAL.RIM, -HEAL.RIM)
+		h.icons[i] = icon
+	end
+	h.over = centredTex(h.top, "OVERLAY", HEAL.OVER, FLY .. "slot-over-border")
+	h.over:Hide()
+	h.role = centredTex(h.top, "OVERLAY", HEAL.ROLE, nil, 1)
+	h.role:SetPoint("CENTER", -HEAL.RIM, HEAL.RIM)
+	h.frames = { h.back, h.pulse, h.mid, h.bars, h.top }
+	return h
+end
+
+local function showHealer(h, shown)
+	for _, f in ipairs(h.frames) do f:SetShown(shown) end
+	if shown then h.critAnim:Play() else h.critAnim:Stop() end
+end
+
+-- The dispellable debuff (the first one the player can dispel) tints the glow and shows its type's icon. Aura reads
+-- need unit aura access: a failed one leaves the place without a tint.
+local function drawDispel(h, unit, c)
+	local auras = C_UnitAuras.GetUnitAuras(unit, "HARMFUL|RAID", 1)
+	local aura = auras and auras[1]
+	h.glow:SetShown(aura ~= nil)
+	for _, icon in ipairs(h.icons) do icon:SetShown(aura ~= nil) end
+	if not aura then return end
+	local id, get = aura.auraInstanceID, C_UnitAuras.GetAuraDispelTypeColor
+	h.glow:SetVertexColor(get(unit, id, c.glow):GetRGBA())
+	for i, icon in ipairs(h.icons) do icon:SetVertexColor(get(unit, id, c.icons[i]):GetRGBA()) end
+end
+
+-- One place for its unit now. Returns whether the unit can be helped (the secure pick's own test).
+local function drawHealer(h, unit, backdrop)
+	local exists = plain(UnitExists(unit))
+	backdrop:SetAlpha(MISSING_ALPHA)
+	backdrop:SetShown(not exists)
+	showHealer(h, not not exists)
+	if not exists then return false end
+
+	local pickable = not not plain(UnitCanAssist("player", unit))
+	local dead = not not plain(UnitIsDeadOrGhost(unit))
+	local _, class = UnitClass(unit)
+	class = plain(class)
+	local color = not pickable and HOSTILE or class and RAID_CLASS_COLORS[class] or NO_CLASS
+	local dim = pickable and 1 or DIM
+	h.ring:SetAtlas(FLY .. (pickable and "slot-normal" or "slot-disabled"))
+	SetPortraitTexture(h.portrait, unit)
+	h.portrait:SetDesaturated(dead)
+	h.portrait:SetVertexColor(dead and DEAD_SHADE or 1, dead and DEAD_SHADE or 1, dead and DEAD_SHADE or 1)
+	h.skull:SetShown(dead)
+	for _, f in ipairs({ h.portrait, h.track, h.bars }) do f:SetAlpha(dim) end
+	local role = ROLE_ATLAS[plain(UnitGroupRolesAssigned(unit)) or ""]
+	h.role:SetShown(role ~= nil)
+	if role then h.role:SetAtlas(role) end
+	h.role:SetAlpha(dim)
+
+	local c, calc, max = getCurves(), getCalculator(), UnitHealthMax(unit)
+	if h.health then
+		h.health:SetStatusBarColor(color.r or color[1], color.g or color[2], color.b or color[3])
+		h.health:SetMinMaxValues(0, max)
+		h.health:SetValue(UnitHealth(unit))
+	end
+	-- The rotation is secret: never tested, only passed on. Whether there is one follows from the curves.
+	local turn = c and UnitHealthPercent(unit, true, c.rotation)
+	for _, bar in ipairs({ h.incoming, h.absorb }) do
+		bar:SetShown(not dead and not not c)
+		bar:SetMinMaxValues(0, max)
+		if c then bar:GetStatusBarTexture():SetRotation(turn) end
+	end
+	if h.incoming and calc and c then
+		UnitGetDetailedHealPrediction(unit, "player", calc)
+		h.incoming:SetValue((calc:GetIncomingHeals()))
+	end
+	if h.absorb and c then h.absorb:SetValue(UnitGetTotalHealAbsorbs(unit)) end
+	if h.shield then
+		h.shield:SetShown(not dead)
+		h.shield:SetMinMaxValues(0, max)
+		h.shield:SetValue(UnitGetTotalAbsorbs(unit))
+	end
+	h.pulse:SetShown(c and pickable and not dead)
+	if c then h.pulse:SetAlpha(UnitHealthPercent(unit, true, c.critical)) end
+
+	local ok = c and pickable and pcall(drawDispel, h, unit, c)
+	if ok then return pickable end
+	h.glow:Hide()
+	for _, icon in ipairs(h.icons) do icon:Hide() end
+	return pickable
+end
+
+---------------------------------------------------------------------------------------------------------------------
 -- In game: the display frame is the wheel, on the ring frame's centre. Aim, draw and the frame's scripts.
 
 local frame = Rings.Frame()
@@ -448,6 +697,40 @@ display:SetFrameLevel(frame:GetFrameLevel() + 1)
 
 local views = {}
 local drawn, focused, dirty, rangeIn = {}, nil, false, 0
+-- A healer ring: its places are redrawn when one of their events came (healDirty) and every HEAL_EVERY anyway.
+local healDirty, healIn = false, 0
+local healEvents = CreateFrame("Frame")
+healEvents:SetScript("OnEvent", function() healDirty = true end)
+
+local function listenHealer(on)
+	for _, event in ipairs(HEAL_EVENTS) do
+		if on then pcall(healEvents.RegisterEvent, healEvents, event) else healEvents:UnregisterEvent(event) end
+	end
+end
+
+-- The aimed unit's own game tooltip, at the default place; hidden when nothing (or no one) is aimed. GameTooltip is
+-- shared with Blizzard's secure code, so it is touched only while a healer ring shows one.
+local tipUnit
+local function healerTip(i)
+	local unit = i and Rings.HealerUnits[i]
+	if unit and plain(UnitExists(unit)) then
+		GameTooltip_SetDefaultAnchor(GameTooltip, display)
+		GameTooltip:SetUnit(unit)
+		tipUnit = unit
+	elseif tipUnit then
+		tipUnit = nil
+		if GameTooltip:IsOwned(display) then GameTooltip:Hide() end
+	end
+end
+
+local function drawHealers()
+	local ring = drawn.ring
+	for i = 1, ring.count do
+		local view = views[i]
+		if view then view.pickable = drawHealer(view.heal, Rings.HealerUnits[i], display.backdrops[i]) end
+	end
+	if focused and focused > 0 then View.Highlight(display, ring.count, focused, false) end
+end
 -- How the ring shown now was opened ("hold" | "touch"): the close clears the frame's ps-mode before the hide.
 local openMode
 
@@ -460,24 +743,34 @@ local function focus(i)
 	local view = i and views[i]
 	View.Highlight(display, ring and ring.count, ring and i, view and view.cant or false)
 	if i and drawn.mode == "hold" then sound(SOUNDKIT.GAMEPAD_RADIAL_MENU_HIGHLIGHT) end
+	if ring and ring.healer then healerTip(i) end
 end
 
 local function draw(id, mode, side, layer, kind)
-	local ring = Rings.Get(id)
+	local ring = id and (Rings.Get(id) or Rings.Healer(id))
 	drawn = { id = id, mode = mode, side = side, layer = layer, kind = kind, ring = ring }
 	openMode = mode
+	local healer = ring and ring.healer
+	display.healer = healer
+	listenHealer(healer)
+	for _, view in ipairs(views) do
+		view.pickable = nil
+		showHealer(view.heal, false)
+	end
 	if not ring then return end
 	local n = ring.count
 	View.DrawWheel(display, n, ring.style)
 	View.DrawCentre(display, ring.style == "compact" and Rings.Icon(ring), kind == "dpad" and "square" or "circle", layer)
 	for i = 1, Rings.MAX_SLOTS do
 		local view = views[i]
-		local stored = i <= n and ring.slots[i] or nil
+		-- A healer place shows its unit, not the action every place fires.
+		local stored = not healer and i <= n and ring.slots[i] or nil
 		if view then drawSlot(view, stored, Rings.Resolve(stored), n, i, ring.style) end
 	end
+	for _, backdrop in ipairs(display.backdrops) do backdrop:SetAlpha(1) end
 	focused = -1
 	focus(nil)
-	dirty, rangeIn = true, 0
+	dirty, rangeIn, healIn = true, 0, 0
 end
 
 -- The aiming stick as the secure pick reads it (GetGamePadState in the snippet is this call).
@@ -495,6 +788,9 @@ end)
 -- The close keeps ps-aim and ps-aimside: the stick that aimed is held off until it is back in the middle.
 display:SetScript("OnHide", function()
 	if openMode == "hold" then Rings.HoldStick(frame:GetAttribute("ps-aimside") or "right", frame:GetAttribute("ps-aim")) end
+	healerTip(nil)
+	display.healer = nil
+	listenHealer(false)
 	drawn, focused, openMode = {}, nil, nil
 	sound(SOUNDKIT.GAMEPAD_RADIAL_MENU_CLOSE)
 end)
@@ -509,6 +805,14 @@ display:SetScript("OnUpdate", function(_, elapsed)
 	if mode == "hold" then
 		local live = stickSlot(ring.count)
 		focus(live ~= frame:GetAttribute("ps-stale") and live or frame:GetAttribute("ps-pick"))
+	end
+	if ring.healer then
+		healIn = healIn - elapsed
+		if healDirty or healIn <= 0 then
+			healDirty, healIn = false, HEAL_EVERY
+			drawHealers()
+		end
+		return
 	end
 	if dirty then
 		dirty = false
@@ -538,6 +842,8 @@ local function init()
 	for i = 1, Rings.MAX_SLOTS do
 		local button = Rings.Slot(i)
 		views[i] = newSlot(button, display)
+		views[i].heal = newHealer(button)
+		showHealer(views[i].heal, false)
 		-- A finger on a touch ring: the slot under it is focused.
 		button:SetScript("OnEnter", function() if drawn.mode == "touch" then focus(i) end end)
 		button:SetScript("OnLeave", function() if focused == i then focus(nil) end end)

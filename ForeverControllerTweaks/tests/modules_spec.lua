@@ -530,6 +530,30 @@ if has.Rings then
 	display.scripts.OnUpdate(display, 0.3)
 	check(shown(fly .. "base") == 0 and shown(fly .. "slot-backdrop") == 0 and anywhere(fly .. "slot-normal") == 0 and anywhere("gamepad-largecursor") == 0 and shown("gamepad-radial-menu-wheelbg") == #Rings.WheelPieces(8), "ring look: back to Full, the wheel again and no flyout parts")
 	check(not display.centre.shown and mods() == 0, "ring look: Full has nothing in the middle")
+
+	-- A healer ring: Compact, 7 places, one per unit; a missing unit is the dimmed empty socket, a hostile one the
+	-- disabled slot. This client stub has no Radial StatusBar, curves or calculator: the places show the track only.
+	local units = { player = "WARRIOR", party1 = "PRIEST", party3 = "MAGE", target = "hostile" }
+	function UnitExists(unit) return units[unit] ~= nil end
+	function UnitCanAssist(_, unit) return units[unit] ~= nil and units[unit] ~= "hostile" end
+	function UnitIsDeadOrGhost(unit) return unit == "party3" end
+	function UnitClass(unit) return "", units[unit] end
+	function UnitGroupRolesAssigned(unit) return unit == "party1" and "HEALER" or "NONE" end
+	function UnitHealth() return 50 end
+	function UnitHealthMax() return 100 end
+	function SetPortraitTexture() end
+	RAID_CLASS_COLORS = RAID_CLASS_COLORS or { WARRIOR = { r = 0.78, g = 0.61, b = 0.43 }, PRIEST = { r = 1, g = 1, b = 1 }, MAGE = { r = 0.25, g = 0.78, b = 0.92 } }
+	local hid = Rings.HealerRing({ id = "spell:2061", name = "Flash Heal", icon = 9, kind = "spell" })
+	for key, value in pairs({ ["ps-ring"] = hid, ["ps-mode"] = "hold", ["ps-aimside"] = "right", ["ps-pick"] = false, ["ps-kind"] = "dpad" }) do ringFrame:SetAttribute(key, value or nil) end
+	display.scripts.OnUpdate(display, 0.3)
+	local meter = "gamepad-targetingradial-target-meterbg-64"
+	check(hid == "hspell2061" and shown(fly .. "base") == 1 and display.centre.shown and display.centre.shape == "square", "healer look: the flyout base, the spell in the middle in the D-pad cell's square")
+	check(shown(fly .. "slot-backdrop") == 3 and anywhere(fly .. "slot-normal") == 3 and anywhere(fly .. "slot-disabled") == 1 and anywhere(meter) == 4, "healer look: 4 units on their slots and health tracks (the hostile Target disabled), 3 empty sockets")
+	check(anywhere("groupfinder-icon-role-micro-heal") == 1 and anywhere(fly .. "slot-over-border") == 0, "healer look: the healer's role icon, nothing aimed")
+	ringFrame:SetAttribute("ps-ring", 2)
+	ringFrame:SetAttribute("ps-kind", nil)
+	display.scripts.OnUpdate(display, 0.3)
+	check(anywhere(meter) == 0 and anywhere(fly .. "slot-disabled") == 0, "healer look: an ordinary ring after it shows no unit parts")
 	local V = Rings.View
 	local x, y = V.LabelOffset(30)
 	check(select(2, V.LabelOffset(0)) == 60 and V.LabelOffset(90) == 60 and math.abs(x - 20) < 1e-9 and math.abs(y - 50) < 1e-9, "ring look: labels sit at textAnchorData, between its points linearly")

@@ -55,6 +55,8 @@ local BAR_RETRIES = 10
 local ROUTER_SNIPPET = [[
 	local name, layer, slot
 	if down then
+		-- A healer ring's release armed this button with a unit; no other route may cast on it.
+		self:SetAttribute("unit", nil)
 		local state = GetGamePadState()
 		local held = state and state.buttons
 		layer = "top"
@@ -250,19 +252,26 @@ end
 
 local BAR_INDEX = { T = 1, L = 2, R = 3, B = 4 }
 
+-- A cell's storage slot on a crossbar page; nil for the reserved top-bar face slots, the paddles, or without the
+-- Gamepad action bars.
+local function storageSlot(code, layer, page)
+	local util = GamepadActionBarBindingUtil
+	local storage = util and util.GetGamepadStorageSlotIndexFromPageAndPageUnitSlotID
+	if not storage or PADDLES[code] or (layer == "T" and CODE_POS[code]) then return end
+
+	local ok, slot = pcall(storage, page, (BAR_INDEX[layer] - 1) * ns.Actions.PER_BAR + nativeSlot(CODE_KEY[code]))
+	return ok and slot or nil
+end
+
 -- A routed cell applies on every crossbar page, so the cell's storage slots sit under it: shown around the routed entry
 -- and fired natively when the router stands down. page: the page being edited, whose slot is emptied whatever it
 -- holds; on every other page (or without a page) only the addon's own FCT: macros go, never the player's actions.
 -- The reserved top-bar face slots and the paddles have none.
 local function clearUnder(code, layer, page)
-	local util = GamepadActionBarBindingUtil
-	local storage = util and util.GetGamepadStorageSlotIndexFromPageAndPageUnitSlotID
-	if not storage or PADDLES[code] or (layer == "T" and CODE_POS[code]) then return true end
-
 	local Actions = ns.Actions
 	for p = 1, Actions.STANDARD_PAGES do
-		local ok, slot = pcall(storage, p, (BAR_INDEX[layer] - 1) * Actions.PER_BAR + nativeSlot(CODE_KEY[code]))
-		if ok and slot and (p == page and C_ActionBar.HasAction(slot) or Actions.Ours(slot)) then
+		local slot = storageSlot(code, layer, p)
+		if slot and (p == page and C_ActionBar.HasAction(slot) or Actions.Ours(slot)) then
 			local cleared, err = Actions.Clear(slot)
 			if not cleared then return nil, err end
 		end
@@ -303,6 +312,39 @@ function Face.SetCellEntry(code, layer, entry, page)
 		local ok, err = clearUnder(code, layer, page)
 		if not ok then return nil, err end
 	end
+	row[layer] = new
+	list[code] = next(row) and row or nil
+	ns.Fire("FCT_LAYOUT_CHANGED", "layout")
+	return true
+end
+
+-- Healer mode on a cell (Rings.HealerRing): its entry gets healer = true and the cell opens a ring of the group. A cell
+-- without an entry copies the spell or item in its crossbar slot on page (default 1) as an entry with native = true,
+-- and that slot stays as it is: Off drops the copy, so the slot fires natively again. Fires FCT_LAYOUT_CHANGED("layout").
+function Face.SetHealer(code, layer, on, page)
+	if InCombatLockdown() then return nil, "out of combat only" end
+	if not (CODE_KEY[code] and CELL_LAYER[layer]) then return nil, "unknown cell " .. tostring(code) .. " " .. tostring(layer) end
+	if not ns.Rings then return nil, "Healer mode needs the Rings module (Forever Controller Tweaks - Rings) turned on." end
+	local list = cells(true)
+	if not list then return nil, "no controller found" end
+
+	local row = list[code] or {}
+	local entry = row[layer]
+	if not entry and not on then return true end
+	if not entry then
+		local slot = storageSlot(code, layer, page or 1)
+		local found = slot and ns.Actions.Find(ns.Actions.CurrentId(slot) or "")
+		entry = found and { id = found.id, name = found.name, icon = found.icon, kind = ns.Actions.KindOf(found), native = true }
+	end
+	if on then
+		local ok, err = ns.Rings.HealerAllowed(entry)
+		if not ok then return nil, err end
+	end
+
+	local new = {}
+	for key, value in pairs(entry) do new[key] = value end
+	new.healer = on or nil
+	if new.native and not on then new = nil end
 	row[layer] = new
 	list[code] = next(row) and row or nil
 	ns.Fire("FCT_LAYOUT_CHANGED", "layout")
@@ -519,9 +561,12 @@ end
 Face.ModifierIndexes = modifierIndexes
 
 -- How a routed cell runs: ("click", face action), ("hold", our hold button's name: clicked down on the press and up
--- on the release, like a face action), ("ring", ring id) or ("text", secure macro text); nil when the entry no
--- longer resolves.
+-- on the release, like a face action), ("ring", ring id, a healer ring's too) or ("text", secure macro text); nil
+-- when the entry no longer resolves, and for a Healer mode copy without the Rings module (its slot fires natively).
 local function resolve(entry)
+	local healer = entry.healer and ns.Rings and ns.Rings.HealerRing(entry)
+	if healer then return "ring", healer end
+	if entry.native then return end
 	local action = tostring(entry.id):match("^face:(%a+)$")
 	if action then return ACTION_SLOT[action] and "click", action end
 	local hold = tostring(entry.id):match("^hold:(%a+)$")
@@ -646,8 +691,9 @@ local function clearUnderRouted()
 
 	local done = true
 	for code, row in pairs(list) do
-		for layer in pairs(row) do
-			if not clearUnder(code, layer) then done = false end
+		for layer, entry in pairs(row) do
+			-- A Healer mode copy keeps its slot: Off gives the cell back to it.
+			if not entry.native and not clearUnder(code, layer) then done = false end
 		end
 	end
 	return done

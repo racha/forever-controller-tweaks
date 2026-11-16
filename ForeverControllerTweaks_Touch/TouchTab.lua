@@ -8,7 +8,8 @@
 -- numbers are sliders, Shape a dropdown and Empty buttons a checkbox.
 -- The On row is the list's way in from the bars' rows: left/right on it move the focus (a checkbox has no left/right).
 -- Everything goes through ns.Touch: Config (per side under sides.left / sides.right), Set / SetSide, LIMITS,
--- Entry / SetEntry (per layer), Layer, SlotsUsed, Reset; FCT_LAYOUT_CHANGED "touch".
+-- Entry / SetEntry (per layer), SetHealer, Layer, SlotsUsed, Reset; FCT_LAYOUT_CHANGED "touch". Y on a cell: More with
+-- its Healer mode row first.
 local ns = ForeverControllerTweaks
 local UI = ns.UI
 local L = UI.L
@@ -143,6 +144,7 @@ local function fillRow(row)
 		cell.icon:SetTexture(cellEntry and cellEntry.icon or nil)
 		cell.icon:SetDesaturated(UI.EntryOff(cellEntry) ~= nil)
 		cell.icon:SetShown(cellEntry ~= nil)
+		ns.SlotView.HealerBadge(cell, not not (cellEntry and cellEntry.healer))
 	end
 end
 
@@ -153,6 +155,7 @@ local function cellTip(cell)
 	local _, total, full = slots()
 	if full and not entry then lines[#lines + 1] = string.format(L.TOUCH_FULL, total) end
 	lines[#lines + 1] = UI.EntryOff(entry)
+	if entry and entry.healer then lines[#lines + 1] = L.HEALER_ON end
 	return { title = entry and entry.name or L.TOUCH_EMPTY, lines = lines, actions = { { "PAD1", L.CHOOSE_ACTION }, { "PAD3", L.CLEAR_SLOT } }, side = row.side }
 end
 
@@ -383,6 +386,16 @@ local function resetTouch()
 	end })
 end
 
+-- More's Healer mode row for a focused cell, first (UI.Bindings.HealerMore).
+local function healerMore(cell)
+	local row = cell.row
+	local entry = entryOf(row.side, row.index, cell.layer)
+	return UI.Bindings.HealerMore(entry, function()
+		local _, err = ns.Touch.SetHealer(row.side, row.index, cell.layer, not (entry and entry.healer))
+		if err then ns.log(err) end
+	end)
+end
+
 -- Holding modifiers shows their layer in the rows and on the preview.
 local function holdTick()
 	local role = UI.HoldResult(UI.HeldButtons(), ns.Layout.Roles())
@@ -442,7 +455,9 @@ local function build()
 			return true
 		end
 		if key == "PAD4" then
-			UI.OpenMore(window, { { id = "touchreset", name = L.TOUCH_RESET, detail = L.TOUCH_RESET_TIP, run = resetTouch } })
+			local entries = { { id = "touchreset", name = L.TOUCH_RESET, detail = L.TOUCH_RESET_TIP, run = resetTouch } }
+			if region and region.layer then table.insert(entries, 1, healerMore(region)) end
+			UI.OpenMore(window, entries)
 			return true
 		end
 	end

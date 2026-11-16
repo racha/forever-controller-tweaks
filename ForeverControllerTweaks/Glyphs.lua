@@ -10,7 +10,7 @@
 -- D-pad cell of any layer (Face.CellEntry) gets its icon on that cell with a native slot's look, read from the shadow
 -- action slot Face.lua places it in (Face.Slot). Every mirror is a SlotView (SlotView.lua: native slot art, states and
 -- press). Clicks and hover go to Face.lua's catcher (Face.Catcher); the mirror keeps the mouse off. A mirrored slot's
--- prompt is redrawn on top.
+-- prompt is redrawn on top. A Healer mode cell's mirror wears the green-cross badge (SlotView.HealerBadge).
 -- Hiding the native glyph: SetAlpha(0) on its five state textures (Normal, Hover, Pressed,
 -- Active, Disabled), the only kind of write to Blizzard objects. It touches no Lua field or table and no frame, only
 -- texture regions: here of the non-protected icon frames (PageUnit.ModifierIcons, the class-action prompts, the
@@ -415,7 +415,8 @@ local function wantMirror(id, target, source, action, catalog, code, layer)
 	faces[id] = mirrorFace
 	mirrorFace.target, mirrorFace.source, mirrorFace.action, mirrorFace.catalog, mirrorFace.seen = target, source, action, catalog, true
 	mirrorFace.code, mirrorFace.layer, mirrorFace.id = code, layer, id
-	mirrorFace.slot = catalog and ns.Face and ns.Face.Slot and ns.Face.Slot(code, layer) or nil
+	-- A Healer mode copy of a native slot has no shadow slot: the crossbar button's own action (read only) has its states.
+	mirrorFace.slot = catalog and (catalog.native and target.action or ns.Face and ns.Face.Slot and ns.Face.Slot(code, layer)) or nil
 	mirrors[id] = mirrors[id] or newMirror()
 	-- The mirror covers the slot's prompt, so the prompt is drawn again on top.
 	local prompt = target.ButtonIcon
@@ -720,6 +721,7 @@ local function showMirror(mirror, mirrorFace)
 	copyPoints(shadow, mirror.shadow, mirror.body, gen)
 	copyTexture(shadow, mirror.shadow, nil, gen)
 	mirror.text:SetFrameLevel(mirror:GetFrameLevel() + 2)
+	ns.SlotView.HealerBadge(mirror.text, not not (catalog and catalog.healer))
 	if catalog then
 		mirror.clear:Hide()
 		return true

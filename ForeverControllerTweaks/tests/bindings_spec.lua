@@ -61,12 +61,14 @@ b:Refresh()
 p1 = rowOf("P1")
 check(p1.cells[3].entry and p1.cells[3].entry.id == "face:jump" and p1.cells[3].icon.texture == 7, "P1/R shows its routed entry")
 
--- More on a paddle cell: its role list first. Picking a role there asks first (the paddle holds actions).
+-- More on a paddle cell: Healer mode first (greyed: without the Rings module, and the top cell is empty), then its role
+-- list. Picking a role there asks first (the paddle holds actions).
 b:Focus(nodeOf(p1.cells[1]))
 W.press(b, "PAD4")
 local more = pickerRows()
-check(more[1] and more[1].name == "Back paddle 1: role", "More: the paddle's role list first, got " .. tostring(more[1] and more[1].name))
-UI.ActionPicker.Choose(1)
+check(more[1] and more[1].name == "Healer mode: Off" and more[1].note == "Spells and items", "More: Healer mode first, greyed, got " .. tostring(more[1] and more[1].name))
+check(more[2] and more[2].name == "Back paddle 1: role", "More: the paddle's role list next, got " .. tostring(more[2] and more[2].name))
+UI.ActionPicker.Choose(2)
 local roles = pickerRows()
 check(roles[5] and roles[5].name == "None" and roles[5].note == "use it for actions", "role list: None says it frees the paddle for actions")
 UI.ActionPicker.Choose(1)
@@ -76,7 +78,7 @@ check(ns.Layout.Roles().P1 == nil and rowOf("P1").kind == "slot", "Cancel: still
 
 b:Focus(nodeOf(rowOf("P1").cells[1]))
 W.press(b, "PAD4")
-UI.ActionPicker.Choose(1)
+UI.ActionPicker.Choose(2)
 UI.ActionPicker.Choose(1)
 UI.Dialog():Press(1)
 nextFrame()
@@ -96,7 +98,7 @@ check(p1.cells[3].entry and p1.cells[3].entry.id == "face:jump", "the kept cell 
 -- A role on a free paddle without actions: no question.
 b:Focus(nodeOf(rowOf("P2").cells[1]))
 W.press(b, "PAD4")
-UI.ActionPicker.Choose(1)
+UI.ActionPicker.Choose(2)
 UI.ActionPicker.Choose(2)
 nextFrame()
 check(

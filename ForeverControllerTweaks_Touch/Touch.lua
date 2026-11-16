@@ -6,7 +6,7 @@ local ns = ForeverControllerTweaks
 -- the button is empty there (hidden in play, a tap does nothing). Every (button, layer) entry a slot can hold sits on its own
 -- action slot from Actions' shadow allocator (keyboard bars 6-8, empty slots only, shared with routed cells), keyed
 -- ("TL" | "TR") .. layer and the button's index. Nothing is written to a Blizzard frame; the bars hang off our own
--- header under UIParent.
+-- header under UIParent. A layer in Healer mode (healer = true, Touch.SetHealer) opens its healer ring instead (Rings.lua).
 local Touch = {}
 ns.Touch = Touch
 
@@ -239,6 +239,29 @@ function Touch.SetEntry(side, i, entry, layer)
 	return true
 end
 
+-- Healer mode on a button's layer (default T): its spell or item opens a ring of the group (Rings.HealerRing); a tap
+-- opens it, a tap on a slot casts there. Fires FCT_LAYOUT_CHANGED("touch").
+function Touch.SetHealer(side, i, layer, on)
+	layer = layer or "T"
+	if InCombatLockdown() then return nil, COMBAT end
+	if not (validButton(side, i) and IS_LAYER[layer]) then return nil, "unknown touch button " .. tostring(side) .. " " .. tostring(i) .. " " .. tostring(layer) end
+	if not ns.Rings then return nil, "Healer mode needs the Rings module (Forever Controller Tweaks - Rings) turned on." end
+	local entry = Touch.Entry(side, i, layer)
+	if not entry and not on then return true end
+	if on then
+		local ok, err = ns.Rings.HealerAllowed(entry)
+		if not ok then return nil, err end
+	end
+
+	local new = {}
+	for key, value in pairs(entry) do new[key] = value end
+	new.healer = on or nil
+	Touch.Config().bars[side][i][layer] = new
+	apply()
+	ns.Fire("FCT_LAYOUT_CHANGED", "touch")
+	return true
+end
+
 -- The crossbar layer shown now, as a tap would pick it: the held crossbar modifiers (IsKeyDown on their keys, which
 -- allocates nothing, so the display can follow it every frame).
 local leftKey, rightKey = nil, nil
@@ -313,10 +336,14 @@ end
 local function aim(button, side, i, layers, mods, writable)
 	for _, layer in ipairs(LAYERS) do
 		local entry = layers[layer]
-		local slot, text = resolve(side, i, layer, entry, writable)
+		-- Healer mode: the healer ring instead, its slot given back (placed again when it goes off).
+		local healer = entry and entry.healer and ns.Rings and ns.Rings.HealerRing(entry)
+		local slot, text
+		if healer and writable then ns.Actions.ReleaseShadow(slotCode(side, layer), i) end
+		if not healer then slot, text = resolve(side, i, layer, entry, writable) end
 		button:SetAttribute("ps-action-" .. layer, slot)
 		button:SetAttribute("ps-macro-" .. layer, text)
-		button:SetAttribute("ps-ring-" .. layer, entry and tonumber(tostring(entry.id):match("^ring:(%d+)$")) or nil)
+		button:SetAttribute("ps-ring-" .. layer, healer or entry and tonumber(tostring(entry.id):match("^ring:(%d+)$")) or nil)
 		button.slots[layer] = slot
 	end
 	for role, index in pairs(mods) do button:SetAttribute("ps-i" .. role, index) end
@@ -339,6 +366,7 @@ local function draw(button)
 	button.slot = slot
 	button.view:SetSlot(slot, entry and entry.icon)
 	button.view:SetShown(entry ~= nil)
+	ns.SlotView.HealerBadge(button.view.text, not not (entry and entry.healer))
 	button.empty:SetShown(not entry and button.preview)
 end
 

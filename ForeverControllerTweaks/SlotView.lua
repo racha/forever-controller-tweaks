@@ -28,6 +28,23 @@ local PRESS_DS = style.PUSHED_BUTTON_SIZE_OFFSET or -4
 SlotView.PRESS_DY, SlotView.PRESS_DS = PRESS_DY, PRESS_DS
 
 local CLAMP = "CLAMPTOBLACKADDITIVE"
+
+-- The Healer mode badge (design/healer-mode.md 4): Forever's group-finder green cross, 14, out 4 past the frame's top
+-- right, over everything on it. Made on first use; Bindings, Touch and the crossbar mirrors share it.
+local BADGE_ATLAS, BADGE_SIZE, BADGE_OUT = "groupfinder-icon-role-micro-heal", 14, 4
+SlotView.BADGE_ATLAS = BADGE_ATLAS
+function SlotView.HealerBadge(frame, shown)
+	local badge = frame.healerBadge
+	if not badge and not shown then return end
+	if not badge then
+		badge = frame:CreateTexture(nil, "OVERLAY", nil, 7)
+		badge:SetAtlas(BADGE_ATLAS)
+		badge:SetSize(BADGE_SIZE, BADGE_SIZE)
+		badge:SetPoint("TOPRIGHT", frame, "TOPRIGHT", BADGE_OUT, BADGE_OUT)
+		frame.healerBadge = badge
+	end
+	badge:SetShown(shown)
+end
 -- Mask inset (template CircleMask/SquareMask), drop shadow distance (collapsed style), checked distance (set on the
 -- first expand and never reset, so every bar that has been focused shows it).
 local MASK_INSET, SHADOW_DISTANCE, CHECKED_DISTANCE = 3, 4, 4

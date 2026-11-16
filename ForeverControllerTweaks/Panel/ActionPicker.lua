@@ -189,6 +189,7 @@ local function draw()
 			local entry = entryAt(index)
 			r.icon:SetTexture(entry and entry.icon or nil)
 			if not entry then r.icon:SetAtlas("common-icon-redx") end
+			if entry and entry.atlas then r.icon:SetAtlas(entry.atlas) end
 			r.icon:SetDesaturated(entry and entry.disabled or false)
 			r.icon:SetVertexColor(unpack(entry and entry.color or { 1, 1, 1 }))
 			local note, isGroup = entry and entry.note, entry and entry.ranks ~= nil
@@ -293,6 +294,12 @@ local lastClear
 function Picker.ClearCell(t)
 	if InCombatLockdown() then return end
 	local entry = Picker.CellEntry(t)
+	-- A Healer mode copy goes with the action in the slot under it.
+	if entry and entry.native and t.slot then
+		local ok, err = setEntry(t, nil)
+		if not ok then return report(ok, err) end
+		entry = nil
+	end
 	if entry or t.pos or t.touch or t.ring then
 		lastClear = { target = t, entry = entry }
 		return report(setEntry(t, nil))
@@ -439,7 +446,7 @@ end
 -- opts = { window, cell, code, layer, slot = storage slot, pos = base face position, touch, ring }; onDone after a change.
 -- Onboarding passes only pos: that is the base (top bar) layer of the face button.
 -- List mode: opts = { window, cell (focus returns there), list = { title, entries, current = id, onPick(entry) },
--- point = an anchor instead of beside the cell }. Entries: { id, name, icon, color, note, live, detail, disabled }.
+-- point = an anchor instead of beside the cell }. Entries: { id, name, icon (or atlas), color, note, live, detail, disabled }.
 function Picker.Open(opts)
 	if InCombatLockdown() then return end
 	if not frame then create() end

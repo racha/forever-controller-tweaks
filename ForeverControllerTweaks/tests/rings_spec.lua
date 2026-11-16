@@ -2,7 +2,8 @@
 -- Rings.lua with the real Core, Layout, Face, Actions and Touch: the stick -> slot pick for 4 and 8 slots and the dead
 -- zone, the per-slot attributes for every entry kind, the ring's restricted snippets run in a strict stub environment
 -- (open, release pick, toggle, slot tap, catcher, guard), a ring on a routed face cell and on a touch button, in
--- combat too, deleting a ring clearing every binding, and the db repair.
+-- combat too, Healer mode (kinds, attributes, units, pick skips, native copy and its undo, touch), deleting a ring
+-- clearing every binding, and the db repair.
 local here = (arg and arg[0] or ""):match("^(.*)[/\\]") or "."
 local dir = here .. "/.."
 
@@ -18,6 +19,10 @@ local function renv(control)
 end
 -- The ring frame's environment holds only what WoW's restricted one gives these snippets: a missing name fails.
 local RESTRICTED = { math = math, select = select, tostring = tostring, tonumber = tonumber, format = string.format, GetGamePadState = function() return GetGamePadState() end }
+-- Units for Healer mode: W.units[token] = "friend" | "dead" | "hostile", missing when absent.
+W.units = {}
+function RESTRICTED.UnitExists(unit) return W.units[unit] ~= nil end
+function RESTRICTED.PlayerCanAssist(unit) return W.units[unit] == "friend" or W.units[unit] == "dead" end
 local function strictEnv()
 	return setmetatable({}, { __index = function(_, k)
 		local v = RESTRICTED[k]
@@ -243,8 +248,9 @@ ns.Device = { Current = function() return { key = "054c/0ce6" } end, SwapTargets
 ns.SlotView = { New = function(parent)
 	local view = frame(nil, nil, parent)
 	function view:SetSlot(slot, icon) self.slot, self.fallback = slot, icon end
+	view.text = frame(nil, nil, view)
 	return view
-end }
+end, HealerBadge = function(f, shown) f.badge = shown end }
 for _, file in ipairs({ "Face.lua", "Actions.lua" }) do loadAddonFile(file) end
 -- Remap's hold, recorded: a held ring holds it from its open until its CVar is back.
 local holds = {}
@@ -1029,6 +1035,96 @@ local catcher = frames.ForeverControllerTweaksRingCatcher
 secure(run, catcher.env, "self,button,down", catcher.attrs._onclick, catcher, "LeftButton", false)
 check(not ring.shown, "touch: a tap outside closes")
 W.combat = false
+
+-- Healer mode (design/healer-mode.md): spells, spell groups and items only; a 7-place ring per binding, always Hold,
+-- Dynamic, Compact, each place on its unit; a native crossbar cell copies its slot's spell and gives it back when off.
+check(Rings.HealerAllowed(Actions.Find("spell:133")) and Rings.HealerAllowed(Actions.Find("spellgroup:Holy Light")) and Rings.HealerAllowed(Actions.Find("item:6948")), "healer: spells, spell groups and items can")
+check(select(2, Rings.HealerAllowed(Actions.Find("mount:7"))) == "This button holds a mount." and select(2, Rings.HealerAllowed(Actions.Find("game:sit"))) == "This button holds a game action." and select(2, Rings.HealerAllowed(nil)) == "This button is empty.", "healer: other kinds and an empty button can't, with why")
+check(select(2, ns.Face.SetHealer("FB", "T", true)) == "This button holds a ring." and not ns.Face.CellEntry("FB", "T").healer, "healer: refused on a ring cell, nothing changed")
+W.combat = true
+check(select(2, ns.Face.SetHealer("FB", "T", false)) == "out of combat only", "healer: switched out of combat only")
+W.combat = false
+
+-- Shadow slots (Actions.lua, its own spec) stand in: a spell placed on one is slot 150.
+local shadow, releaseShadow = Actions.Shadow, Actions.ReleaseShadow
+Actions.Shadow, Actions.ReleaseShadow = function() return 150 end, function() return true end
+local storage = {}
+GamepadActionBarBindingUtil = { GetGamepadStorageSlotIndexFromPageAndPageUnitSlotID = function(page, id) return 181 + (page - 1) * 32 + id end }
+C_ActionBar.HasAction = function(slot) return storage[slot] ~= nil end
+function GetActionInfo(slot) local a = storage[slot]; if a then return a[1], a[2] end end
+storage[183] = { "spell", 133 }
+check(select(2, ns.Face.SetHealer("DU", "T", true, 2)) == "This button is empty." and ns.Face.CellEntry("DU", "T") == nil, "healer: an empty native slot can't")
+assert(ns.Face.SetHealer("DU", "T", true, 1))
+local copy = ns.Face.CellEntry("DU", "T")
+check(copy and copy.id == "spell:133" and copy.healer and copy.native and storage[183], "healer: a native cell copies its slot's spell, the slot kept")
+local hid = "hspell133"
+check(dpad.attrs["ps-ring-top"] == hid and W.bindings.PADDUP, "healer: the D-pad cell opens its healer ring")
+local hp, units = "r" .. hid, true
+for i, unit in ipairs(Rings.HealerUnits) do units = units and ring.attrs[hp .. "u" .. i] == unit and ring.attrs[hp .. "t" .. i] == "spell" and ring.attrs[hp .. "v" .. i] == 133 end
+check(ring.attrs[hp .. "n"] == 7 and ring.attrs[hp .. "s"] == "dynamic" and ring.attrs[hp .. "h"] == "hold" and ring.attrs[hp .. "y"] == "compact" and units and ring.attrs[hp .. "u8"] == nil, "healer: 7 places on You, Party 1-4, Target, Focus, all the spell, Hold, Dynamic, Compact")
+check(Rings.Healer(hid).healer and Rings.Healer(hid).icon == copy.icon, "healer: the ring the display draws")
+
+-- In combat: a release on a unit casts there; missing, hostile, centred: nothing. Dead allies stay pickable.
+W.units = { player = "friend", party1 = "friend", party3 = "dead", target = "hostile" }
+W.combat = true
+local STEP = 360 / 7
+local function heal(at)
+	aim(0, 0)
+	press("PADDUP", true)
+	if at then aim(at) end
+	return press("PADDUP", false)
+end
+check(heal(0) == "spell 133" and dpad.attrs.unit == "player" and dpad.attrs.checkselfcast == nil and dpad.attrs.checkmouseovercast == nil, "healer: You, cast on the player, no self/mouseover cast checks")
+check(heal(STEP) == "spell 133" and dpad.attrs.unit == "party1" and not ring.shown, "healer: Party 1")
+check(heal(3 * STEP) == "spell 133" and dpad.attrs.unit == "party3", "healer: a dead ally is pickable")
+check(heal(2 * STEP) == nil and not ring.shown and not next(W.prio), "healer: a missing Party 2, nothing cast, the ring closes")
+check(heal(5 * STEP) == nil and heal(6 * STEP) == nil and heal() == nil and not ring.shown, "healer: hostile Target, no Focus, the centre: nothing")
+aim(0, 0)
+press("PADDUP", true)
+check(dpad.attrs.unit == nil, "healer: the next press takes the unit off the button")
+aim(STEP)
+press("PADRSTICKRIGHT", true)
+check(ring.attrs["ps-pick"] == 2, "healer: a stick key keeps Party 1")
+aim(5 * STEP)
+press("PADRSTICKLEFT", true)
+check(ring.attrs["ps-pick"] == nil, "healer: rolled on to the hostile Target, the kept pick is dropped")
+aim(0, 0)
+check(press("PADDUP", false) == nil and not ring.shown, "healer: then let go, nothing cast")
+check(Rings.HealerRing(Actions.Find("item:6948")) == nil and Rings.HealerRing(copy) == hid, "healer: in combat no new ring is written; a written one still opens")
+W.combat = false
+secure(ring.RunAttribute, ring, "_open", heals.id, "touch")
+check(frames.ForeverControllerTweaksRingSlot1.attrs.unit == nil and frames.ForeverControllerTweaksRingSlot1.attrs.checkselfcast == true, "healer: an ordinary ring's slot has no unit, cast checks on")
+secure(ring.RunAttribute, ring, "_close")
+
+-- Off: the copy goes, the cell is native again; a routed entry keeps its action.
+assert(ns.Face.SetHealer("DU", "T", false))
+check(ns.Face.CellEntry("DU", "T") == nil and dpad.attrs["ps-ring-top"] == nil and storage[183], "healer off: the copy is dropped, the slot fires natively again")
+assert(ns.Face.SetCellEntry("FB", "T", Actions.Find("spell:133")))
+assert(ns.Face.SetHealer("FB", "T", true))
+check(ns.Face.CellEntry("FB", "T").healer and router.attrs["ps-ring-top"] == hid, "healer: a routed spell cell opens the ring")
+assert(ns.Face.SetHealer("FB", "T", false))
+check(ns.Face.CellEntry("FB", "T").id == "spell:133" and not ns.Face.CellEntry("FB", "T").healer and router.attrs["ps-ring-top"] == nil, "healer off: a routed cell keeps its spell")
+assert(ns.Face.SetCellEntry("FB", "T", ringEntry))
+GamepadActionBarBindingUtil = nil
+C_ActionBar.HasAction = function() return false end
+function GetActionInfo() end
+
+-- A touch button: a tap opens the healer ring; a tapped place casts on its unit, a missing one does nothing.
+assert(ns.Touch.SetEntry("left", 2, Actions.Find("spell:133")))
+check(select(2, ns.Touch.SetHealer("left", 1, "T", true)) == "This button holds a ring.", "touch healer: refused on a ring")
+assert(ns.Touch.SetHealer("left", 2, "T", true))
+local touch2 = ns.Touch.Button("left", 2)
+check(touch2.attrs["ps-ring-T"] == hid and touch2.attrs["ps-action-T"] == nil and touch2.view.text.badge, "touch healer: the button opens the healer ring and wears the badge")
+W.combat = true
+click(touch2, true)
+check(ring.shown and click(frames.ForeverControllerTweaksRingSlot3, false) == false and ring.shown, "touch healer: a missing Party 2 tapped: nothing, still open")
+check(click(slot1, false) == "spell 133" and slot1.attrs.unit == "player" and not ring.shown, "touch healer: You tapped: cast on the player, closed")
+W.combat = false
+assert(ns.Touch.SetHealer("left", 2, "T", false))
+check(touch2.attrs["ps-ring-T"] == nil and touch2.attrs["ps-action-T"] and not ns.Touch.Entry("left", 2).healer and not touch2.view.text.badge, "touch healer off: the spell on its slot again, no badge")
+assert(ns.Touch.SetEntry("left", 2, nil))
+Actions.Shadow, Actions.ReleaseShadow = shadow, releaseShadow
+W.units = {}
 
 -- Renames and icons follow on every binding; deleting a ring clears every binding to it, every character.
 assert(Rings.Rename(heals.id, "Big heals"))

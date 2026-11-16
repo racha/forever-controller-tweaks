@@ -170,6 +170,33 @@ Turn each tweak on in the **Tweaks** tab, try it, then turn it off again. Every 
 4. Disable this addon and restart: Controller Forever's own setup is back and works.
 5. Report what you saw, with the `/fct selftest` lines.
 
+## M. Healer mode
+
+Best in a party of five, then in a raid group. Turn on `/console taintLog 2` first.
+
+1. **Switch:** in **Bindings**, focus a cell holding a heal and press **Triangle**. **Healer mode: Off** is the first row in More, with the green cross. Pick it: More closes and the cell gets the green cross at its top right. Its tooltip says **Healer mode: On**. Triangle again shows **Healer mode: On**; picking it turns it off.
+   - Do this on a face cell's base layer, a D-pad cell, a cell on a modifier layer (a native crossbar slot), a paddle without a role, and a touch button (**Touch** tab, Triangle on a cell).
+   - On a mount, a macro, a game action and an empty cell the row is grey with **Spells and items**; its tooltip says what the button holds. Picking it changes nothing.
+   - Turn it on for a native crossbar cell, then off: the slot's spell is still there and casts on your target again.
+2. **In play:** the crossbar cell (and the touch button) shows the same green cross.
+3. **The ring:** hold the button. A small round ring opens on that crossbar button, with the spell in the middle: You at the top, then Party 1 to 4, Target and Focus clockwise. Each place has the unit's round portrait, a health ring in its class colour and its role icon. An empty place is a dim empty socket.
+   - It aims with the right stick on a D-pad button and a paddle, the left stick on a face button.
+   - Aim at someone: the gold border, the indicator and the arrow point at them, and the game's own tooltip for that unit shows at the bottom right.
+   - Let go: the spell lands on that unit, not on your target. Let go in the middle: nothing is cast.
+   - Aim at an empty place, a hostile target or no focus: no border or arrow, nothing cast. A hostile target's place is grey and dim, its ring red, and the tooltip still names it.
+   - A dead ally is grey with a skull, and can be picked: a resurrection lands on them.
+   - On a touch button: a tap opens the ring, a tap on a place casts there, a tap on an empty place does nothing.
+4. **In combat:** repeat 3. The health rings move as people take damage and get healed, and party changes in combat follow.
+5. **Health ring extras** (all new and checked here first):
+   - **Health:** the ring fills clockwise from the top. Note if it starts elsewhere or runs the other way.
+   - **Incoming heals:** start a slow heal on someone: a teal stretch continues the health ring and never runs past the top.
+   - **Shield:** shield someone (Power Word: Shield): a thin outer arc from the top.
+   - **Heal absorb:** if a fight puts a heal absorb on someone, a darker stretch at the end of their health.
+   - **Critical:** under 30% health a red glow behind the place pulses about once a second; above 30% it's gone.
+   - **Dispel:** on a class that can dispel, a debuff you can remove gives the place a tinted glow and its type icon (Magic blue, Curse purple, Disease orange, Poison green) at its bottom right. On a class that can't, no tint.
+6. Take screenshots of the ring with a full party, in combat, and with one of each extra.
+7. After all of the above, `/reload`. `Logs/taint.log` has no line naming ForeverControllerTweaks; write down any that does (above all one near GameTooltip or the healer ring).
+
 ## Reporting results
 
 In a pull request or issue, list the parts you ran and the controllers you used, and say whether `taint.log` was clean. Attach screenshots of anything that looks wrong, with character names and chat cropped out.
