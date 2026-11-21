@@ -52,7 +52,7 @@ local function boot(db)
 	ForeverControllerTweaksDB = db
 	local ns = {}
 	assert(loadfile(dir .. "/Core.lua"))("ForeverControllerTweaks", ns)
-	ns.Layout = { RepairDevice = function(entry) return entry, {} end, RepairProfile = function(profile) return profile, {} end }
+	ns.Layout = { RepairDevice = function(entry) return entry, {} end, RepairProfile = function(profile) return profile, {} end, Same = function() return true end }
 	ns.Device = { Current = function() return W.pad end }
 	assert(loadfile(dir .. "/Profile.lua"))("ForeverControllerTweaks", ns)
 	assert(loadfile(dir .. "/Face.lua"))("ForeverControllerTweaks", ns)
@@ -194,15 +194,16 @@ do
 	local waiting = { touch = { bars = buttons } }
 	ns.MoveTouchBars({ profiles = {} }, waiting)
 	check(waiting.touch.bars == buttons and waiting.touchBars == nil, "no profile: nothing moved, nothing lost")
-	W.pad = { key = "054c/0ce6" }
-	ns.db.deviceProfile["054c/0ce6"] = { id = "p1", at = 0 }
+	check(ann.profiles.p1.name == "A" and ann.profiles.p2.name == "B" and ann.profiles.p3 == nil and bob.profiles.p2, "db 5: each record gets the profiles its buttons are in, no tombstone")
+	check(ns.db.profiles == nil and ns.db.deviceProfile == nil and ns.db.lastLayout, "db 5: the account profiles are gone, the last layout kept")
+	W.guid = "Ann-R"
 	local fresh = ns.Profile.New("C")
-	check(ann.touchBars[fresh] == nil and ann.cells == nil, "a new profile: no bindings, no touch buttons")
+	check(ann.touchBars[fresh] == nil and ann.cells == nil and ann.profiles[fresh] and bob.profiles[fresh] == nil, "a new profile: this character's only, no bindings, no touch buttons")
 	local copied = ns.Profile.Copy("p1", "D")
 	check(ann.touchBars[copied].left[1].T.id == "spell:1" and ann.touchBars[copied] ~= ann.touchBars.p1, "Copy copies the touch buttons")
-	ns.Profile.Forget("p2", 0)
-	check(ann.touchBars.p2 == nil and bob.touchBars.p2 == nil and ann.touchBars.p1 ~= nil, "Delete drops that profile's touch buttons, every character")
-	W.pad = nil
+	ns.Profile.Forget("p2")
+	check(ann.touchBars.p2 == nil and ann.profiles.p2 == nil and bob.touchBars.p2 and bob.profiles.p2 and ann.touchBars.p1 ~= nil, "Delete drops this character's profile and touch buttons, never another's")
+	W.guid = "Player-1-0001"
 end
 
 -- The user's real shape: House- (newest: 7 cells, touch on, 3 touch buttons) and House-CAMWOWEU4Realm7PvE, both with
@@ -242,6 +243,71 @@ do
 	check(ns2.db.chars["Player-1-MAGE"].rings == nil, "real data: the mage still has no rings")
 	check(ns2.db.macros["FCT:Bags"].chars["Player-1-PALADIN"] and ns2.db.macros["FCT:Bags"].chars["House-"] == nil, "real data: the account macro the old record used is the Paladin's now")
 	W.guid, W.known = "Player-1-0001", {}
+end
+
+-- 1.5.4: the user's real 1.5.3 store (21:36). Account profiles picked per pad id: the Warlock's pads all on "Warlock",
+-- Steam's 0001/11fb on the DualSense profile, two tombstones. After the update each character owns its profiles: the
+-- Warlock plays on "Warlock" whatever id the pad reports, the old House records each get the DualSense profile and keep
+-- it for the Paladin's claim, and a new character starts on Default with the last layout and no bindings.
+do
+	local DS, WL = "054c/0ce6", "p1795273533"
+	local function e(id) return { id = id, name = id } end
+	local db = { version = 4, lastProfile = WL,
+		profiles = {
+			[WL] = { name = "Warlock", roles = { L1 = "rightmod", L2 = "leftmod" }, face = {} },
+			[DS] = { name = "DualSense Wireless Controller", roles = {}, face = {} },
+			["045e/028e"] = { name = "Profile 1", roles = {}, face = {} },
+			["0001/11fb"] = { gone = true }, ["3537/1116"] = { gone = true },
+		},
+		deviceProfile = { [DS] = { id = WL, at = 5 }, ["045e/028e"] = { id = WL, at = 5 }, ["3537/1116"] = { id = WL, at = 5 }, ["0001/11fb"] = { id = DS, at = 5 } },
+		sync = { pads = { [DS] = "DualSense Wireless Controller" } },
+		chars = {
+			["Player-6941-WARLOCK"] = { name = "House", cells = { [WL] = { FR = { T = e("spell:686"), L = e("face:back") }, FT = { T = e("spell:348") }, DU = { B = e("game:zoomin") }, DD = { B = e("game:zoomout") } } } },
+			["House-"] = { cells = { [DS] = { FB = { T = e("spell:20271") }, FR = { T = e("spellgroup:Holy Light") }, FL = { T = e("spell:19750") }, DL = { T = e("game:bags") }, DR = { T = e("spell:20271") } } },
+				touchBars = { [DS] = { left = { { T = e("spell:19750") }, { T = e("spellgroup:Holy Light") } }, right = { { T = e("spell:20271") } } } } },
+			["House-CAMWOWEU4Realm7PvE"] = { cells = { [DS] = { FB = { R = e("spellgroup:Holy Light") }, FT = { T = e("spell:20271") }, DU = { T = e("spell:19750") }, DD = { T = e("spell:20271") } } } },
+		},
+	}
+	W.name, W.guid, W.known, W.pad = "House", "Player-6941-WARLOCK", spells({ "spell:686", "spell:348" }), { key = DS }
+	local ns, fire = boot(db)
+	fire("PLAYER_LOGIN")
+	fire("PLAYER_ENTERING_WORLD")
+	local P, chars = ns.Profile, ns.db.chars
+	local wl = chars["Player-6941-WARLOCK"]
+	check(ns.db.version == 5 and ns.db.profiles == nil and ns.db.deviceProfile == nil and ns.db.lastProfile == nil, "real 1.5.3: the account profiles and picks are gone")
+	check(ns.db.lastLayout and ns.db.lastLayout.roles.L1 == "rightmod", "real 1.5.3: the last layout is the Warlock profile's")
+	check(wl.profile == WL and wl.profiles[WL].name == "Warlock" and wl.profiles[DS] == nil and wl.profiles["045e/028e"] == nil, "real 1.5.3: the Warlock owns Warlock only")
+	for _, key in ipairs({ DS, "045e/028e", "0001/11fb", "3537/1116", "2dc8/6001" }) do
+		W.pad = { key = key }
+		ns.Fire("FCT_LAYOUT_CHANGED", "device")
+		check(P.CurrentId() == WL and P.Current().name == "Warlock", "real 1.5.3: the Warlock on Warlock with pad " .. key)
+		check(ns.Face.CellEntry("FR", "T").id == "spell:686" and ns.Face.CellEntry("FR", "L").id == "face:back" and ns.Face.CellEntry("FT", "T").id == "spell:348" and ns.Face.CellEntry("DU", "B").id == "game:zoomin" and ns.Face.CellEntry("DD", "B").id == "game:zoomout", "real 1.5.3: Shadow Bolt, Back, Immolate, Zoom in and out with pad " .. key)
+	end
+	for _, old in ipairs({ "House-", "House-CAMWOWEU4Realm7PvE" }) do
+		local record = chars[old]
+		check(record.profile == DS and record.profiles[DS].name == "DualSense Wireless Controller" and record.profiles["p1795273533"] == nil, "real 1.5.3: " .. old .. " keeps the DualSense profile for its claim")
+	end
+	check(chars["House-"].profiles[DS] ~= chars["House-CAMWOWEU4Realm7PvE"].profiles[DS], "real 1.5.3: copies, not one shared table")
+	P.MoveToChars(ns.db)
+	check(wl.profile == WL and chars["House-"].profile == DS and not ns.db.profiles, "real 1.5.3: the migration again changes nothing")
+
+	-- The Paladin's first login: Default first (the spellbook isn't there), then the claim brings the DualSense profile
+	-- and the Paladin plays on it.
+	W.guid, W.known = "Player-6941-PALADIN", {}
+	local ns2, fire2 = boot(ns.db)
+	fire2("PLAYER_LOGIN")
+	fire2("PLAYER_ENTERING_WORLD")
+	local P2 = ns2.Profile
+	P2.Ensure()
+	local pal = ns2.db.chars["Player-6941-PALADIN"]
+	check(P2.Current().name == "Default" and P2.Current().roles.L1 == "rightmod" and pal.cells == nil and pal.touchBars == nil, "new character: Default with the last layout, no bindings")
+	W.known = spells({ "spell:20271", "spellgroup:Holy Light", "spell:19750" })
+	fire2("FCT_CATALOG_CHANGED", "SPELLS_CHANGED")
+	check(ns2.db.chars["House-"] == nil and ns2.db.chars["House-CAMWOWEU4Realm7PvE"] == nil, "real 1.5.3: the Paladin claims both House records")
+	check(P2.CurrentId() == DS and P2.Current().name == "DualSense Wireless Controller" and pal.profiles.p1.name == "Default", "real 1.5.3: the claim carries the profile, the Paladin plays on it")
+	check(ns2.Face.CellEntry("FB", "T").id == "spell:20271" and ns2.Face.CellEntry("FB", "R").id == "spellgroup:Holy Light" and #pal.touchBars[DS].left == 2, "real 1.5.3: the Paladin's bindings and touch buttons on it")
+	check(ns2.db.chars["Player-6941-WARLOCK"].profile == WL and ns2.db.chars["Player-6941-WARLOCK"].profiles[DS] == nil, "real 1.5.3: the Warlock never sees the Paladin's profiles")
+	W.guid, W.known, W.pad = "Player-1-0001", {}, nil
 end
 
 io.write(("char_spec: %d checks passed\n"):format(passed))

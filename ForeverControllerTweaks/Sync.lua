@@ -2,13 +2,13 @@
 -- read at login and written when they change; and the codec of /fct export and /fct import.
 --
 -- Sections (design 3.1), each one unit with its own server-time stamp (nothing inside a section is merged): options
--- (the ring marker in it), tweaks, keyboard, setup, dev:<pad> (a controller's hardware), prof:<id> (a profile: name,
--- roles, face, or gone), b:<GUID>:<profile id> (bindings), t:<GUID> (the touch bars' layout),
--- tb:<GUID>:<profile id> (touch buttons, { bars = { left, right } }), r:<GUID> (the
--- character's rings; met for the first time, the union of both by ring id); and two merged per entry (the union, the
--- newer entry wins): p:<GUID>, the bars 6-8 slots the addon placed on any machine (Actions.lua), and map, the
--- profile each controller uses (Profile.lua). Format 1 (before profiles) kept roles and face in dev:<pad> and keyed
--- bindings by pad: it is read as the profile migration reads an old store. Local or derived state never syncs: the debug log, the macro registries and shadow records (which
+-- (the ring marker in it), tweaks, keyboard, setup, dev:<pad> (a controller's hardware), cp:<GUID> (the character's
+-- profiles and the one it plays on: { profiles = { [id] = { name, roles, face } }, profile }), b:<GUID>:<profile id>
+-- (bindings), t:<GUID> (the touch bars' layout), tb:<GUID>:<profile id> (touch buttons, { bars = { left, right } }),
+-- r:<GUID> (the character's rings; met for the first time, the union of both by ring id); and one merged per entry
+-- (the union, the newer entry wins): p:<GUID>, the bars 6-8 slots the addon placed on any machine (Actions.lua).
+-- 1.5.1-1.5.3's account profiles (prof:<id>) and per-controller picks (map) are never read or written. Local or
+-- derived state never syncs: the debug log, the macro registries and shadow records (which
 -- cell holds which slot; the take-back rebuilds them), ringLast and the healer last target, What's new, the keyboard's
 -- learned words, Rings' saved stick CVar.
 -- Wire: a sorted-key text form (CBOR's map order isn't stable, and the base comparisons need one string per state),
@@ -18,7 +18,7 @@
 -- State, this machine only: ns.db.sync = { on (nil = on, false = off here), id, base, stamps, marks, last, wrote,
 -- backup, paused, need, pads }. base[key] is the section as this machine and the macros last agreed on it.
 -- Merge per section at login (design 4): R absent: keep L; L absent or empty and never synced: take R; equal: agree;
--- L == base: take R; R == base: keep L; both changed: the newer stamp wins (a tie keeps L); p: and map take the union
+-- L == base: take R; R == base: keep L; both changed: the newer stamp wins (a tie keeps L); p: takes the union
 -- of both (it goes out again when it differs from R) and never ask. A first sync on a machine
 -- with its own bindings or rings asks once (Sync.Choice, the panel's dialog). Replaced sections go to backup (Undo).
 -- Writes and applies run out of combat with the pad free (ns.whenPadFree), never while a ring is open, a slot write
@@ -59,11 +59,12 @@ local L = {
 }
 Sync.L = L
 
--- 2 (1.5.1): profiles. 3 (1.5.2): rings per character (r:), touch buttons per profile (tb:). An older machine pauses on
--- a newer one ("newer") and writes nothing; a format 2 set reads here without its account rings section and its
--- name-keyed ones (a format 2 export still imports: its rings go to this character, its touch buttons to this
--- controller's profile).
-local FORMAT, MAX_PARTS, BODY_MAX = 3, 20, 255
+-- 2 (1.5.1): profiles. 3 (1.5.2): rings per character (r:), touch buttons per profile (tb:). 4 (1.5.4): profiles per
+-- character (cp:), no account profiles or controller picks. An older machine pauses on a newer one ("newer") and writes
+-- nothing; a format 2 or 3 set reads here without its account sections (rings, prof:, map) and its name-keyed ones (an
+-- older export still imports: its rings go to this character, its touch buttons and layout to this character's
+-- profile).
+local FORMAT, MAX_PARTS, BODY_MAX = 4, 20, 255
 local HEADER = "#FCT%d %d/%d %s "
 -- The gen is the write's server time since GEN_EPOCH (2025-01-01) in base36: 6 letters until 2094. The header is
 -- then at most 19 letters ("#FCT1 20/20 " and the gen and a space).
@@ -103,8 +104,8 @@ local function bindingsKey(key)
 	local name, id = key:match("^b:(.+):([^:]+)$")
 	if name and isId(id) then return name, id end
 end
--- The character a per-character section belongs to (b:, t:, p:), else nil.
-local function charOfKey(key) return key:match("^t?b:(.+):[^:]+$") or key:match("^[tpr]:(.+)$") end
+-- The character a per-character section belongs to (b:, tb:, t:, p:, r:, cp:), else nil.
+local function charOfKey(key) return key:match("^t?b:(.+):[^:]+$") or key:match("^[tpr]:(.+)$") or key:match("^cp:(.+)$") end
 -- Characters are keyed by GUID since 1.5.2 (Face.lua): 1.5.1's Name-Realm records were shared by every character of
 -- that first name. A per-character section under any other key is never read, put or written; the record stays
 -- local until its character claims it.
@@ -117,6 +118,10 @@ local function nameKeyed(key)
 	local name = charOfKey(key)
 	return name ~= nil and not isGuid(name)
 end
+-- Sections a format 4 machine never reads, puts or writes: the name-keyed ones and 1.5.1-1.5.3's account profiles and
+-- per-controller picks (each character carries its own profiles in cp:).
+local function dropped(key) return nameKeyed(key) or key == "map" or key:find("^prof:") ~= nil end
+Sync.Dropped = dropped
 local function finite(value) return type(value) == "number" and value - value == 0 end
 local function trimmed(body) return type(body) == "string" and (body:gsub("%s+$", "")) or nil end
 
@@ -329,10 +334,14 @@ function Sync.Sections(db, base)
 	end
 	if db.onboarded ~= nil or db.declined ~= nil then out.setup = { onboarded = copy(db.onboarded), declined = copy(db.declined) } end
 	for pad, entry in pairs(type(db.devices) == "table" and db.devices or NONE) do out["dev:" .. pad] = copy(entry) end
-	for id, profile in pairs(type(db.profiles) == "table" and db.profiles or NONE) do out["prof:" .. id] = copy(profile) end
-	if type(db.deviceProfile) == "table" and (next(db.deviceProfile) or base.map) then out.map = copy(db.deviceProfile) end
 	for name, char in pairs(type(db.chars) == "table" and db.chars or NONE) do
 		if not isGuid(name) then char = nil end
+		local profiles = type(char) == "table" and type(char.profiles) == "table" and char.profiles
+		if profiles and (next(profiles) or base["cp:" .. name]) then
+			local list = {}
+			for id, profile in pairs(profiles) do list[id] = { name = profile.name, roles = copy(profile.roles), face = copy(profile.face) } end
+			out["cp:" .. name] = { profiles = list, profile = char.profile }
+		end
 		for pad, rows in pairs(type(char) == "table" and type(char.cells) == "table" and char.cells or NONE) do
 			local key = "b:" .. name .. ":" .. pad
 			if hasEntries(rows) or base[key] then out[key] = slimGrid(rows) end
@@ -389,15 +398,12 @@ local function validRow(kind, data)
 		end
 		return true
 	end
-	if kind == "map" then
-		for key, pick in pairs(data) do
-			if not (isPad(key) and type(pick) == "table" and isId(pick.id) and (pick.at == nil or finite(pick.at))) then return false end
+	if kind == "profile" then
+		if not (optionalTables(data, { "profiles" }) and (data.profile == nil or type(data.profile) == "string")) then return false end
+		for id, profile in pairs(data.profiles or NONE) do
+			if not (isId(id) and type(profile) == "table" and (profile.name == nil or type(profile.name) == "string") and optionalTables(profile, { "roles", "face" })) then return false end
 		end
 		return true
-	end
-	if kind == "profile" then
-		if data.gone ~= nil then return data.gone == true end
-		return (data.name == nil or type(data.name) == "string") and optionalTables(data, { "roles", "face" })
 	end
 	if kind == "layout" then return (data.name == nil or type(data.name) == "string") and optionalTables(data, { "roles", "face" }) end
 	-- roles and face: format 1.
@@ -413,7 +419,7 @@ local function kindOf(key)
 	if key:find("^t:") or key:find("^tb:") then return "touch" end
 	if key:find("^dev:") then return "device" end
 	if key:find("^p:") then return "placed" end
-	if key:find("^prof:") then return "profile" end
+	if key:find("^cp:") then return "profile" end
 	return key
 end
 Sync.KindOf = kindOf
@@ -426,6 +432,7 @@ local function empty(key, data)
 	if kind == "touch" then return not touchHasEntries(data) end
 	if kind == "rings" then return not (type(data.list) == "table" and data.list[1]) end
 	if kind == "placed" then return next(data) == nil end
+	if kind == "profile" then return not (type(data.profiles) == "table" and next(data.profiles)) end
 	return false
 end
 
@@ -434,9 +441,15 @@ end
 local function freshDefault(key, data)
 	local kind = kindOf(key)
 	if kind == "bindings" or kind == "touch" or kind == "rings" then return empty(key, data) end
-	-- Bookkeeping, not a setting of the player's; map never asks (the union).
-	if kind == "placed" or kind == "map" then return true end
-	if kind == "profile" then return type(data) == "table" and not data.gone and not next(data.roles or NONE) and not next(data.face or NONE) end
+	-- Bookkeeping, not a setting of the player's.
+	if kind == "placed" then return true end
+	-- Only Defaults with the game's layout.
+	if kind == "profile" then
+		for _, profile in pairs(type(data) == "table" and type(data.profiles) == "table" and data.profiles or NONE) do
+			if next(profile.roles or NONE) or next(profile.face or NONE) then return false end
+		end
+		return true
+	end
 	if kind == "setup" then return true end
 	if kind == "options" then
 		local options = copy(data)
@@ -480,8 +493,8 @@ end
 -- sync with own settings: the choice decides), both = { key = true } (both changed, R won), merged = { key = true }
 -- (taken as the union of both: it goes out again) }.
 
--- Placed slots per slot, map per controller: the newer entry (a tie keeps L). Removals aren't carried: a placed entry
--- the slot no longer holds is dropped where it is read (Actions.lua); a controller is never forgotten.
+-- Placed slots per slot: the newer entry (a tie keeps L). Removals aren't carried: a placed entry the slot no longer
+-- holds is dropped where it is read (Actions.lua).
 -- A character's rings met for the first time (no base yet): both copies came from 1.5.1's one account list, handed
 -- out and claimed on each computer on its own, so every ring of either is kept (L's copy of a shared id).
 local function ringUnion(L, R)
@@ -512,7 +525,7 @@ function Sync.Merge(localS, remote, base, stamps, first, own)
 	for key in pairs(keys) do
 		local L, R, B = localS[key], remote[key], base[key]
 		local ls, rs = L ~= nil and enc(L), R and enc(R.d)
-		local joined = R and (kindOf(key) == "placed" or key == "map") and union(L, R.d) or R and L ~= nil and B == nil and key:find("^r:") and ringUnion(L, R.d)
+		local joined = R and kindOf(key) == "placed" and union(L, R.d) or R and L ~= nil and B == nil and key:find("^r:") and ringUnion(L, R.d)
 		local js = joined and enc(joined)
 		if not R then
 			plan.keep[key] = true
@@ -677,35 +690,34 @@ local function putDevice(db, pad, data)
 	if repaired or not ns.Layout then db.devices[pad] = repaired or data end
 end
 
--- A tombstone forgets the profile everywhere (Profile.Forget: its bindings go, its controllers move); nil removes it
--- (an Undo of a sync that brought it).
-local function putProfile(db, id, data)
-	db.profiles = type(db.profiles) == "table" and db.profiles or {}
+-- A character's profiles (cp:<GUID>): the set replaces this machine's, repaired; nil removes it (an Undo of a sync that
+-- brought it: the character makes its Default again). Bindings of a profile it no longer has stay where they are.
+local function putProfiles(db, name, data)
+	local char = charOf(db, name)
 	if data == nil then
-		db.profiles[id] = nil
+		char.profiles, char.profile = nil, nil
 		return
 	end
-	if data.gone then
-		local profile = db.profiles[id]
-		if not (type(profile) == "table" and profile.gone) and ns.Profile then return ns.Profile.Forget(id, 0) end
-		db.profiles[id] = { gone = true }
-		return
+	local profiles = {}
+	for id, profile in pairs(type(data.profiles) == "table" and data.profiles or NONE) do
+		local repaired = isId(id) and type(profile) == "table" and copy(profile)
+		if repaired and ns.Layout and ns.Layout.RepairProfile then repaired = ns.Layout.RepairProfile(repaired, id) end
+		if repaired and not repaired.gone then profiles[id] = repaired end
 	end
-	local repaired = ns.Layout and ns.Layout.RepairProfile and ns.Layout.RepairProfile(copy(data), id)
-	if repaired or not ns.Layout then db.profiles[id] = repaired or copy(data) end
+	char.profiles = profiles
+	char.profile = type(data.profile) == "string" and profiles[data.profile] and data.profile or next(profiles)
 end
 
-local function putMap(db, data)
-	local map = {}
-	for key, pick in pairs(type(data) == "table" and data or NONE) do
-		if isPad(key) and type(pick) == "table" and isId(pick.id) then map[key] = { id = pick.id, at = finite(pick.at) and pick.at or 0 } end
-	end
-	db.deviceProfile = map
+-- Bindings or touch buttons that came for a profile the character lacks (a format 3 set: its profiles were account
+-- ones) get one, so nothing synced is hidden. A cp: in the same set replaces the profiles anyway.
+local function adopt(char, id, data)
+	if data == nil or not ns.Profile or type(char.profiles) == "table" and char.profiles[id] then return end
+	ns.Profile.Adopt(char, id)
 end
 
 -- One section into db (data nil removes what can be removed). index: catalogIndex().
 local function put(db, key, data, index)
-	if nameKeyed(key) then return end
+	if dropped(key) then return end
 	if key == "options" then return putOptions(db, data) end
 	if key == "tweaks" then return putTweaks(db, data) end
 	if key:find("^r:") then return putRings(db, key:sub(3), data, index) end
@@ -716,17 +728,16 @@ local function put(db, key, data, index)
 		db.declined = type(setup.declined) == "table" and copy(setup.declined) or nil
 		return
 	end
-	if key == "map" then return putMap(db, data) end
 	local pad = key:match("^dev:(%x%x%x%x/%x%x%x%x)$")
 	if pad then return putDevice(db, pad, data) end
-	local id = key:match("^prof:(.+)$")
-	if id then return isId(id) and putProfile(db, id, data) end
-	local name, cellsId = bindingsKey(key)
+	local name, cellsId = key:match("^cp:(.+)$")
+	if name then return putProfiles(db, name, data) end
+	name, cellsId = bindingsKey(key)
 	if name then
 		local char = charOf(db, name)
 		char.cells = type(char.cells) == "table" and char.cells or {}
 		char.cells[cellsId] = data ~= nil and fatGrid(data, char.cells[cellsId], index) or nil
-		return
+		return adopt(char, cellsId, data)
 	end
 	name = key:match("^p:(.+)$")
 	if name then
@@ -740,7 +751,7 @@ local function put(db, key, data, index)
 		local char = charOf(db, name)
 		char.touchBars = type(char.touchBars) == "table" and char.touchBars or {}
 		char.touchBars[id] = type(data) == "table" and fatSides(data.bars, char.touchBars[id], index) or nil
-		return
+		return adopt(char, id, data)
 	end
 	name = key:match("^t:(.+)$")
 	if not name then return end
@@ -751,7 +762,7 @@ local function put(db, key, data, index)
 	end
 	local touch = copy(data)
 	touch.bars = nil
-	-- Buttons in t: (a format 2 set, an export row, an Undo of either) go to this controller's profile.
+	-- Buttons in t: (a format 2 set, an export row, an Undo of either) go to this character's profile.
 	if type(data.bars) == "table" then
 		local pid = ns.Profile and ns.Profile.CurrentId()
 		local old = pid and type(char.touchBars) == "table" and char.touchBars[pid] or type(char.touch) == "table" and char.touch.bars
@@ -862,47 +873,34 @@ function Sync.Repair(db, fix)
 		fix("sync.paused")
 	end
 	if s.need ~= nil and not finite(s.need) then s.need = nil end
+	-- 1.5.3's account profile sections: the base of a section that is never written again.
+	for _, field in ipairs({ "base", "stamps", "marks" }) do
+		for key in pairs(s[field]) do if key == "map" or key:find("^prof:") then s[field][key] = nil end end
+	end
+	for key in pairs(s.backup and s.backup.s or NONE) do if key == "map" or key:find("^prof:") then s.backup.s[key] = nil end end
+	if s.backup and not next(s.backup.s) then s.backup = nil end
 	Sync.SplitDevices(db, s)
 	return s
 end
 
--- Base, marks, stamps and the backup from before profiles (1.5.0) held a pad's roles and face in dev:<pad>: split as
--- Profile.Migrate split the store, so the first merge after the update compares like with like. A section changed here
--- since its last stamp keeps that stamp. Runs on every load; only a dev: with roles or face is touched.
+-- Base, marks and the backup from before profiles (1.5.0) held a pad's roles and face in dev:<pad>: they are the
+-- profile's since, so they are dropped there and the first merge after the update compares like with like. A section
+-- changed here since its last stamp keeps that stamp. Runs on every load; only a dev: with roles or face is touched.
 function Sync.SplitDevices(db, s)
-	local now, split = Sync.Sections(db), {}
+	local now = Sync.Sections(db)
 	for key, text in pairs(s.base) do
 		local pad = key:match("^dev:(.+)$")
 		local data = isPad(pad) and Sync.Decode(text)
-		if type(data) == "table" and (data.roles or data.face) then split[pad] = data end
-	end
-	local profiles = type(db.profiles) == "table" and db.profiles or NONE
-	local function profileOf(pad, data)
-		local profile = profiles[pad]
-		return { name = type(profile) == "table" and profile.name or pad, roles = data.roles or {}, face = data.face or {} }
-	end
-	for pad, data in pairs(split) do
-		local dev, prof = "dev:" .. pad, "prof:" .. pad
-		local pending = s.marks[dev] ~= nil and s.marks[dev] ~= hash(s.base[dev])
-		local profile = profileOf(pad, data)
-		data.roles, data.face = nil, nil
-		s.base[dev] = enc(data)
-		if s.base[prof] == nil then
-			s.base[prof], s.stamps[prof] = enc(profile), s.stamps[dev]
-			s.marks[prof] = pending and now[prof] ~= nil and hash(enc(now[prof])) or hash(s.base[prof])
+		if type(data) == "table" and (data.roles or data.face) then
+			local pending = s.marks[key] ~= nil and s.marks[key] ~= hash(text)
+			data.roles, data.face = nil, nil
+			s.base[key] = enc(data)
+			s.marks[key] = pending and now[key] ~= nil and hash(enc(now[key])) or hash(s.base[key])
 		end
-		s.marks[dev] = pending and now[dev] ~= nil and hash(enc(now[dev])) or hash(s.base[dev])
 	end
-	local backup = s.backup and s.backup.s or NONE
-	local moved = {}
-	for key, item in pairs(backup) do
-		local pad = key:match("^dev:(.+)$")
-		local data = isPad(pad) and type(item.d) == "table" and item.d
-		if data and (data.roles or data.face) then moved[pad] = data end
-	end
-	for pad, data in pairs(moved) do
-		if backup["prof:" .. pad] == nil then backup["prof:" .. pad] = { d = profileOf(pad, data) } end
-		data.roles, data.face = nil, nil
+	for key, item in pairs(s.backup and s.backup.s or NONE) do
+		local data = isPad(key:match("^dev:(.+)$")) and type(item.d) == "table" and item.d
+		if data then data.roles, data.face = nil, nil end
 	end
 end
 
@@ -946,7 +944,7 @@ end
 local KIND_ORDER = { "bindings", "profile", "touch", "rings", "device", "tweaks", "keyboard", "options", "setup", "layout" }
 function Sync.KindList(keys)
 	local seen, out = {}, {}
-	for _, key in ipairs(keys) do seen[key == "map" and "profile" or kindOf(key)] = true end
+	for _, key in ipairs(keys) do seen[kindOf(key)] = true end
 	for _, kind in ipairs(KIND_ORDER) do if seen[kind] then out[#out + 1] = L.SEC_LOWER[kind] end end
 	return table.concat(out, ", ")
 end
@@ -982,40 +980,6 @@ function Sync.Bodies(text, at)
 	return out
 end
 
--- A pad's profile name as Profile.Migrate gives it (pads: the controller names; profiles: the names so far).
-local function migratedName(profiles, name, unnamed)
-	if ns.Profile then return ns.Profile.MigratedName(profiles, name, unnamed) end
-	return name or "Profile", unnamed
-end
-
--- A format-1 set (1.5.0), read as Profile.Migrate reads an older store: each pad becomes its own profile under its key,
--- dev:<pad>'s roles and face (and its stamp) move to prof:<pad>, its controller gets the addon's pick in map, and
--- b:<Name-Realm>:<pad> keeps its key.
-local function fromFormat1(sections, pads)
-	pads = type(pads) == "table" and pads or NONE
-	local keys, seen = {}, {}
-	for key in pairs(sections) do
-		local pad = key:match("^dev:(.+)$") or select(2, bindingsKey(key))
-		if isPad(pad) and not seen[pad] then keys[#keys + 1], seen[pad] = pad, true end
-	end
-	table.sort(keys)
-	local names, map, unnamed = {}, {}, 0
-	for _, pad in ipairs(keys) do
-		local dev = sections["dev:" .. pad]
-		local data = dev and dev.d
-		local name
-		name, unnamed = migratedName(names, pads[pad], unnamed)
-		names[pad] = { name = name }
-		if not sections["prof:" .. pad] then sections["prof:" .. pad] = { t = dev and dev.t or 0, d = { name = name, roles = copy(data and data.roles) or {}, face = copy(data and data.face) or {} } } end
-		if data then
-			data.roles, data.face = nil, nil
-			map[pad] = { id = pad, at = 0 }
-		end
-	end
-	if next(map) and not sections.map then sections.map = { t = 0, d = map } end
-end
-Sync.FromFormat1 = fromFormat1
-
 -- The newest complete write on the server: payload, parts; or nil and why ("none", "corrupt", "newer").
 function Sync.ReadRemote()
 	local ours = syncMacros()
@@ -1044,9 +1008,8 @@ function Sync.ReadRemote()
 	payload.at = finite(payload.at) and payload.at or 0
 	local sections = {}
 	for key, item in pairs(payload.s) do
-		if type(key) == "string" and type(item) == "table" and not nameKeyed(key) and validRow(kindOf(key), item.d) then sections[key] = { t = finite(item.t) and item.t or 0, d = item.d } end
+		if type(key) == "string" and type(item) == "table" and not dropped(key) and validRow(kindOf(key), item.d) then sections[key] = { t = finite(item.t) and item.t or 0, d = item.d } end
 	end
-	if (tonumber(payload.v) or 0) < 2 then fromFormat1(sections, payload.pads) end
 	payload.s = sections
 	return payload, best.total
 end
@@ -1452,9 +1415,9 @@ function Sync.Release()
 end
 
 ---------------------------------------------------------------------------------------------------------------------
--- Export and import (design 3.4): this controller's profile (its name, roles and face actions, and this character's
--- bindings in it), the touch bars, rings, tweaks, keyboard and options, under neutral keys. No character or realm name
--- is ever in it; the profile's name is the one name. An import goes into this controller's profile.
+-- Export and import (design 3.4): this character's profile (its name, roles and face actions, and the bindings in it),
+-- the touch bars, rings, tweaks, keyboard and options, under neutral keys. No character name is ever in it; the
+-- profile's name is the one name. An import goes into this character's current profile.
 
 local EXPORT_ROWS = { "bindings", "touch", "rings", "tweaks", "keyboard", "layout", "options" }
 
@@ -1556,7 +1519,7 @@ function Sync.Preview(payload)
 			local row = { id = id, same = enc(incoming) == enc(mine) }
 			-- The name is the exporter's: an import keeps this profile's.
 			if id == "layout" then row.same = keyChanges(incoming.roles, mine and mine.roles) + keyChanges(incoming.face, mine and mine.face) == 0 end
-			row.missing = (id == "bindings" or id == "layout") and not (ns.Device and ns.Device.Current()) or (id == "bindings" or id == "touch" or id == "rings") and not me()
+			row.missing = (id == "bindings" or id == "layout" or id == "touch" or id == "rings") and not me()
 			if id == "bindings" then row.count = gridChanges(incoming, mine)
 			elseif id == "touch" then row.count = touchChanges(incoming, mine)
 			elseif id == "rings" then row.rings, row.yours = #(incoming.list or NONE), mine and #(mine.list or NONE) or 0
@@ -1573,18 +1536,20 @@ end
 function Sync.Import(payload, ids)
 	ns.whenPadFree("sync-import", function()
 		local sections, backup, names = {}, {}, {}
-		local profile, profileId
-		if ns.Profile then profile, profileId = ns.Profile.Ensure() end
+		local profileId
+		if ns.Profile then profileId = select(2, ns.Profile.Ensure()) end
+		local _, name = me()
 		for _, id in ipairs(ids) do
 			local incoming = payload.s[id]
 			local mine, key = localRow(id)
 			if incoming ~= nil and id == "layout" then
-				if profile then
-					key = "prof:" .. profileId
-					backup[key] = { d = copy(profile) }
-					local new = copy(profile)
-					new.roles, new.face = copy(incoming.roles or {}), copy(incoming.face or {})
-					sections[key] = new
+				key = profileId and name and "cp:" .. name
+				local set = key and Sync.Sections(ns.db)[key]
+				if set and set.profiles[profileId] then
+					backup[key] = { d = copy(set) }
+					local profile = set.profiles[profileId]
+					profile.roles, profile.face = copy(incoming.roles or {}), copy(incoming.face or {})
+					sections[key] = set
 					names[#names + 1] = id
 				end
 			elseif incoming ~= nil and key then

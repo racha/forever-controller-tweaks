@@ -262,7 +262,7 @@ loadAddonFile("Face.lua")
 loadAddonFile("Actions.lua")
 ns.Fire("ADDON_LOADED", "ForeverControllerTweaks")
 ns.db.devices["054c/0ce6"] = { raw = {} }
-ns.db.profiles["054c/0ce6"], ns.db.deviceProfile["054c/0ce6"] = { name = "DualSense", roles = {}, face = {} }, { id = "054c/0ce6", at = 0 }
+ns.db.chars = { ["Player-0-Ann"] = { profiles = { ["054c/0ce6"] = { name = "DualSense", roles = {}, face = {} } }, profile = "054c/0ce6" } }
 ns.db.options.debug = true
 W.char = "Ann"
 
@@ -897,15 +897,17 @@ check(lookups == 0, "64 reads: no lookup")
 ns.Device.Current = function() return { key = "045e/0b13" } end
 check(ns.Face.CellEntry("FT", "T"), "another pad: still the cached cells until told")
 ns.Fire("FCT_LAYOUT_CHANGED", "device")
-check(ns.Face.CellEntry("FT", "T").id == "spell:133", "a new pad plays on the last profile used until it gets its own")
-ns.db.profiles["045e/0b13"], ns.db.deviceProfile["045e/0b13"] = { name = "Xbox", roles = {}, face = {} }, { id = "045e/0b13", at = 0 }
+check(ns.Face.CellEntry("FT", "T").id == "spell:133", "another pad id: the character's profile, its cells")
+local ann = ns.db.chars["Player-0-Ann"]
+ann.profiles.p9, ann.profile = { name = "Xbox", roles = {}, face = {} }, "p9"
 ns.Fire("FCT_LAYOUT_CHANGED", "device")
-check(ns.Face.CellEntry("FT", "T") == nil, "device change: that pad's profile's cells (none)")
+check(ns.Face.CellEntry("FT", "T") == nil, "profile switch: that profile's cells (none)")
 local ySlot = ns.Actions.ShadowSlot("FT", "T", "spell:133")
 check(ySlot and W.slots[ySlot].id == 133 and ns.db.chars["Player-0-Ann"].shadow[ySlot], "another pad without cells: the shadow slot is kept")
 ns.Device.Current = function() return nil end
 ns.Fire("FCT_LAYOUT_CHANGED", "device")
 check(W.slots[ySlot].id == 133 and ns.db.chars["Player-0-Ann"].shadow[ySlot], "pad unplugged: the shadow slot is kept")
+ann.profile = "054c/0ce6"
 ns.Device.Current = realCurrent
 ns.Fire("FCT_LAYOUT_CHANGED", "device")
 check(ns.Face.CellEntry("FT", "T").id == "spell:133" and ns.Face.Slot("FT", "T") == ySlot, "back: its cells again, on the same slot")

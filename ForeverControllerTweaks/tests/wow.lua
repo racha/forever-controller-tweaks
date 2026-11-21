@@ -105,6 +105,17 @@ return function(dir, opts)
 	for _, file in ipairs(opts.files or { "Core.lua", "Device.lua", "Profile.lua", "Layout.lua", "Remap.lua" }) do
 		assert(loadfile(dir .. "/" .. file))("ForeverControllerTweaks", W.ns)
 	end
+	-- Profiles are per character (Face.CharDB): without Face.lua, one character keyed by W.guid.
+	W.guid = "Player-1-00000001"
+	if not W.ns.Face then
+		W.ns.Face = { CharDB = function()
+			local db = W.ns.db
+			if not db then return end
+			db.chars = db.chars or {}
+			db.chars[W.guid] = db.chars[W.guid] or {}
+			return db.chars[W.guid], W.guid
+		end }
+	end
 
 	function W.fire(event, ...)
 		for _, f in ipairs(W.frames) do

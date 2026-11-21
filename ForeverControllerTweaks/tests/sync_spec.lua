@@ -125,7 +125,7 @@ local function machine(db, opts)
 	local ns = m.ns
 	assert(loadfile(dir .. "/Core.lua"))("ForeverControllerTweaks", ns)
 	assert(loadfile(dir .. "/Profile.lua"))("ForeverControllerTweaks", ns)
-	ns.Layout = { RepairDevice = function(entry) return entry, {} end, RepairProfile = function(profile) return profile, {} end }
+	ns.Layout = { RepairDevice = function(entry) return entry, {} end, RepairProfile = function(profile) return profile, {} end, Same = function(a, b) return ns.Sync.Encode(a) == ns.Sync.Encode(b) end }
 	ns.Device = { Current = function() return opts.noPad and nil or { key = opts.pad or "054c/0ce6", name = opts.padName or "DualSense Wireless Controller" } end }
 	ns.Face = { CharDB = function()
 		if not ns.db then return end
@@ -227,7 +227,7 @@ do
 	local longest, joined = 0, {}
 	for i, body in ipairs(bodies) do
 		longest = math.max(longest, #body)
-		local part, total, gen, data = body:match("^#FCT3 (%d+)/(%d+) (%w+) (%S*)$")
+		local part, total, gen, data = body:match("^#FCT4 (%d+)/(%d+) (%w+) (%S*)$")
 		check("body " .. i .. " parses", tonumber(part) == i and tonumber(total) == #bodies and tonumber(gen, 36) + 1735689600 == 1795212345)
 		joined[#joined + 1] = data
 	end
@@ -272,8 +272,8 @@ do
 	plan = Sync.Merge({ tweaks = { a = 1 } }, { tweaks = R({ a = 2 }) }, {}, {}, true, false)
 	check("first sync without own settings takes R silently", plan.take.tweaks and not plan.conflicts[1] and not plan.both.tweaks)
 	check("own settings: bindings, touch buttons or rings", Sync.HasOwn({ ["b:A-R:054c/0ce6"] = { FB = { T = "spell:1" } } }) and Sync.HasOwn({ rings = { list = { { id = 1 } } } }))
-	check("own settings: tweaks, options or a device that differ from the defaults", Sync.HasOwn({ tweaks = { a = true } }) and Sync.HasOwn({ options = { glyphs = false, toggleKey = "PADSOCIAL" } }) and Sync.HasOwn({ ["prof:054c/0ce6"] = { name = "DualSense", roles = { L1 = "rightmod" }, face = {} } }) and Sync.HasOwn({ ["dev:054c/0ce6"] = { raw = {}, familyPicked = true, family = "xbox" } }))
-	check("defaults are not own settings", not Sync.HasOwn({ tweaks = {}, options = { glyphs = true, toggleKey = "PADSOCIAL" }, setup = { onboarded = { x = true } }, rings = { list = {} }, ["t:A-R"] = { bars = { left = {} } }, ["dev:054c/0ce6"] = { raw = {} }, ["prof:p1"] = { name = "Default", roles = {}, face = {} }, map = { ["054c/0ce6"] = { id = "p1", at = 0 } } }))
+	check("own settings: tweaks, options or a device that differ from the defaults", Sync.HasOwn({ tweaks = { a = true } }) and Sync.HasOwn({ options = { glyphs = false, toggleKey = "PADSOCIAL" } }) and Sync.HasOwn({ ["cp:Player-0-A"] = { profiles = { ["054c/0ce6"] = { name = "DualSense", roles = { L1 = "rightmod" }, face = {} } } } }) and Sync.HasOwn({ ["dev:054c/0ce6"] = { raw = {}, familyPicked = true, family = "xbox" } }))
+	check("defaults are not own settings", not Sync.HasOwn({ tweaks = {}, options = { glyphs = true, toggleKey = "PADSOCIAL" }, setup = { onboarded = { x = true } }, rings = { list = {} }, ["t:A-R"] = { bars = { left = {} } }, ["dev:054c/0ce6"] = { raw = {} }, ["cp:Player-0-A"] = { profiles = { p1 = { name = "Default", roles = {}, face = {} } }, profile = "p1" } }))
 end
 
 ---------------------------------------------------------------------------------------------------------------------
@@ -290,8 +290,12 @@ do
 	check("learned words and blocked boxes don't sync", not text:find("dictionary") and not text:find("hello") and not text:find("suggest") and not text:find("blocked"))
 	check("Rings' saved stick CVar doesn't sync, the marker goes with the options", s["r:Player-0-Ann"].axisSaved == nil and db.ringAxisSaved == "1" and s.options.ringMarker == false and s.rings == nil)
 	check("quick messages sync", s.keyboard.phrases.anywhere[1] == "hi all")
-	check("all section kinds", s.options and s.tweaks and s["r:Player-0-Ann"] and s.keyboard and s.setup and s["dev:054c/0ce6"] and s["prof:054c/0ce6"] and s.map and s["b:Player-0-Ann:054c/0ce6"] and s["t:Player-0-Ann"])
-	check("the layout is the profile's, the hardware the controller's", s["dev:054c/0ce6"].roles == nil and s["dev:054c/0ce6"].confirmed and s["prof:054c/0ce6"].roles.L1 == "rightmod" and s.map["054c/0ce6"].id == "054c/0ce6")
+	check("all section kinds", s.options and s.tweaks and s["r:Player-0-Ann"] and s.keyboard and s.setup and s["dev:054c/0ce6"] and s["cp:Player-0-Ann"] and s["b:Player-0-Ann:054c/0ce6"] and s["t:Player-0-Ann"])
+	local cp = s["cp:Player-0-Ann"]
+	check("the layout is the character's profile's, the hardware the controller's", s["dev:054c/0ce6"].roles == nil and s["dev:054c/0ce6"].confirmed and cp.profiles["054c/0ce6"].roles.L1 == "rightmod" and cp.profile == "054c/0ce6")
+	local keys = {}
+	for key in pairs(s) do keys[#keys + 1] = key end
+	check("no account profiles or controller picks", not Sync.Encode(keys):find("prof:") and s.map == nil)
 	local cells = s["b:Player-0-Ann:054c/0ce6"]
 	check("slim entries keep the id and flags", cells.FB.R.id == "spellgroup:Holy Light" and cells.FB.R.healer and cells.FB.R.healerLast and cells.FB.R.name == nil and cells.FB.R.kind == nil)
 	check("a plain slim entry is its id", cells.DR.T == "ring:1" and s["r:Player-0-Ann"].list[1].slots[1] == "spell:20271")
@@ -322,8 +326,8 @@ local bcell = bdb.chars["Player-0-Ann"].cells["054c/0ce6"].FB.R
 check("B took the bindings", bcell.id == "spellgroup:Holy Light" and bcell.healer and bcell.healerLast)
 check("the bindings are applied before FCT_SYNC_SETTLED", settledBefore ~= nil)
 check("B rebuilt names and icons from its catalog", bcell.name == "Holy Light" and bcell.icon == "icon-holy" and bcell.kind == "spellgroup", bcell.name)
-check("B took rings, touch, tweaks, keyboard, layout, setup", bdb.chars["Player-0-Ann"].rings.list[1].slots[3].name == "Backpack" and bdb.chars["Player-0-Ann"].touchBars["054c/0ce6"].left[1].T.kind == "game" and bdb.tweaks.lightBar == "class" and bdb.keyboard.phrases.anywhere[1] == "hi all" and bdb.profiles["054c/0ce6"].roles.L1 == "rightmod" and bdb.devices["054c/0ce6"].roles == nil and bdb.onboarded["054c/0ce6"])
-check("B uses A's profile for the same controller, no Default of its own", B.ns.Profile.CurrentId() == "054c/0ce6" and bdb.profiles.p1 == nil and not B.ns.Profile.Pending())
+check("B took rings, touch, tweaks, keyboard, layout, setup", bdb.chars["Player-0-Ann"].rings.list[1].slots[3].name == "Backpack" and bdb.chars["Player-0-Ann"].touchBars["054c/0ce6"].left[1].T.kind == "game" and bdb.tweaks.lightBar == "class" and bdb.keyboard.phrases.anywhere[1] == "hi all" and bdb.chars["Player-0-Ann"].profiles["054c/0ce6"].roles.L1 == "rightmod" and bdb.devices["054c/0ce6"].roles == nil and bdb.onboarded["054c/0ce6"])
+check("B: Ann plays on A's profile, no Default of her own", B.ns.Profile.CurrentId() == "054c/0ce6" and bdb.chars["Player-0-Ann"].profiles.p1 == nil and bdb.profiles == nil)
 check("B kept its own debug switch and learned words", bdb.options.debug == false and bdb.keyboard.dictionary == nil)
 check("B took nothing local from A", bdb.chars["Player-0-Ann"].ringLast == nil and bdb.chars["Player-0-Ann"].shadow == nil and bdb.macros == nil and bdb.news == nil)
 check("B said what it synced", B.ns and (function() for _, line in ipairs(W.lines) do if line:find("Synced from Mac · DualSense Wireless Controller") then return true end end end)())
@@ -476,7 +480,7 @@ do
 	check("the player's macros are never deleted", players == 89)
 
 	-- A newer format on the server: no apply, no write.
-	account = { { name = "FCT:Sync 1", icon = "x", body = "#FCT4 1/1 abcdef XYZ" } }
+	account = { { name = "FCT:Sync 1", icon = "x", body = "#FCT5 1/1 abcdef XYZ" } }
 	local writes = creates + edits + deletes
 	local N = machine(settingsA())
 	N.login()
@@ -520,12 +524,12 @@ do
 	local X = machine(settingsA())
 	X.login()
 	local text, held = X.ns.Sync.Export()
-	check("an export starts FCT3:", text and text:find("^FCT3:"))
+	check("an export starts FCT4:", text and text:find("^FCT4:"))
 	local plain = C_EncodingUtil.DecodeBase64(text:sub(6))
 	check("no character or realm name in an export", not plain:find("Ann") and not plain:find("Realm"))
-	check("an export holds this profile's bindings and layout, and its name", held.bindings.FB.R.healer and held.layout.roles.L1 == "rightmod" and held.layout.raw == nil and held.layout.name == X.ns.db.profiles["054c/0ce6"].name)
+	check("an export holds this profile's bindings and layout, and its name", held.bindings.FB.R.healer and held.layout.roles.L1 == "rightmod" and held.layout.raw == nil and held.layout.name == X.ns.db.chars["Player-0-Ann"].profiles["054c/0ce6"].name)
 	check("a bad prefix is bad", select(2, X.ns.Sync.ReadExport("hello")) == "bad" and select(2, X.ns.Sync.ReadExport("FCT1:00ZZ")) == "bad")
-	check("a newer export is newer", select(2, X.ns.Sync.ReadExport("FCT4:ABCD")) == "newer")
+	check("a newer export is newer", select(2, X.ns.Sync.ReadExport("FCT5:ABCD")) == "newer")
 	local spaced = text:sub(1, 30) .. "\n  " .. text:sub(31, 300) .. "\t" .. text:sub(301)
 	local payload = X.ns.Sync.ReadExport(spaced)
 	check("whitespace anywhere is ignored", payload and payload.kind == "export")
@@ -545,8 +549,8 @@ do
 	Y.ns.Sync.Import(payload, { "bindings", "layout", "rings" })
 	run(1)
 	local ydb = Y.ns.db
-	check("import replaced the ticked parts", ydb.chars["Player-0-Ann"].cells["054c/0ce6"].FB.R.id == "spellgroup:Holy Light" and ydb.chars["Player-0-Ann"].cells["054c/0ce6"].FT == nil and ydb.chars["Player-0-Ann"].rings.list[1].name == "Ring 1" and ydb.profiles["054c/0ce6"].roles.L1 == "rightmod")
-	check("import goes into this controller's profile and keeps its name", ydb.profiles["054c/0ce6"].name == "My pad" and ydb.devices["054c/0ce6"].roles == nil)
+	check("import replaced the ticked parts", ydb.chars["Player-0-Ann"].cells["054c/0ce6"].FB.R.id == "spellgroup:Holy Light" and ydb.chars["Player-0-Ann"].cells["054c/0ce6"].FT == nil and ydb.chars["Player-0-Ann"].rings.list[1].name == "Ring 1" and ydb.chars["Player-0-Ann"].profiles["054c/0ce6"].roles.L1 == "rightmod")
+	check("import goes into this character's profile and keeps its name", ydb.chars["Player-0-Ann"].profiles["054c/0ce6"].name == "My pad" and ydb.devices["054c/0ce6"].roles == nil and ydb.profiles == nil)
 	check("import kept the raw learn data", ydb.devices["054c/0ce6"].raw.L1 == 3)
 	check("import left unticked parts alone", ydb.tweaks == nil)
 	check("import keeps the replaced parts for Undo", ydb.sync.backup and ydb.sync.backup.s["b:Player-0-Ann:054c/0ce6"].d.FT.T == "spell:9")
@@ -557,62 +561,81 @@ do
 	Y.ns.Sync.Import(payload, { "touch" })
 	run(1)
 	local yann = ydb.chars["Player-0-Ann"]
-	check("an imported touch row: the buttons in this controller's profile", yann.touch.enabled and yann.touch.bars == nil and yann.touchBars["054c/0ce6"].left[1].T.name == "X: Y")
+	check("an imported touch row: the buttons in this character's profile", yann.touch.enabled and yann.touch.bars == nil and yann.touchBars["054c/0ce6"].left[1].T.name == "X: Y")
 end
 
 ---------------------------------------------------------------------------------------------------------------------
--- Profiles: two controllers share one; the sections round-trip; a deletion and the picks follow to the other machine
-
+-- Profiles per character: another pad id never changes them, cp: round-trips, a deletion and the pick follow.
 do
 	account = {}
-	local data = settingsA()
-	data.sync = { pads = { ["054c/0ce6"] = "DualSense Wireless Controller" } }
-	local G = machine(data, { pad = "045e/0b13", padName = "Xbox Wireless Controller" })
+	local G = machine(settingsA(), { pad = "045e/0b13", padName = "Xbox Wireless Controller" })
 	G.login()
 	run(6)
-	local P, gdb = G.ns.Profile, G.ns.db
-	check("profiles: a new controller asks and plays on the last profile", P.Pending() and P.CurrentId() == "054c/0ce6" and gdb.deviceProfile["045e/0b13"] == nil)
-	P.Use("054c/0ce6")
-	run(1)
-	check("profiles: Use is the player's pick", not P.Pending() and gdb.deviceProfile["045e/0b13"].id == "054c/0ce6" and gdb.deviceProfile["045e/0b13"].at == W.server)
-	local copyId = P.Copy("054c/0ce6", "Xbox Wireless Controller")
-	local newId = P.New("Couch")
+	local P = G.ns.Profile
+	check("profiles: another pad id plays on the character's profile", P.CurrentId() == "054c/0ce6" and G.ns.db.deviceProfile == nil and P.Pending == nil)
+	local copyId = P.Copy("054c/0ce6", "Couch")
+	local newId = P.New("Desk")
 	P.Rename(newId, "Sofa")
+	P.Use(newId)
+	run(1)
 	G.ns.Sync.Check(true)
 	run(1)
-	local H = machine({}, { pad = "045e/0b13", padName = "Xbox Wireless Controller" })
+	local remote = G.ns.Sync.ReadRemote()
+	local cp = remote and remote.s["cp:Player-0-Ann"]
+	local old = false
+	for key in pairs(remote and remote.s or {}) do old = old or key == "map" or key:find("^prof:") ~= nil end
+	check("cp: in the set with the pick, no prof: or map", cp and cp.d.profile == newId and cp.d.profiles[copyId].name == "Couch" and not old)
+	local H = machine({}, { pad = "054c/0ce6" })
 	H.login()
-	local hdb = H.ns.db
-	check("profiles round-trip: names, layouts, the bindings of a copy", hdb.profiles[copyId].name == "Xbox Wireless Controller" and hdb.profiles[newId].name == "Sofa" and hdb.profiles[copyId].roles.L1 == "rightmod" and hdb.chars["Player-0-Ann"].cells[copyId].FB.R.id == "spellgroup:Holy Light")
-	check("profiles round-trip: the pick, so the other computer doesn't ask", hdb.deviceProfile["045e/0b13"].id == "054c/0ce6" and H.ns.Profile.CurrentId() == "054c/0ce6" and not H.ns.Profile.Pending())
-	check("profiles round-trip: a fresh computer makes no Default", hdb.profiles.p1 == nil)
+	local hann = H.ns.db.chars["Player-0-Ann"]
+	check("round-trip: names, layouts, the bindings of a copy", hann.profiles[copyId].name == "Couch" and hann.profiles[newId].name == "Sofa" and hann.profiles[copyId].roles.L1 == "rightmod" and hann.cells[copyId].FB.R.id == "spellgroup:Holy Light")
+	check("round-trip: the character's pick; a fresh computer makes no Default", H.ns.Profile.CurrentId() == newId and hann.profiles.p1 == nil)
 	W.server = W.server + 100
 	H.ns.Profile.Delete(copyId)
-	H.ns.Profile.Use(newId)
+	H.ns.Profile.Use("054c/0ce6")
 	run(1)
 	H.ns.Sync.Check(true)
 	run(1)
 	W.server = W.server + 100
-	local G2 = machine(G.db, { pad = "045e/0b13", padName = "Xbox Wireless Controller" })
+	local G2 = machine(G.db, { pad = "045e/0b13" })
 	G2.login()
-	check("a deletion follows: tombstone, its bindings gone", G2.ns.db.profiles[copyId].gone and G2.ns.db.chars["Player-0-Ann"].cells[copyId] == nil and not G2.ns.Profile.Get(copyId))
-	check("a newer pick on the other computer wins", G2.ns.db.deviceProfile["045e/0b13"].id == newId and G2.ns.Profile.CurrentId() == newId)
-	check("the older pick of a controller only that computer has stays", G2.ns.db.deviceProfile["054c/0ce6"].id == "054c/0ce6")
+	check("a deletion follows", G2.ns.db.chars["Player-0-Ann"].profiles[copyId] == nil and not G2.ns.Profile.Get(copyId))
+	check("the newer pick follows", G2.ns.Profile.CurrentId() == "054c/0ce6")
+	W.timers, W.tickers = {}, {}
 end
 
--- The map merges per controller: the newer pick wins, a tie keeps this one's, nothing is forgotten.
+-- A format 3 set (1.5.2-1.5.3): its account profiles and controller picks are dropped, its bindings still apply and
+-- get a profile of the character's; a base or backup holding them is cleaned at load; the next write is format 4.
 do
+	account = {}
 	local m = machine({})
 	local Sync = m.ns.Sync
-	local L = { map = { ["054c/0ce6"] = { id = "p1", at = 5 }, ["045e/0b13"] = { id = "p1", at = 0 } } }
-	local R = { map = { t = 0, d = { ["054c/0ce6"] = { id = "p2", at = 4 }, ["045e/0b13"] = { id = "p3", at = 9 }, ["2dc8/6001"] = { id = "p3", at = 0 } } } }
-	local plan = Sync.Merge(L, R, {}, {}, true, true)
-	local map = plan.take.map
-	check("map: a union, never a question", not plan.conflicts[1] and plan.merged.map and map["054c/0ce6"].id == "p1" and map["045e/0b13"].id == "p3" and map["2dc8/6001"].id == "p3")
+	check("dropped keys", Sync.Dropped("prof:p1") and Sync.Dropped("map") and Sync.Dropped("b:House-:p1") and Sync.Dropped("rings") and not Sync.Dropped("cp:Player-0-Ann") and not Sync.Dropped("b:Player-0-Ann:p1"))
+	local sections = {
+		["prof:p7"] = { t = 10, d = { name = "Old", roles = { L1 = "friendly" }, face = {} } },
+		map = { t = 10, d = { ["054c/0ce6"] = { id = "p7", at = 0 } } },
+		["b:Player-0-Ann:p7"] = { t = 10, d = { FB = { T = "spell:20271" } } },
+		tweaks = { t = 10, d = { sellJunk = true } },
+	}
+	local text = Sync.Pack({ v = 3, db = 4, at = W.server - 50, by = "old", host = "Old Mac", pads = {}, s = sections })
+	for i, body in ipairs(Sync.Bodies(text, W.server - 50)) do account[#account + 1] = { name = "FCT:Sync " .. i, icon = "x", body = (body:gsub("^#FCT4", "#FCT3")) } end
+	local remote = Sync.ReadRemote()
+	check("format 3: prof: and map dropped on read, bindings kept", remote and remote.s["prof:p7"] == nil and remote.s.map == nil and remote.s["b:Player-0-Ann:p7"] and remote.s.tweaks)
+	local F = machine({ version = 5, sync = { base = { ["prof:p7"] = "x", map = "y", tweaks = "z" }, stamps = { ["prof:p7"] = 1, map = 1 }, marks = { map = 1 }, backup = { at = 1, s = { ["prof:p7"] = { d = {} } } } } })
+	F.login()
+	local fann, fs = F.ns.db.chars["Player-0-Ann"], F.ns.db.sync
+	check("format 3 read: the bindings applied on a profile of the character's", fann.cells.p7.FB.T.id == "spell:20271" and fann.profiles.p7 and fann.profiles.p7.name ~= "Old" and F.ns.Profile.CurrentId() == "p7" and F.ns.db.profiles == nil)
+	check("format 3 read: no account profile or pick put", F.ns.db.deviceProfile == nil and not next(fann.profiles.p7.roles))
+	check("an old base, stamps, marks and backup lose prof: and map", fs.base["prof:p7"] == nil and fs.base.map == nil and fs.stamps.map == nil and fs.marks.map == nil and (fs.backup == nil or fs.backup.s["prof:p7"] == nil))
+	run(40)
+	local fmt = account[1] and account[1].body:match("^#FCT(%d+)")
+	local again = Sync.ReadRemote()
+	check("written again in format 4, with cp: and without prof: or map", fmt == "4" and again and again.s["cp:Player-0-Ann"] and again.s["prof:p7"] == nil and again.s.map == nil, fmt)
+	W.timers, W.tickers = {}, {}
 end
 
--- A 1.5.0 set (format 1): read as the profile migration reads an old store; this machine's base is split the same way,
--- so nothing conflicts and nothing is taken that didn't change.
+-- A 1.5.0 set (format 1): its pad-keyed bindings apply on profiles of the character's; this machine's base drops the
+-- layout from dev: as its store did, so nothing conflicts and nothing is taken that didn't change.
 do
 	account = {}
 	local old = settingsA()
@@ -625,11 +648,9 @@ do
 	local m = machine({})
 	local Sync = m.ns.Sync
 	local text = Sync.Pack({ v = 1, db = 2, at = W.server - 50, by = "old", host = "Old Mac", pads = { ["054c/0ce6"] = "DualSense Wireless Controller" }, s = sections })
-	for i, body in ipairs(Sync.Bodies(text, W.server - 50)) do account[#account + 1] = { name = "FCT:Sync " .. i, icon = "x", body = (body:gsub("^#FCT3", "#FCT1")) } end
+	for i, body in ipairs(Sync.Bodies(text, W.server - 50)) do account[#account + 1] = { name = "FCT:Sync " .. i, icon = "x", body = (body:gsub("^#FCT4", "#FCT1")) } end
 	local remote = Sync.ReadRemote()
-	local prof = remote and remote.s["prof:054c/0ce6"]
-	check("format 1: dev's roles and face become the pad's profile", prof and prof.t == 10 and prof.d.name == "DualSense Wireless Controller" and prof.d.roles.L1 == "rightmod" and remote.s["dev:054c/0ce6"].d.roles == nil)
-	check("format 1: a pad with bindings only gets a profile too, the map only real controllers", remote.s["prof:28de/11ff"] and remote.s["prof:28de/11ff"].d.name == "Profile 1" and remote.s.map.d["054c/0ce6"].id == "054c/0ce6" and remote.s.map.d["28de/11ff"] == nil)
+	check("format 1: no account profile or pick made", remote and remote.s["prof:054c/0ce6"] == nil and remote.s.map == nil and remote.s["dev:054c/0ce6"])
 	check("format 1: bindings keep their key", remote.s["b:Player-0-Ann:054c/0ce6"] ~= nil)
 	-- A 1.5.0 machine that agreed with that set, updated: its store and its base migrate alike.
 	old.sync = { pads = { ["054c/0ce6"] = "DualSense Wireless Controller" }, base = {}, stamps = {}, marks = {}, wrote = { at = W.server - 50 } }
@@ -642,23 +663,24 @@ do
 	U.login()
 	run(1)
 	local ubase = U.db.sync.base
-	check("the base splits: dev without the layout, the profile's own", ubase["prof:054c/0ce6"] and not ubase["dev:054c/0ce6"]:find("rightmod") and Sync.Decode(ubase["prof:054c/0ce6"]).roles.L1 == "rightmod")
-	check("an updated machine takes a 1.5.0 set without a question", not U.ns.Sync.Choice() and U.ns.db.profiles["054c/0ce6"].roles.L1 == "rightmod" and U.ns.db.chars["Player-0-Ann"].cells["28de/11ff"].FT.T.id == "spell:9")
+	local uann = U.ns.db.chars["Player-0-Ann"]
+	check("the base drops the layout from dev, no prof:", ubase["prof:054c/0ce6"] == nil and not ubase["dev:054c/0ce6"]:find("rightmod"))
+	check("an updated machine takes a 1.5.0 set without a question", not U.ns.Sync.Choice() and uann.profiles["054c/0ce6"].roles.L1 == "rightmod" and uann.cells["28de/11ff"].FT.T.id == "spell:9" and uann.profiles["28de/11ff"] and U.ns.Profile.CurrentId() == "054c/0ce6")
 	run(40)
 	local fmt = account[1] and account[1].body:match("^#FCT(%d+)")
-	check("it writes the set again in format 3", fmt == "3", fmt)
+	check("it writes the set again in format 4", fmt == "4", fmt)
 end
 
 -- A newer format (a 1.5.2 set seen by this version): paused, nothing written over it.
 do
-	account = { { name = "FCT:Sync 1", icon = "x", body = "#FCT4 1/1 abcdef XYZ" } }
+	account = { { name = "FCT:Sync 1", icon = "x", body = "#FCT5 1/1 abcdef XYZ" } }
 	local writes = creates + edits + deletes
 	local N = machine(settingsA())
 	N.login()
 	N.ns.db.tweaks.sellJunk = false
 	N.ns.Sync.Check(true)
 	run(40)
-	check("a newer format pauses and writes nothing", N.ns.Sync.Status().state == "newer" and creates + edits + deletes == writes and account[1].body == "#FCT4 1/1 abcdef XYZ" and #account == 1)
+	check("a newer format pauses and writes nothing", N.ns.Sync.Status().state == "newer" and creates + edits + deletes == writes and account[1].body == "#FCT5 1/1 abcdef XYZ" and #account == 1)
 	-- These machines' timers would keep running into the next blocks.
 	W.timers, W.tickers = {}, {}
 end
@@ -743,7 +765,7 @@ do
 	E.login()
 	run(6)
 	check("review 3: a stale newer pause clears", E.ns.Sync.Status().state == "ok" and ourMacros() >= 1, E.ns.Sync.Status().state)
-	account = { { name = "FCT:Sync 1", icon = "x", body = "#FCT4 1/1 abcdef XYZ" } }
+	account = { { name = "FCT:Sync 1", icon = "x", body = "#FCT5 1/1 abcdef XYZ" } }
 	local G = machine(settingsA())
 	G.login()
 	check("review 3: newer pauses", G.ns.Sync.Status().state == "newer")
@@ -936,7 +958,7 @@ do
 		rings = { t = W.server + 400, d = { nextId = 6, list = { { id = 5, name = "Buffs", count = 6, slots = { [1] = "spell:20271" } } } } },
 		tweaks = { t = W.server + 400, d = { sellJunk = true } },
 	} }
-	for i, body in ipairs(Sync.Bodies(Sync.Pack(payload), payload.at)) do account[i] = { name = "FCT:Sync " .. i, icon = "x", body = (body:gsub("^#FCT3", "#FCT2")) } end
+	for i, body in ipairs(Sync.Bodies(Sync.Pack(payload), payload.at)) do account[i] = { name = "FCT:Sync " .. i, icon = "x", body = (body:gsub("^#FCT4", "#FCT2")) } end
 	local N = machine({ version = 4 })
 	N.login()
 	run(2)

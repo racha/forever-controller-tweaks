@@ -122,7 +122,7 @@ local function clearLeftovers()
 	for _, id in ipairs(ns.Device.Listed(C_GamePad.GetAllConfigIDs)) do
 		if Layout.IsOurs(getConfig(id)) then
 			local key = keyOf(id)
-			local entry, profile = ns.db.devices[key], ns.Profile and ns.Profile.Get(ns.Profile.IdFor(key))
+			local entry, profile = ns.db.devices[key], ns.Profile and ns.Profile.Current()
 			if not dirty and not (entry and (next(profile and profile.roles or {}) or entry.detect)) then ns.log("removed a leftover controller config of ours for " .. key .. " (no layout set)") end
 			if not writeNative(id) then restoring[key] = id end
 		end

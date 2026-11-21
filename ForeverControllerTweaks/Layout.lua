@@ -545,13 +545,13 @@ end
 
 -- Runtime helpers for the current device (ns.Device), used by the commands and the settings screen.
 
--- The current controller's profile (Profile.lua): nil before there is one, which reads as the native layout.
+-- This character's profile (Profile.lua): nil before there is one, which reads as the native layout.
 local function current()
 	local Profile = ns.Profile
 	return Profile and Profile.Current(), ns.Device and ns.Device.Current()
 end
 
--- A write needs a profile: the first controller's Default is made now if the login sync hasn't made one yet.
+-- A write needs a profile: the character's Default is made now if the login sync hasn't brought one yet.
 local function writable()
 	local device = ns.Device and ns.Device.Current()
 	if not (device and ns.Profile) then return nil end

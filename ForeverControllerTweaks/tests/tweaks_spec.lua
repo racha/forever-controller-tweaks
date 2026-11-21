@@ -1170,7 +1170,20 @@ check(near(r, 97) and near(a, 215), "four left-edge neighbours 20 apart down to 
 r, a = Tweaks.BatterySpot({ { angle = 160, radius = 100 } }, 184)
 check(near(r, 100) and near(a, 182), "one neighbour: its radius, 22 below it")
 r, a = Tweaks.BatterySpot({}, 184)
-check(near(r, 97) and near(a, 220), "none: LibDBIcon's radius (half width + 5) at 220")
+check(near(r, 98) and near(a, 220), "none: the game's own button radius (half width + 6) at 220")
+-- Forever's minimap (Blizzard_Minimap/Mainline/Minimap.xml): a 198 map, the 215 x 226 MinimapBackdrop centred on it,
+-- ExpansionLandingPageMinimapButton 53 units at its TOPLEFT -3, -150: that button's centre from the map's centre.
+local nx, ny = -3 + 53 / 2 - 215 / 2, -150 - 53 / 2 + 226 / 2
+r, a = Tweaks.BatterySpot({}, 198)
+check(math.abs(r - math.sqrt(nx * nx + ny * ny)) < 1 and math.abs(a - (math.deg(math.atan2 and math.atan2(ny, nx) or math.atan(ny, nx)) % 360)) < 5, "none: on the native button's ring radius, beside it (" .. r .. " vs " .. math.sqrt(nx * nx + ny * ny) .. ")")
+-- Layer: over the ring art's frame (a child of the map, a level up), in the highest strata of the two.
+local function frameAt(strata, level) return { GetFrameStrata = function() return strata end, GetFrameLevel = function() return level end } end
+local strata, lvl = Tweaks.BatteryLayer({ frameAt("LOW", 3), frameAt("LOW", 4) })
+check(strata == "LOW" and lvl == 14, "over the ring frame: its strata, ten over its level")
+strata, lvl = Tweaks.BatteryLayer({ frameAt("LOW", 30), frameAt("MEDIUM", 2) })
+check(strata == "MEDIUM" and lvl == 12, "a ring frame in a higher strata wins")
+strata, lvl = Tweaks.BatteryLayer({ frameAt("LOW", 9995) })
+check(lvl == 10000, "never past the level cap")
 r, a = Tweaks.BatterySpot({ { angle = 200, radius = 97 }, { angle = 240, radius = 97 } }, 184)
 check(near(a, 250), "never past 250 (the coordinates text is at the bottom)")
 local ox, oy = Tweaks.BatteryOffset(100, 180)
@@ -1203,6 +1216,9 @@ end
 neighbour("LibDBIcon10_A", 150)
 neighbour("LibDBIcon10_B", 170)
 local lowest = neighbour("LibDBIcon10_C", 190)
+-- The ring art's frame, raised over the map (a toplevel cluster's children shift with it).
+MinimapBackdrop = { GetFrameStrata = function() return Minimap:GetFrameStrata() end, GetFrameLevel = function() return Minimap:GetFrameLevel() + 12 end }
+MinimapCompassTexture = { GetParent = function() return MinimapBackdrop end }
 turn("batteryIcon")
 check(batteryFrame(), "turned on: the button is made")
 W.fire("PLAYER_ENTERING_WORLD")
@@ -1222,6 +1238,7 @@ local s1, s4 = b.segments[1], b.segments[4]
 check(s1.w == 2 and s1.h == 5 and s1.x == 2 and s1.y == -2 and s4.x == 11 and s4.w == 2, "four 2 x 5 segments with one-pixel gaps, inside the outline")
 check(edge.top.rel == b and edge.top.point == "TOPLEFT" and edge.top.x == -8 and edge.top.y == 5, "the battery centred, one unit up, as the icon was")
 local x, y = Tweaks.BatteryOffset(75, 210)
+check(b.level == Minimap:GetFrameLevel() + 22 and b.strata == Minimap:GetFrameStrata(), "drawn over the ring art's frame, not just the map: " .. tostring(b.level) .. " " .. tostring(b.strata))
 check(b.shown and b.rel == Minimap and b.point == "CENTER" and at(b, x, y), "on the ring with its neighbours: radius 75, one step (20) below the lowest (190): " .. tostring(b.x) .. ", " .. tostring(b.y) .. " want " .. x .. ", " .. y .. " shown " .. tostring(b.shown) .. " rel " .. tostring(b.rel == Minimap) .. " " .. tostring(b.point))
 local lit, color, dark, bars = level()
 check(lit == 4 and bars == 4 and color[1] == 0.1 and color[2] == 1, "High: four green")
@@ -1276,6 +1293,7 @@ Tweaks.Set("batteryIcon", false)
 W.advance(0.3)
 check(not b.shown, "off: hidden")
 Tweaks.Set("battery", false)
+MinimapBackdrop, MinimapCompassTexture = nil, nil
 
 -- 14. Rare nearby: from the vignette (readable name) or the name plate (only when readable); once per rare.
 turn("rareAlert")

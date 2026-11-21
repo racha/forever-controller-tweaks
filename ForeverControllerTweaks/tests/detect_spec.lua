@@ -69,6 +69,12 @@ C_GamePad = {
 
 local ns = {}
 for _, file in ipairs({ "Core.lua", "Device.lua", "Profile.lua", "Layout.lua", "Remap.lua" }) do assert(loadfile(dir .. "/" .. file))("ForeverControllerTweaks", ns) end
+-- Profiles are per character (Face.CharDB); Face.lua isn't loaded here.
+ns.Face = { CharDB = function()
+	ns.db.chars = ns.db.chars or {}
+	ns.db.chars["Player-1-1"] = ns.db.chars["Player-1-1"] or {}
+	return ns.db.chars["Player-1-1"], "Player-1-1"
+end }
 local Device, Layout = ns.Device, ns.Layout
 local KEY = "1234/5678"
 

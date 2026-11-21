@@ -26,7 +26,7 @@ Forever Controller Tweaks builds on WoW Forever's own Gamepad UI instead of repl
 - **Other addons' buttons.** Key bindings from other addons (for example WellMet) can go on any controller button, from the picker's AddOns category.
 - **Touch bars.** Two bars on the left and right edges of the screen for tapping spells, made for Steam Link on a phone or tablet. Each button has an action per bar (top, left, right, bottom), following your modifiers. Per side, choose how many buttons, their size, position, shape (circle or square) and whether empty buttons show, and when the bars show. They're off until you turn them on.
 - **Glyphs that match.** The bar hints, class prompts, targeting markers and on-screen legend show the buttons you actually press, in Xbox, PlayStation or Nintendo style. With both targeting roles on one side, the targeting marker splits into a friendly and a hostile half.
-- **Profiles.** Your layout and bindings live in a profile. Point your DualSense and your GameSir at the same profile and a binding made on one is on the other; a new controller asks once whether to use, copy or start a new profile.
+- **Profiles.** Each character's layout and bindings live in its own profile, and every controller plays on it: a binding made with your DualSense is there with your GameSir or on Steam Link. For a different setup, make another profile and switch to it.
 - **Any controller.** If the game doesn't recognise your pad, pick its layout (PlayStation, Xbox or Switch) from a card, or press each button once to teach it.
 - **Modules you can turn off.** Touch bars, the keyboard and rings are separate modules, listed under Forever Controller Tweaks in the AddOns list. Turn off the ones you don't use; their settings stay saved.
 - **Controller-first settings.** Six tabs (Bindings, Touch, Keyboard and Rings, one per module that's on, Tweaks and Settings) in Forever's own look, driven entirely with the D-pad, with the controller drawn in the middle so you see which button you're editing. Triangle opens **More** on every screen.
@@ -112,7 +112,7 @@ More detail, including how to report a controller, is in [docs/controllers.md](d
 | `/fct role <L1 R1 L2 R2 P1-P4> <leftmod rightmod friendly hostile none>` | Sets one role |
 | `/fct face <bottom right left top> <interact inspect back jump>` | Moves a face action on the first page |
 | `/fct learn <L1 R1 L2 R2 P1-P4>` · `cancel` | Learns which raw input that button sends (like More → Learn controller) |
-| `/fct reset` | Game default roles and face actions for this controller |
+| `/fct reset` | Game default roles and face actions in this character's profile |
 | `/fct release` | Clears the addon's hidden slots and `FCT:` macros before you uninstall it |
 | `/fct status` | Prints the controller, layout and state |
 | `/fct selftest` | Prints details for a bug report and turns the debug log on |

@@ -376,6 +376,32 @@ Back up `WTF/Account/<ACCOUNT>/SavedVariables/ForeverControllerTweaks.lua` first
 2. One computer on 1.5.1, the other on 1.5.2: after the 1.5.2 one wrote, the 1.5.1 one says sync is paused because another computer has a newer Controller Tweaks, and writes nothing.
 3. Export on 1.5.1, import on 1.5.2: the rings go to this character, the touch buttons to this controller's profile.
 
+## Q. 1.5.4
+
+### Q1. Profiles per character, any controller
+
+Back up `WTF/Account/<ACCOUNT>/SavedVariables/ForeverControllerTweaks.lua` first. `/console taintLog 2`. New files in this version: restart the game fully once.
+
+1. **Update.** Log in on the Warlock: Shadow Bolt, Immolate, Back, Zoom in and Zoom out are where they were. Settings → Profile: **This character** shows "Warlock", and only this character's profiles are listed. After `/reload`, the SavedVariables file has `profiles` and `profile` inside `["Player-…"]`, and no top-level `profiles`, `deviceProfile` or `lastProfile`.
+2. **Switch pads.** Play the Warlock with the DualSense, then over Steam Link (phone or tablet), then with the GameSir (or any other pad the game names differently). Each time: no question, the bars and touch buttons stay, `/fct status` names "Warlock".
+3. **The Paladin.** Log in on the Paladin (House): within a few seconds its bindings and the 3 touch buttons are back, on the profile "DualSense Wireless Controller". The Warlock's profiles are not listed there.
+4. **A new character.** Make or log in on a character that never played with the addon: it is on **Default** with the layout (modifiers, face buttons) of the character you played last on this computer, no bindings, no touch buttons.
+5. **New, Copy, Rename, Delete.** On one character: **New profile** starts empty; **Copy profile** has the same bindings and touch buttons; rename it; **Delete profile** asks first and moves the character to the first profile left. Log in on another character: none of that shows there.
+6. **Commands.** `/fct profile` lists this character's profiles, the current one marked; `/fct profile <name>` switches; another character's profile name is unknown.
+7. Throughout: `taint.log` has no ForeverControllerTweaks line, and Back, Jump and Interact work after closing the Settings tab.
+
+### Q2. Sync between 1.5.4 and older
+
+1. Two computers on 1.5.4: a new profile, a rename, a switch or a delete on one character shows on the other computer for that character only.
+2. One computer on 1.5.3, the other on 1.5.4: after the 1.5.4 one wrote, the 1.5.3 one says sync is paused because another computer has a newer Controller Tweaks, and writes nothing.
+3. Export on 1.5.3, import on 1.5.4: the layout and bindings go into this character's current profile.
+
+### Q3. Battery on the minimap
+
+1. Tweaks → **Battery on the minimap** on, a wireless pad connected. The battery sits on the minimap's ring, low on the left, **fully on top of the ring art**: no part of it under the ring. 📸 it.
+2. Click the minimap a few times (or ping) and wait a second: it is still on top.
+3. With other addons' round minimap buttons on the left: it sits one step below the lowest, on their circle.
+
 ## Reporting results
 
 In a pull request or issue, list the parts you ran and the controllers you used, and say whether `taint.log` was clean. Attach screenshots of anything that looks wrong, with character names and chat cropped out.

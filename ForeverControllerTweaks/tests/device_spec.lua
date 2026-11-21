@@ -56,6 +56,12 @@ C_GamePad = {
 
 local ns = {}
 for _, file in ipairs({ "Core.lua", "Device.lua", "Profile.lua", "Layout.lua" }) do assert(loadfile(dir .. "/" .. file))("ForeverControllerTweaks", ns) end
+-- Profiles are per character (Face.CharDB); Face.lua isn't loaded here.
+ns.Face = { CharDB = function()
+	ns.db.chars = ns.db.chars or {}
+	ns.db.chars["Player-1-1"] = ns.db.chars["Player-1-1"] or {}
+	return ns.db.chars["Player-1-1"], "Player-1-1"
+end }
 
 local deviceChanges = 0
 ns.On("FCT_LAYOUT_CHANGED", function(reason) if reason == "device" then deviceChanges = deviceChanges + 1 end end)
@@ -107,12 +113,18 @@ assert(key() == "054c/0ce6")
 pads[2].rawButtons[1] = false
 active = 1
 
--- The layout is the profile's, never the hardware entry's; a controller without a pick plays on the last one used.
+-- The layout is the character's profile's, never the hardware entry's, whichever pad plays.
 assert(ns.Layout.SetPreset("split"))
 local P, DB = ns.Profile, ForeverControllerTweaksDB
 local id = P.CurrentId()
-assert(DB.profiles[id].roles.L1 == "rightmod" and DB.devices["054c/0ce6"].roles == nil and DB.devices["28de/11ff"].roles == nil)
-assert(P.IdFor("28de/11ff") == id and P.IdFor("054c/0ce6") == id, "one profile so far, shared")
+assert(DB.chars["Player-1-1"].profiles[id].roles.L1 == "rightmod" and DB.devices["054c/0ce6"].roles == nil and DB.devices["28de/11ff"].roles == nil)
+active = 3
+fire("GAME_PAD_ACTIVE_CHANGED", true)
+pads[2].rawButtons[1] = true
+run()
+pads[2].rawButtons[1] = false
+assert(P.CurrentId() == id and ns.Layout.Roles().L1 == "rightmod", "another pad id: the same profile")
+active = 1
 
 -- Unknown vendor: its label style decides. Both earlier pads are unplugged.
 pads[2], pads[3], pads[4] = nil, nil, newPad("8BitDo", 0x2dc8, 0x6001, "Shapes")

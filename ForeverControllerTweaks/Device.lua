@@ -145,7 +145,7 @@ function Device.SwapTargets() return not not (GetCVarBool and GetCVarBool("Gamep
 
 -- Re-resolves the controller; fires FCT_LAYOUT_CHANGED("device") when it changed, or always with force. Each
 -- vendor/product keeps its own db entry (its hardware: a Steam virtual pad and a physical one learn and detect apart);
--- the layout and bindings are its profile's (Profile.lua). A detected pad uses the label style the player chose.
+-- the layout and bindings are the character's profile's (Profile.lua). A detected pad uses the label style the player chose.
 function Device.Refresh(force)
 	if not ns.db then return nil end
 

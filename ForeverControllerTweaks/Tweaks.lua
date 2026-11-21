@@ -856,9 +856,14 @@ end)
 -- 3 yellow, Low 2 orange, Critical 1 red, Wired 4 blue; hidden for Unknown or no pad.
 -- The battery is laid out in whole screen pixels at the button's scale, so its lines and gaps stay sharp and even.
 -- Placement: on the ring with its neighbours, read from the minimap's own child buttons (read only): their radius
--- and spacing, at the next step below the lowest of them on the left side. Without neighbours, LibDBIcon's default
--- radius (the map's half width + 5) at 220 degrees. Our frame takes the minimap's scale, so it matches the
--- neighbours' size, and is placed again when the map, its scale or the neighbours change.
+-- and spacing, at the next step below the lowest of them on the left side. Without neighbours, the radius of the
+-- game's own round button on that side (ExpansionLandingPageMinimapButton: 53 units at TOPLEFT -3, -150 of the
+-- 215 x 226 MinimapBackdrop around the 198 map, so its centre is 105.3 from the map's, at 217 degrees): the map's half
+-- width + 6, at 220 degrees. Our frame takes the minimap's scale, so it matches the neighbours' size, and is placed
+-- again when the map, its scale or the neighbours change.
+-- Layer: the ring art (MinimapCompassTexture) is an OVERLAY texture of MinimapBackdrop, a child frame of the map, so
+-- the map's own level drew the battery under the ring. The battery takes the ring frame's strata and sits ten levels
+-- over the highest of the map and that frame (read only), as the game's buttons sit over the ring.
 -- The level changes only on the game's events; the window-button poll places and shows it (read only).
 
 local BATTERY_BARS = { [POWER.Critical] = 1, [POWER.Low] = 2, [POWER.Medium] = 3, [POWER.High] = 4, [POWER.Wired] = 4 }
@@ -870,7 +875,9 @@ local BATTERY_OUTLINE, BATTERY_UNLIT = { 0.9, 0.8, 0.55, 1 }, { 0, 0, 0, 0.6 }
 local BATTERY_SIZE = 31
 -- Without neighbours: LibDBIcon's ring offset and an angle below the usual left-edge buttons. With them: their step,
 -- kept between STEP_MIN and STEP_MAX, never past ANGLE_MAX (the coordinates text sits at the bottom, 270).
-local RING_OFFSET, ANGLE_DEFAULT, STEP_DEFAULT, STEP_MIN, STEP_MAX, ANGLE_MAX = 5, 220, 22, 15, 40, 250
+local RING_OFFSET, ANGLE_DEFAULT, STEP_DEFAULT, STEP_MIN, STEP_MAX, ANGLE_MAX = 6, 220, 22, 15, 40, 250
+local STRATA = { BACKGROUND = 1, LOW = 2, MEDIUM = 3, HIGH = 4, DIALOG = 5, FULLSCREEN = 6, FULLSCREEN_DIALOG = 7, TOOLTIP = 8 }
+local LEVEL_ABOVE, LEVEL_MAX = 10, 10000
 local battery, batteryLevel
 
 -- One screen pixel in units of a region at this effective scale (the client's PixelUtil factor).
@@ -981,6 +988,25 @@ function Tweaks.BatterySpot(neighbours, mapWidth)
 	return radius / #left, math.min(ANGLE_MAX, left[#left].angle + step)
 end
 
+-- The strata and level that draw the battery over every one of frames (the map and the ring art's frame): the highest
+-- strata among them, LEVEL_ABOVE over the highest level in it.
+function Tweaks.BatteryLayer(frames)
+	local strata, level
+	for _, frame in ipairs(frames) do
+		local s, l = frame:GetFrameStrata(), frame:GetFrameLevel()
+		if not strata or (STRATA[s] or 0) > (STRATA[strata] or 0) then strata, level = s, l
+		elseif s == strata and l > level then level = l end
+	end
+	return strata, math.min(LEVEL_MAX, (level or 0) + LEVEL_ABOVE)
+end
+
+-- The frame the minimap's ring art is drawn in, when the game has one.
+local function ringFrame()
+	local art = MinimapCompassTexture
+	local frame = art and art.GetParent and art:GetParent() or MinimapBackdrop
+	return frame and frame.GetFrameLevel and frame or nil
+end
+
 function Tweaks.BatteryOffset(radius, angle)
 	local a = math.rad(angle)
 	return math.floor(radius * math.cos(a) + 0.5), math.floor(radius * math.sin(a) + 0.5)
@@ -1024,6 +1050,9 @@ function Tweaks.UpdateBattery(wanted)
 		drawBattery()
 	end
 	Tweaks.Place(battery, map, "CENTER", "CENTER", x, y)
+	local strata, level = Tweaks.BatteryLayer({ map, ringFrame() })
+	battery:SetFrameStrata(strata)
+	battery:SetFrameLevel(level)
 end
 
 ---------------------------------------------------------------------------------------------------------------------

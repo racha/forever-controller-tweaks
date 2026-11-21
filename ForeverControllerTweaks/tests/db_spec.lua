@@ -31,8 +31,8 @@ local W = new({
 })
 W.login()
 local db = W.ns.db
-local options, devices, profiles = db.options, db.devices, db.profiles
-assert(db.version == 4 and ForeverControllerTweaksDB == db)
+local options, devices = db.options, db.devices
+assert(db.version == 5 and ForeverControllerTweaksDB == db)
 assert(options.glyphs == true and options.toggleKey == "PADSOCIAL" and options.debug == false and options.glyphHide == "overlay")
 assert(#db.debugLog == 500 and db.debugLog[1] == "line 101", "debug log capped, newest kept")
 assert(db.faceEntries["054c/0ce6"].bottom.kind == "spell" and db.onboarded.playstation, "other units' keys untouched")
@@ -40,15 +40,16 @@ assert(db.faceEntries["054c/0ce6"].bottom.kind == "spell" and db.onboarded.plays
 local ds = devices["054c/0ce6"]
 assert(W.same(ds.raw, { L1 = { button = 9 }, R2 = { axis = "RTrigger" } }), "bad raw sources dropped")
 assert(ds.roles == nil and ds.face == nil and ds.detect == nil and ds.junk == nil, "the layout moved to the profile")
--- v3: every pad its own profile under its device key; the bad duplicate role is dropped, the good face kept.
-local p = profiles["054c/0ce6"]
-assert(next(p.roles) == nil and p.face.bottom == "interact" and p.name == "Profile 1", "a repaired layout becomes the profile's")
-assert(db.deviceProfile["054c/0ce6"].id == "054c/0ce6" and db.deviceProfile["054c/0ce6"].at == 0, "the addon's own pick")
+-- v3 made every pad its own profile; v5 gives them to the characters (none has bindings here) and keeps the first
+-- one's layout for new characters: the bad duplicate role dropped, the good face kept.
+assert(db.profiles == nil and db.deviceProfile == nil and db.lastProfile == nil, "no account profiles or picks")
+assert(next(db.lastLayout.roles) == nil and db.lastLayout.face.bottom == "interact", "the last layout: the repaired one")
+local mine = W.ns.Profile.Current()
+assert(mine and mine.name == "Default" and mine.face.bottom == "interact", "the character's Default starts from it")
 assert(devices["bad key"] == nil and devices["045e/0b12"] == nil)
 assert(devices["2dc8/6001"].confirmed == true, "v2 migration: learned before v2 counts as confirmed")
 assert(devices["2dc8/6002"].confirmed == nil, "default raw: still needs setup")
-assert(devices["057e/2009"].raw.L1.button == 9 and profiles["057e/2009"].roles.L1 == "rightmod" and next(profiles["057e/2009"].face) == nil)
-assert(profiles["057e/2009"].name == "Profile 2" and profiles["2dc8/6002"].name == "Profile 5" and profiles["045e/0b12"] == nil and profiles["bad key"] == nil, "named in key order; dropped pads get none")
+assert(devices["057e/2009"].raw.L1.button == 9 and devices["057e/2009"].roles == nil)
 assert(devices["28de/11ff"].detect.buttons.PAD1 == 0 and devices["28de/11ff"].detect.labelStyle == nil)
 assert(W.said("repaired %d+ damaged saved settings"))
 assert(W.ns.Device.Current().key == "054c/0ce6" and W.ns.Remap.State() == "off", "the repaired db runs")
@@ -57,15 +58,15 @@ assert(W.ns.Device.Current().key == "054c/0ce6" and W.ns.Remap.State() == "off",
 local fresh = new(nil)
 fresh.login()
 local fdb = fresh.ns.db
-assert(fdb.version == 4 and not fresh.said("repaired") and fdb.devices["054c/0ce6"].roles == nil)
--- The first controller ever: a Default profile, no question.
-local pick = fdb.deviceProfile["054c/0ce6"]
-assert(pick and pick.id == "p1" and pick.at == 0 and fdb.profiles.p1.name == "Default" and not fresh.ns.Profile.Pending(), "first controller: Default, no question")
+assert(fdb.version == 5 and not fresh.said("repaired") and fdb.devices["054c/0ce6"].roles == nil)
+-- The first character: a Default profile with the game's layout.
+local me = fdb.chars[fresh.guid]
+assert(me.profile == "p1" and me.profiles.p1.name == "Default" and not next(me.profiles.p1.roles) and fdb.profiles == nil, "first character: Default")
 
 -- Not a table at all.
 local junk = new("garbage")
 junk.login()
-assert(type(junk.ns.db.devices) == "table" and junk.ns.db.version == 4)
+assert(type(junk.ns.db.devices) == "table" and junk.ns.db.version == 5)
 
 -- Saved by a newer the addon: kept as it is, no migration down.
 local newer = new({ version = 9, options = {}, devices = {} })
@@ -76,7 +77,7 @@ assert(newer.ns.db.version == 9 and newer.said("newer version of Controller Twea
 for _, version in ipairs({ 0, -3, 1.5, 0 / 0, math.huge }) do
 	local odd = new({ version = version, options = {}, devices = { ["2dc8/6001"] = { raw = { L1 = { button = 4 }, R1 = { button = 10 }, L2 = { axis = "LTrigger" }, R2 = { axis = "RTrigger" } }, roles = {}, face = {} } } })
 	odd.login()
-	assert(odd.ns.db and odd.ns.db.version == 4 and odd.ns.db.devices["2dc8/6001"].confirmed and odd.ns.db.profiles["2dc8/6001"], "version " .. tostring(version))
+	assert(odd.ns.db and odd.ns.db.version == 5 and odd.ns.db.devices["2dc8/6001"].confirmed and odd.ns.db.lastLayout, "version " .. tostring(version))
 end
 
 -- The macro and character stores: wrong types and bad entries are dropped, good ones kept.
@@ -111,20 +112,21 @@ assert(ann.cells["054c/0ce6"].FT.T.id == "spell:133" and ann.cells["054c/0ce6"].
 -- Back paddle cells sit next to the face cells and are repaired the same way.
 assert(ann.cells["054c/0ce6"].P1.R.id == "face:jump" and ann.cells["054c/0ce6"].P1.L == nil and ann.cells["054c/0ce6"].P3 == nil)
 assert(ann.legacyFaceDone == nil and ann.routedUnderDone == true and ann.macroPrefixDone == nil and sdb.chars["Bob-Realm"] == nil and sdb.chars[7] == nil)
--- Bindings of a pad with no devices entry: still a profile (lossless), but no controller pick.
-assert(sdb.profiles["054c/0ce6"] and sdb.deviceProfile["054c/0ce6"] == nil and ann.cells["054c/0ce6"].FT.T.id == "spell:133", "cells keep their key")
+-- Bindings of a pad with no devices entry: still a profile of the character's (lossless), and it plays on it.
+assert(ann.profiles["054c/0ce6"] and ann.profile == "054c/0ce6" and ann.cells["054c/0ce6"].FT.T.id == "spell:133", "cells keep their key")
 
--- The profile stores: bad ids, shapes and picks dropped; a tombstone stays one; a bad last-used id goes.
-local profs = new({ version = 3, options = {}, devices = {},
-	profiles = { p1 = { name = "Mine", roles = { L1 = "friendly" }, face = {} }, p2 = { gone = true, name = "x" }, p3 = { gone = "yes" }, ["bad"] = {}, p4 = "x", p5 = { name = "  ", roles = 3 } },
-	deviceProfile = { ["054c/0ce6"] = { id = "p1", at = 5 }, ["054c/0df2"] = { id = "nope" }, ["bad"] = { id = "p1", at = 0 } },
-	lastProfile = 7 })
+-- A character's profiles: bad ids, shapes and tombstones dropped; a pick of a missing profile goes; a bad last layout
+-- is repaired.
+local profs = new({ version = 5, options = {}, devices = {}, lastLayout = { roles = 3, face = { L1 = "jump" } },
+	chars = { ["Player-0-Zed"] = { profile = "p9", profiles = { p1 = { name = "Mine", roles = { L1 = "friendly" }, face = {} }, p2 = { gone = true }, ["bad"] = {}, p4 = "x", p5 = { name = "  ", roles = 3 } } }, ["Player-0-Yan"] = { profile = 4, profiles = 7 } } })
 profs.login()
 local pdb = profs.ns.db
-assert(next(pdb.profiles.p1.roles) == nil and pdb.profiles.p1.name == "Mine", "a broken role set: native")
-assert(pdb.profiles.p2.gone == true and pdb.profiles.p2.name == nil and pdb.profiles.p3 == nil and pdb.profiles.bad == nil and pdb.profiles.p4 == nil)
-assert(pdb.profiles.p5.name == "Profile" and next(pdb.profiles.p5.roles) == nil, "an empty name gets one")
-assert(pdb.deviceProfile["054c/0ce6"].id == "p1" and pdb.deviceProfile["054c/0df2"] == nil and pdb.deviceProfile.bad == nil and pdb.lastProfile == "p1")
+local zed, yan = pdb.chars["Player-0-Zed"], pdb.chars["Player-0-Yan"]
+assert(next(zed.profiles.p1.roles) == nil and zed.profiles.p1.name == "Mine", "a broken role set: native")
+assert(zed.profiles.p2 == nil and zed.profiles.bad == nil and zed.profiles.p4 == nil, "tombstones, bad ids and shapes dropped")
+assert(zed.profiles.p5.name == "Profile" and next(zed.profiles.p5.roles) == nil, "an empty name gets one")
+assert(zed.profile == nil and yan.profile == nil and yan.profiles == nil, "a pick of a missing profile goes")
+assert(next(pdb.lastLayout.roles) == nil and next(pdb.lastLayout.face) == nil and profs.said("repaired %d+ damaged saved settings"), "the last layout repaired")
 assert(stores.said("repaired %d+ damaged saved settings"))
 
 -- An early GAME_PAD_* event before ADDON_LOADED doesn't touch the missing db.

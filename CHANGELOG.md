@@ -1,5 +1,21 @@
 # Changelog
 
+## 1.5.4 — 2026-11-21
+
+### Changed: profiles belong to the character, controllers don't matter
+- The game reports one controller under several names (Steam Link, Android, the pad itself), and 1.5.1 picked a profile per name, so a character could land on a profile without its bindings: "the bars are gone". Now each character has its own profiles and plays on one of them, whichever controller you use. Plugging in another pad, or the same pad seen differently, never changes your bindings, touch buttons or layout.
+- **Profiles are per character:** the Settings tab, **New profile**, **Copy profile**, **Delete profile** and `/fct profile` show and change this character's profiles only. Want a different setup? Make a new profile and switch to it.
+- **No more new-controller question.** The Settings tab's Controllers list is gone too.
+- **After the update** each character keeps the profile its bindings were on (the one you used last, else the one with the most bindings), with every binding and touch button. Older settings waiting for their character take their profile along when the character claims them.
+- **A new character** starts on **Default** with the layout of the character you played last on this computer, and no bindings.
+
+### Fixed: battery icon under the minimap ring
+- The controller battery on the minimap sat partly under the minimap's ring. It now draws over the ring, on the same circle as the game's own round button.
+
+### Sync
+- Sync is written in a new format that carries each character's profiles. A computer still on 1.5.3 or older pauses sync and says to update; it never writes over the newer copy. Update the addon on every computer you sync.
+- Sets written by older versions still read: their bindings come in, their account-wide profiles and controller picks don't.
+
 ## 1.5.3 — 2026-11-21
 
 ### Fixed: error with a pet

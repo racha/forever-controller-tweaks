@@ -275,6 +275,9 @@ local function fill(own, old)
 				if type(ring) == "table" and not have[ring.id] then own.rings.list[#own.rings.list + 1], have[ring.id] = ring, true end
 			end
 			if type(value.nextId) == "number" and (type(own.rings.nextId) ~= "number" or own.rings.nextId < value.nextId) then own.rings.nextId = value.nextId end
+		elseif field == "profiles" and type(value) == "table" and type(own.profiles) == "table" then
+			-- A profile is one unit: two layouts are never mixed role by role.
+			for id, profile in pairs(value) do if own.profiles[id] == nil then own.profiles[id] = profile end end
 		else
 			fillInto(own, { [field] = value })
 		end
@@ -282,18 +285,25 @@ local function fill(own, old)
 end
 
 -- Claims every old record of this first name that Face.Owns, newest first, into chars[key]; claimed records are
--- removed, ambiguous ones left alone. known(id): this character knows that spell. Returns the claimed keys.
+-- removed, ambiguous ones left alone. known(id): this character knows that spell. Returns the claimed keys. The
+-- profiles come along; a character still on a profile without bindings (the Default made at its first login, before
+-- the spellbook let the claim run) moves to the newest claimed record's profile.
 function Face.ClaimOld(chars, key, name, known, stamps)
 	local own, claimed = chars[key], {}
 	if type(own) ~= "table" or not name then return claimed end
+	local adopt
 	for _, old in ipairs(candidates(chars, name, stamps)) do
 		local record = chars[old]
 		if type(record) == "table" and Face.Owns(record, known) then
+			adopt = adopt or type(record.profile) == "string" and record.profile or nil
 			fill(own, record)
 			chars[old] = nil
 			claimed[#claimed + 1] = old
 		end
 	end
+	local P, mine = ns.Profile, own.profile
+	local empty = not (type(mine) == "string" and type(own.profiles) == "table" and own.profiles[mine]) or P and P.BindingsIn(own, mine) == 0
+	if adopt and empty and type(own.profiles) == "table" and own.profiles[adopt] then own.profile = adopt end
 	return claimed
 end
 
@@ -386,7 +396,7 @@ local busy
 
 
 -- Routed cells per character and profile: ns.db.chars[char].cells[profileId][code][layer] = { id, name, icon, kind }
--- (a migrated profile's id is its old device key, Profile.lua).
+-- (a migrated profile's id is its old device key, Profile.lua). The profile is the character's, whatever the pad.
 -- Written out of combat only (the router attributes follow on the next apply). Older stores move in once: the
 -- account-wide ns.db.faceEntries to the first character seen, a character's faceEntries[deviceKey][pos] to the
 -- base layer of that face button.
@@ -399,6 +409,7 @@ local function resolveCells(create)
 	end
 	char.cells = char.cells or {}
 	for deviceKey, list in pairs(char.faceEntries or {}) do
+		if ns.Profile then ns.Profile.Adopt(char, deviceKey) end
 		local byCode = char.cells[deviceKey] or {}
 		char.cells[deviceKey] = byCode
 		for pos, entry in pairs(list) do

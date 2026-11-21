@@ -59,7 +59,7 @@
 local addonName, ns = ...
 ForeverControllerTweaks = ns
 
-local VERSION, DEBUG_CAP = 4, 500
+local VERSION, DEBUG_CAP = 5, 500
 ns.DB_VERSION = VERSION
 local PREFIX = "|cff33ff99Controller Tweaks|r "
 
@@ -330,6 +330,8 @@ local MIGRATIONS = {
 		end
 		ns.MoveRings(db)
 	end,
+	-- 5 (1.5.4): profiles belong to the characters (Profile.lua); a controller never picks one.
+	[5] = function(db) if ns.Profile then ns.Profile.MoveToChars(db) end end,
 }
 
 local function copy(value)
@@ -340,15 +342,17 @@ local function copy(value)
 end
 
 -- Touch buttons before 1.5.2 (char.touch.bars, one set per character) become a copy in every live profile
--- (char.touchBars[profile id]), so no profile changes; a profile with buttons of its own keeps them. Removed only once
--- copied somewhere: without a profile yet they wait (Touch.Config runs this again). Idempotent.
+-- (char.touchBars[profile id]): the character's own since 1.5.4, the account's while MIGRATIONS[4] runs. A profile with
+-- buttons of its own keeps them. Removed only once copied somewhere: without a profile yet they wait (Touch.Config runs
+-- this again). Idempotent.
 function ns.MoveTouchBars(db, char)
 	local touch = type(char.touch) == "table" and char.touch or nil
 	local bars = touch and touch.bars
 	if bars == nil then return end
 	if type(bars) ~= "table" then touch.bars = nil return end
 	local copied = false
-	for id, profile in pairs(type(db.profiles) == "table" and db.profiles or NONE) do
+	local profiles = type(char.profiles) == "table" and char.profiles or type(db.profiles) == "table" and db.profiles or NONE
+	for id, profile in pairs(profiles) do
 		if type(profile) == "table" and not profile.gone then
 			char.touchBars = type(char.touchBars) == "table" and char.touchBars or {}
 			if char.touchBars[id] == nil then char.touchBars[id] = copy(bars) end
@@ -451,7 +455,7 @@ local function repairMacros(macros, path, fix)
 	end
 end
 
-local CHAR_TABLES = { highest = 1, shadow = 1, placed = 1, cells = 3, faceEntries = 2, touchBars = 4 }
+local CHAR_TABLES = { highest = 1, shadow = 1, placed = 1, cells = 3, faceEntries = 2, touchBars = 4, profiles = 1 }
 -- The per-character migrations (ns.MigrateChar): legacyFaceDone (Face, PS:Back/Inspect macros to routed cells),
 -- routedUnderDone (Face, FCT: macros left under routed cells), macroPrefixDone (Actions, PS: macros renamed FCT:).
 local CHAR_FLAGS = { "legacyFaceDone", "routedUnderDone", "macroPrefixDone" }
@@ -561,7 +565,7 @@ local HELP = "/fct (or /controllertweaks) opens the settings; so do L2 + R2 + Cr
 	.. " | preset native|split | role <L1 R1 L2 R2 P1-P4> <leftmod rightmod friendly hostile none>"
 	.. " | face <bottom right left top> <interact inspect back jump> | learn <L1 R1 L2 R2 P1-P4>|cancel | reset (the layout)"
 	.. " | whatsnew (what's new in this version; turns it back on) | cleanup (finds duplicate FCT: macros and stray hidden slots and tidies them)"
-	.. " | profile (lists them) | profile <name> (this controller uses it) | sync (status; now, on, off, undo) | export | import | release (gives back every slot and macro before uninstalling) | status | selftest | ringlog | debug on|off | help"
+	.. " | profile (this character's) | profile <name> (this character plays on it) | sync (status; now, on, off, undo) | export | import | release (gives back every slot and macro before uninstalling) | status | selftest | ringlog | debug on|off | help"
 
 function ns.commands.help() ns.log(HELP) end
 
