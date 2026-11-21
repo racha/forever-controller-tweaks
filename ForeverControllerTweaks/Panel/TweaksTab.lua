@@ -15,7 +15,7 @@ UI.TweaksTab = S
 local T = {
 	TAB = "Tweaks", TITLE = "Controller Tweaks · Tweaks", HINT = "Small conveniences for every character. Most are off until you turn them on.",
 	TEST = "Test", BAGS = "Bags & vendors", NPCS = "Quests & NPCs", SOCIAL = "Group & social", CONTROLLER = "Controller", GEAR = "Loot & gear",
-	RUMBLE = "Rumble",
+	RUMBLE = "Rumble", CAMERA = "Camera", YARDS = "%d yd",
 	CHOICES = {
 		lightBar = { default = "Game default", class = "Class colour", custom = "Custom" },
 		-- The stick presses by this pad's own glyph names (L3 / LS).
@@ -64,6 +64,7 @@ local T = {
 		passUnusable = { "Pass on unusable rolls", "Passes loot rolls on armor or weapons your class can never use. When unsure, you roll." },
 		upgradeArrows = { "Upgrade arrows", "A green arrow on gear you can wear with a higher item level than what you wear there." },
 		wearRewards = { "Wear quest rewards", "After a quest, an upgrade reward gets a card: hold the top face button to wear it." },
+		cameraZoom = { "Camera zoom", "Where the camera sits. Moving it zooms now; the camera goes back here when you log in." },
 	},
 }
 S.T = T
@@ -78,7 +79,7 @@ for _, group in ipairs(ns.Tweaks.RUMBLE_GROUPS) do RUMBLE_ROWS[#RUMBLE_ROWS + 1]
 local COLUMNS = {
 	{ side = "right", sections = { { T.BAGS, { "sortBags", "sortKey", "sellJunk", "repair", "repairGuild", "buyStack" } }, { T.NPCS, { "skipGossip", "learnAll", "openMail" } } } },
 	{ side = "right", sections = { { T.RUMBLE, RUMBLE_ROWS } } },
-	{ side = "left", sections = { { T.CONTROLLER, { "battery", "batteryIcon", "rareAlert", "lightBar", "lightColor", "combatFlash" } } } },
+	{ side = "left", sections = { { T.CONTROLLER, { "battery", "batteryIcon", "rareAlert", "lightBar", "lightColor", "combatFlash" } }, { T.CAMERA, { "cameraZoom" } } } },
 	{ side = "left", sections = { { T.GEAR, { "fastLoot", "passUnusable", "upgradeArrows", "wearRewards" } }, { T.SOCIAL, { "acceptInvites", "declineDuels", "acceptRes", "whisperAlert" } } } },
 }
 -- A sub-row: its label is indented. A row in IDLE greys while the row above doesn't use it.
@@ -107,6 +108,13 @@ for _, group in ipairs(ns.Tweaks.RUMBLE_GROUPS) do
 	T.CHOICES[key] = T.CHOICES.pattern
 end
 TEST.rumbleStrength = function() ns.Tweaks.PlayPattern("double", nil, "test strength") end
+-- Camera zoom: the saved distance, else where the camera is now; up to the game's limit, read when the tab opens.
+CUSTOM.cameraZoom = {
+	range = function() return { 0, ns.Tweaks.CameraMax(), 1 } end,
+	get = function() return math.floor((ns.Tweaks.Get("cameraZoom") or ns.Tweaks.CameraNow() or 0) + 0.5) end,
+	set = function(v) ns.Tweaks.Set("cameraZoom", math.min(v, ns.Tweaks.CameraMax())) end,
+	text = function(v) return T.YARDS:format(v) end,
+}
 
 local function get(key)
 	local custom = CUSTOM[key]
@@ -141,6 +149,7 @@ local function nudge(key, by)
 end
 
 local function percent(value) return string.format("%d%%", math.floor(value * 100 + 0.5)) end
+local function valueText(key, value) return CUSTOM[key] and CUSTOM[key].text and CUSTOM[key].text(value) or percent(value) end
 
 local function newRow(x, y, key)
 	local row = CreateFrame("Button", nil, window)
@@ -182,7 +191,7 @@ local function node(row, key, tip)
 		return UI.Node(window, row, function() if test then test() else step(key, 1, true) end end, { cursorX = 0, onDir = function(by) return step(key, by) end, tip = tip, onFocus = focus })
 	end
 	if range then
-		row.control:Set(value, percent(value))
+		row.control:Set(value, valueText(key, value))
 		tip.lines[2] = L.STEPPER_TIP
 		if test then tip.actions = { { "PAD1", T.TEST } } end
 		return UI.Node(window, row, function() if test then test() end end, { cursorX = 0, onDir = function(by) return nudge(key, by) end, tip = tip, onFocus = focus })

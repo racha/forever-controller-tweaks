@@ -1,10 +1,12 @@
 -- Forever Controller Tweaks sync (design/sync.md): the settings follow the account in account macros "FCT:Sync 1..n",
 -- read at login and written when they change; and the codec of /fct export and /fct import.
 --
--- Sections (design 3.1), each one unit with its own server-time stamp (nothing inside a section is merged): options,
--- tweaks, rings, keyboard, setup, dev:<pad> (a controller's hardware), prof:<id> (a profile: name, roles, face, or
--- gone), b:<Name-Realm>:<profile id> (bindings), t:<Name-Realm> (touch bars); and two merged per entry (the union, the
--- newer entry wins): p:<Name-Realm>, the bars 6-8 slots the addon placed on any machine (Actions.lua), and map, the
+-- Sections (design 3.1), each one unit with its own server-time stamp (nothing inside a section is merged): options
+-- (the ring marker in it), tweaks, keyboard, setup, dev:<pad> (a controller's hardware), prof:<id> (a profile: name,
+-- roles, face, or gone), b:<GUID>:<profile id> (bindings), t:<GUID> (the touch bars' layout),
+-- tb:<GUID>:<profile id> (touch buttons, { bars = { left, right } }), r:<GUID> (the
+-- character's rings; met for the first time, the union of both by ring id); and two merged per entry (the union, the
+-- newer entry wins): p:<GUID>, the bars 6-8 slots the addon placed on any machine (Actions.lua), and map, the
 -- profile each controller uses (Profile.lua). Format 1 (before profiles) kept roles and face in dev:<pad> and keyed
 -- bindings by pad: it is read as the profile migration reads an old store. Local or derived state never syncs: the debug log, the macro registries and shadow records (which
 -- cell holds which slot; the take-back rebuilds them), ringLast and the healer last target, What's new, the keyboard's
@@ -57,8 +59,11 @@ local L = {
 }
 Sync.L = L
 
--- 2 (1.5.1): profiles. A 1.5.0 machine pauses on it ("newer") and writes nothing.
-local FORMAT, MAX_PARTS, BODY_MAX = 2, 20, 255
+-- 2 (1.5.1): profiles. 3 (1.5.2): rings per character (r:), touch buttons per profile (tb:). An older machine pauses on
+-- a newer one ("newer") and writes nothing; a format 2 set reads here without its account rings section and its
+-- name-keyed ones (a format 2 export still imports: its rings go to this character, its touch buttons to this
+-- controller's profile).
+local FORMAT, MAX_PARTS, BODY_MAX = 3, 20, 255
 local HEADER = "#FCT%d %d/%d %s "
 -- The gen is the write's server time since GEN_EPOCH (2025-01-01) in base36: 6 letters until 2094. The header is
 -- then at most 19 letters ("#FCT1 20/20 " and the gen and a space).
@@ -93,10 +98,24 @@ local function serverTime() return call(GetServerTime) or 0 end
 local function isPad(key) return type(key) == "string" and key:find("^%x%x%x%x/%x%x%x%x$") ~= nil end
 local function isId(id) return isPad(id) or type(id) == "string" and id:find("^p%d+$") ~= nil end
 
--- b:<Name-Realm>:<profile id>: the character and the id, else nil.
+-- b:<GUID>:<profile id>: the character and the id, else nil.
 local function bindingsKey(key)
 	local name, id = key:match("^b:(.+):([^:]+)$")
 	if name and isId(id) then return name, id end
+end
+-- The character a per-character section belongs to (b:, t:, p:), else nil.
+local function charOfKey(key) return key:match("^t?b:(.+):[^:]+$") or key:match("^[tpr]:(.+)$") end
+-- Characters are keyed by GUID since 1.5.2 (Face.lua): 1.5.1's Name-Realm records were shared by every character of
+-- that first name. A per-character section under any other key is never read, put or written; the record stays
+-- local until its character claims it.
+local function isGuid(name) return type(name) == "string" and name:find("^Player%-") ~= nil end
+-- 1.5.1's account "rings" section counts as name-keyed too: the rings of the old records were handed out at load
+-- (Core.MoveRings) and reach a character only with its claim, never the one that happens to read the set. A pasted
+-- export's rings row still goes to this character (Sync.Import puts it as r:<GUID>).
+local function nameKeyed(key)
+	if key == "rings" then return true end
+	local name = charOfKey(key)
+	return name ~= nil and not isGuid(name)
 end
 local function finite(value) return type(value) == "number" and value - value == 0 end
 local function trimmed(body) return type(body) == "string" and (body:gsub("%s+$", "")) or nil end
@@ -255,10 +274,16 @@ local function slimGrid(rows)
 	return out
 end
 
+local function slimSides(sides)
+	local out = {}
+	for side, list in pairs(type(sides) == "table" and sides or NONE) do out[side] = slimGrid(list) end
+	return out
+end
+
+-- The layout; buttons only while they wait for a profile (Core.MoveTouchBars) or in an export row.
 local function slimTouch(touch)
 	local out = copy(touch)
-	out.bars = {}
-	for side, list in pairs(type(touch.bars) == "table" and touch.bars or NONE) do out.bars[side] = slimGrid(list) end
+	out.bars = type(touch.bars) == "table" and slimSides(touch.bars) or nil
 	return out
 end
 
@@ -295,12 +320,9 @@ function Sync.Sections(db, base)
 	if type(db.options) == "table" then
 		out.options = copy(db.options)
 		out.options.debug = nil
+		out.options.ringMarker = db.ringMarker ~= false
 	end
 	if type(db.tweaks) == "table" then out.tweaks = copy(db.tweaks) end
-	if type(db.rings) == "table" or db.ringMarker ~= nil then
-		out.rings = slimRings(type(db.rings) == "table" and db.rings or NONE)
-		out.rings.marker = db.ringMarker
-	end
 	if type(db.keyboard) == "table" then
 		out.keyboard = copy(db.keyboard)
 		for key in pairs(LOCAL_KEYBOARD) do out.keyboard[key] = nil end
@@ -310,11 +332,18 @@ function Sync.Sections(db, base)
 	for id, profile in pairs(type(db.profiles) == "table" and db.profiles or NONE) do out["prof:" .. id] = copy(profile) end
 	if type(db.deviceProfile) == "table" and (next(db.deviceProfile) or base.map) then out.map = copy(db.deviceProfile) end
 	for name, char in pairs(type(db.chars) == "table" and db.chars or NONE) do
+		if not isGuid(name) then char = nil end
 		for pad, rows in pairs(type(char) == "table" and type(char.cells) == "table" and char.cells or NONE) do
 			local key = "b:" .. name .. ":" .. pad
 			if hasEntries(rows) or base[key] then out[key] = slimGrid(rows) end
 		end
 		if type(char) == "table" and type(char.touch) == "table" then out["t:" .. name] = slimTouch(char.touch) end
+		for id, sides in pairs(type(char) == "table" and type(char.touchBars) == "table" and char.touchBars or NONE) do
+			local key = "tb:" .. name .. ":" .. id
+			local data = { bars = slimSides(sides) }
+			if touchHasEntries(data) or base[key] then out[key] = data end
+		end
+		if type(char) == "table" and (type(char.rings) == "table" or base["r:" .. name]) then out["r:" .. name] = slimRings(type(char.rings) == "table" and char.rings or NONE) end
 		if type(char) == "table" and type(char.placed) == "table" and (next(char.placed) or base["p:" .. name]) then out["p:" .. name] = copy(char.placed) end
 	end
 	return out
@@ -380,7 +409,8 @@ end
 -- Kinds of section, for chat lines and the status: "bindings", "touch", "device" or the key itself.
 local function kindOf(key)
 	if key:find("^b:") then return "bindings" end
-	if key:find("^t:") then return "touch" end
+	if key:find("^r:") then return "rings" end
+	if key:find("^t:") or key:find("^tb:") then return "touch" end
 	if key:find("^dev:") then return "device" end
 	if key:find("^p:") then return "placed" end
 	if key:find("^prof:") then return "profile" end
@@ -408,7 +438,11 @@ local function freshDefault(key, data)
 	if kind == "placed" or kind == "map" then return true end
 	if kind == "profile" then return type(data) == "table" and not data.gone and not next(data.roles or NONE) and not next(data.face or NONE) end
 	if kind == "setup" then return true end
-	if kind == "options" then return enc(data) == enc({ glyphs = true, toggleKey = "PADSOCIAL" }) end
+	if kind == "options" then
+		local options = copy(data)
+		if options.ringMarker == true then options.ringMarker = nil end
+		return enc(options) == enc({ glyphs = true, toggleKey = "PADSOCIAL" })
+	end
 	if kind == "tweaks" then
 		local T = ns.Tweaks
 		if not (T and T.Repair) then return next(data) == nil end
@@ -448,6 +482,19 @@ end
 
 -- Placed slots per slot, map per controller: the newer entry (a tie keeps L). Removals aren't carried: a placed entry
 -- the slot no longer holds is dropped where it is read (Actions.lua); a controller is never forgotten.
+-- A character's rings met for the first time (no base yet): both copies came from 1.5.1's one account list, handed
+-- out and claimed on each computer on its own, so every ring of either is kept (L's copy of a shared id).
+local function ringUnion(L, R)
+	local out, have = copy(L or NONE), {}
+	out.list = type(out.list) == "table" and out.list or {}
+	for _, ring in ipairs(out.list) do have[ring.id] = true end
+	for _, ring in ipairs(type(R) == "table" and type(R.list) == "table" and R.list or NONE) do
+		if type(ring) == "table" and not have[ring.id] then out.list[#out.list + 1], have[ring.id] = copy(ring), true end
+	end
+	out.nextId = math.max(tonumber(out.nextId) or 1, tonumber(R and R.nextId) or 1)
+	return out
+end
+
 local function union(L, R)
 	local out = copy(L or NONE)
 	for slot, item in pairs(R or NONE) do
@@ -465,7 +512,7 @@ function Sync.Merge(localS, remote, base, stamps, first, own)
 	for key in pairs(keys) do
 		local L, R, B = localS[key], remote[key], base[key]
 		local ls, rs = L ~= nil and enc(L), R and enc(R.d)
-		local joined = R and (kindOf(key) == "placed" or key == "map") and union(L, R.d)
+		local joined = R and (kindOf(key) == "placed" or key == "map") and union(L, R.d) or R and L ~= nil and B == nil and key:find("^r:") and ringUnion(L, R.d)
 		local js = joined and enc(joined)
 		if not R then
 			plan.keep[key] = true
@@ -542,6 +589,13 @@ local function fatGrid(rows, oldRows, index)
 	return out
 end
 
+local function fatSides(sides, old, index)
+	local out = {}
+	old = type(old) == "table" and old or NONE
+	for side, list in pairs(type(sides) == "table" and sides or NONE) do out[side] = fatGrid(list, old[side], index) end
+	return out
+end
+
 local function charOf(db, name)
 	db.chars = type(db.chars) == "table" and db.chars or {}
 	db.chars[name] = type(db.chars[name]) == "table" and db.chars[name] or {}
@@ -557,6 +611,9 @@ local function putOptions(db, data)
 	if options.toggleHold ~= nil and options.toggleHold ~= false and type(options.toggleHold) ~= "table" then options.toggleHold = nil end
 	if options.minimapAngle ~= nil and not finite(options.minimapAngle) then options.minimapAngle = nil end
 	if options.minimapIcon ~= nil and type(options.minimapIcon) ~= "boolean" then options.minimapIcon = nil end
+	-- The ring marker lives in db.ringMarker (nil: on); a format 2 set has none in options and leaves it as it is.
+	if options.ringMarker == true then db.ringMarker = nil elseif options.ringMarker == false then db.ringMarker = false end
+	options.ringMarker = nil
 	db.options = options
 end
 
@@ -572,8 +629,16 @@ local function putTweaks(db, data)
 	db.tweaks.rumbleStrength = T.MigrateRumbleStrength(saved.rumbleStrength)
 end
 
-local function putRings(db, data, index)
-	local old = type(db.rings) == "table" and db.rings or {}
+-- A character's rings (r:<GUID>).
+local function putRings(db, name, data, index)
+	if not name then return end
+	local char = charOf(db, name)
+	local function repaired() if ns.Rings and ns.Rings.Repair then ns.Rings.Repair(db, function(what) ns.debug("sync: rings repaired %s", what) end) end end
+	if data == nil then
+		char.rings = nil
+		return repaired()
+	end
+	local old = type(char.rings) == "table" and char.rings or {}
 	local oldList = type(old.list) == "table" and old.list or NONE
 	local list = {}
 	for i, ring in ipairs(type(data) == "table" and type(data.list) == "table" and data.list or NONE) do
@@ -588,8 +653,8 @@ local function putRings(db, data, index)
 		end
 	end
 	data = type(data) == "table" and data or NONE
-	db.rings, db.ringMarker = { list = list, nextId = data.nextId, axisSaved = old.axisSaved }, data.marker
-	if ns.Rings and ns.Rings.Repair then ns.Rings.Repair(db, function(what) ns.debug("sync: rings repaired %s", what) end) end
+	char.rings = { list = list, nextId = data.nextId }
+	repaired()
 end
 
 local function putKeyboard(db, data)
@@ -640,9 +705,10 @@ end
 
 -- One section into db (data nil removes what can be removed). index: catalogIndex().
 local function put(db, key, data, index)
+	if nameKeyed(key) then return end
 	if key == "options" then return putOptions(db, data) end
 	if key == "tweaks" then return putTweaks(db, data) end
-	if key == "rings" then return putRings(db, data, index) end
+	if key:find("^r:") then return putRings(db, key:sub(3), data, index) end
 	if key == "keyboard" then return putKeyboard(db, data) end
 	if key == "setup" then
 		local setup = type(data) == "table" and data or NONE
@@ -667,6 +733,15 @@ local function put(db, key, data, index)
 		charOf(db, name).placed = type(data) == "table" and copy(data) or {}
 		return
 	end
+	local id
+	name, id = key:match("^tb:(.+):([^:]+)$")
+	if name then
+		if not isId(id) then return end
+		local char = charOf(db, name)
+		char.touchBars = type(char.touchBars) == "table" and char.touchBars or {}
+		char.touchBars[id] = type(data) == "table" and fatSides(data.bars, char.touchBars[id], index) or nil
+		return
+	end
 	name = key:match("^t:(.+)$")
 	if not name then return end
 	local char = charOf(db, name)
@@ -674,25 +749,41 @@ local function put(db, key, data, index)
 		char.touch = nil
 		return
 	end
-	local old = type(char.touch) == "table" and type(char.touch.bars) == "table" and char.touch.bars or NONE
 	local touch = copy(data)
-	touch.bars = {}
-	for side, list in pairs(type(data.bars) == "table" and data.bars or NONE) do touch.bars[side] = fatGrid(list, old[side], index) end
+	touch.bars = nil
+	-- Buttons in t: (a format 2 set, an export row, an Undo of either) go to this controller's profile.
+	if type(data.bars) == "table" then
+		local pid = ns.Profile and ns.Profile.CurrentId()
+		local old = pid and type(char.touchBars) == "table" and char.touchBars[pid] or type(char.touch) == "table" and char.touch.bars
+		local sides = fatSides(data.bars, old, index)
+		if pid then
+			char.touchBars = type(char.touchBars) == "table" and char.touchBars or {}
+			char.touchBars[pid] = sides
+		else
+			touch.bars = sides
+		end
+	end
 	char.touch = touch
 end
 
--- Puts sections (key -> data, or false to remove) into ns.db, rings first so ring entries find their names, then
+-- Puts sections (key -> data, or false to remove) into ns.db, rings first so ring entries find their names (and the
+-- rings repair checks bindings against the new lists before the bindings that came with them are put), then
 -- every module applies again. "device": the one FCT_LAYOUT_CHANGED reason every module re-applies on (Rings re-applies
 -- only on a controller change).
 local function putAll(sections)
 	local db = ns.db
-	if sections.rings ~= nil then
-		put(db, "rings", sections.rings or nil, catalogIndex())
-		ns.Fire("FCT_RINGS_CHANGED")
+	local function ringKey(key) return key:find("^r:") ~= nil end
+	local rings = false
+	for key, data in pairs(sections) do
+		if ringKey(key) then
+			put(db, key, data or nil, catalogIndex())
+			rings = true
+		end
 	end
+	if rings then ns.Fire("FCT_RINGS_CHANGED") end
 	local index = catalogIndex()
 	for key, data in pairs(sections) do
-		if key ~= "rings" then put(db, key, data or nil, index) end
+		if not ringKey(key) then put(db, key, data or nil, index) end
 	end
 	if ns.Tweaks then
 		if ns.Tweaks.Refresh then ns.Tweaks.Refresh() end
@@ -953,7 +1044,7 @@ function Sync.ReadRemote()
 	payload.at = finite(payload.at) and payload.at or 0
 	local sections = {}
 	for key, item in pairs(payload.s) do
-		if type(key) == "string" and type(item) == "table" and validRow(kindOf(key), item.d) then sections[key] = { t = finite(item.t) and item.t or 0, d = item.d } end
+		if type(key) == "string" and type(item) == "table" and not nameKeyed(key) and validRow(kindOf(key), item.d) then sections[key] = { t = finite(item.t) and item.t or 0, d = item.d } end
 	end
 	if (tonumber(payload.v) or 0) < 2 then fromFormat1(sections, payload.pads) end
 	payload.s = sections
@@ -1289,7 +1380,9 @@ function Sync.Status()
 	end
 	local charCount = 0
 	for _ in pairs(chars) do charCount = charCount + 1 end
-	if sections.rings then rings = #sections.rings.list end
+	local _, name = me()
+	local mine = name and sections["r:" .. name]
+	if mine then rings = #mine.list end
 	local pending = rewrite
 	for key, data in pairs(sections) do pending = pending or enc(data) ~= s.base[key] end
 	local status = s.on == false and "off" or not Sync.Available() and "unavailable" or choice and "choice" or s.paused or pending and "pending" or "ok"
@@ -1375,9 +1468,18 @@ local function localRow(row)
 		if not (id and char) then return end
 		return slimGrid(type(char.cells) == "table" and char.cells[id] or NONE), "b:" .. name .. ":" .. id
 	end
+	if row == "rings" then
+		if not char then return end
+		return slimRings(type(char.rings) == "table" and char.rings or NONE), "r:" .. name
+	end
+	-- The layout and this profile's buttons, as one row.
 	if row == "touch" then
 		if not char then return end
-		return type(char.touch) == "table" and slimTouch(char.touch) or nil, "t:" .. name
+		if type(char.touch) ~= "table" then return nil, "t:" .. name end
+		local out = slimTouch(char.touch)
+		local bars = id and type(char.touchBars) == "table" and char.touchBars[id]
+		out.bars = slimSides(bars or char.touch.bars)
+		return out, "t:" .. name
 	end
 	if row == "layout" then return profile and { name = profile.name, roles = copy(profile.roles), face = copy(profile.face) } or nil end
 	return Sync.Sections(db)[row], row
@@ -1454,7 +1556,7 @@ function Sync.Preview(payload)
 			local row = { id = id, same = enc(incoming) == enc(mine) }
 			-- The name is the exporter's: an import keeps this profile's.
 			if id == "layout" then row.same = keyChanges(incoming.roles, mine and mine.roles) + keyChanges(incoming.face, mine and mine.face) == 0 end
-			row.missing = (id == "bindings" or id == "layout") and not (ns.Device and ns.Device.Current()) or (id == "bindings" or id == "touch") and not me()
+			row.missing = (id == "bindings" or id == "layout") and not (ns.Device and ns.Device.Current()) or (id == "bindings" or id == "touch" or id == "rings") and not me()
 			if id == "bindings" then row.count = gridChanges(incoming, mine)
 			elseif id == "touch" then row.count = touchChanges(incoming, mine)
 			elseif id == "rings" then row.rings, row.yours = #(incoming.list or NONE), mine and #(mine.list or NONE) or 0

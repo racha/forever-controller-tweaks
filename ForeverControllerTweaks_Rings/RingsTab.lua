@@ -16,7 +16,7 @@ local STRINGS = {
 	RINGS_NONE = "No rings yet. Make one with New ring.", RINGS_EDIT = "Edit slots",
 	RINGS_RENAME = "Rename", RINGS_RENAME_TITLE = "Rename ring", RINGS_RENAME_HINT = "Enter or the keyboard's Send saves, Escape or Close cancels.",
 	RINGS_ICON = "Icon", RINGS_ICON_TITLE = "Ring icon", RINGS_ICON_AUTO = "First slot's icon", RINGS_ICON_SLOT = "From this ring's slots", RINGS_ICON_TIP = "The icon in the ring's hub and on the buttons that open it.",
-	RINGS_DELETE = "Delete", RINGS_DELETE_TEXT = "Delete the ring \"%s\"?", RINGS_DELETE_SUB = "It is on %d button(s) (every character): they will be cleared.",
+	RINGS_DELETE = "Delete", RINGS_DELETE_TEXT = "Delete the ring \"%s\"?", RINGS_DELETE_SUB = "It is on %d of this character's button(s): they will be cleared.",
 	RINGS_DELETE_TIP = "Deletes the ring and clears every button that opens it.",
 	RINGS_SLOTS = "Slots", RINGS_SLOTS_TIP = "D-pad left and right: %d to %d slots. Slots past the count are kept for later.",
 	RINGS_STICK = "Stick", RINGS_STICK_NAMES = { right = "Right", left = "Left", dynamic = "Dynamic" },

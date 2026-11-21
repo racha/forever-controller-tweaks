@@ -128,6 +128,8 @@ local GAME = {
 	{ "Misc", "readycheck", "Ready check", "INV_Misc_Note_01", text = "/readycheck", short = "ReadyCheck" },
 	{ "Misc", "pull", "Pull countdown (5 s)", "INV_Misc_PocketWatch_02", text = "/countdown 5", short = "Pull" },
 	{ "Misc", "minimapzoom", "Minimap zoom", "INV_Misc_Spyglass_03", button = "ForeverControllerTweaksMinimapZoom", short = "MinimapZoom" },
+	{ "Misc", "zoomin", "Zoom in", "INV_Misc_Spyglass_02", hold = "ForeverControllerTweaksZoomIn" },
+	{ "Misc", "zoomout", "Zoom out", "INV_Misc_Spyglass_01", hold = "ForeverControllerTweaksZoomOut" },
 }
 for i = 0, 8 do
 	local name = i == 0 and "Clear raid marker" or ("Raid marker " .. i)
@@ -325,7 +327,7 @@ local function mountEntries(add)
 	end
 end
 
--- Macro registry. db.macros[name] = { id = <catalog id>, chars = { ["Name-Realm"] = true } }: the account macros
+-- Macro registry. db.macros[name] = { id = <catalog id>, chars = { [GUID] = true } }: the account macros
 -- The addon made and the characters that have one on their bars. db.chars[...].macros[name] = { id }: character
 -- macros it made once the account slots were full. Anything else, even a macro named "FCT:...", is the player's.
 local function registries()
@@ -1137,11 +1139,12 @@ local function wanted(slot, wants)
 	return false
 end
 
--- Every action this character's bindings and touch buttons use from a slot, on every pad: a slot holding one stays.
+-- Every action this character's bindings and touch buttons use from a slot, in every profile: a slot holding one stays.
 local function allWants()
 	local wants = {}
 	for _, need in ipairs(ns.Face.AllShadowNeeds and ns.Face.AllShadowNeeds() or ns.Face.ShadowNeeds()) do wants[#wants + 1] = need.id end
-	for _, need in ipairs(ns.Touch and ns.Touch.ShadowNeeds and ns.Touch.ShadowNeeds() or {}) do wants[#wants + 1] = need.id end
+	local Touch = ns.Touch
+	for _, need in ipairs(Touch and (Touch.AllShadowNeeds or Touch.ShadowNeeds)() or {}) do wants[#wants + 1] = need.id end
 	return wants
 end
 

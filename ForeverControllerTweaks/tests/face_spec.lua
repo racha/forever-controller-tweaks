@@ -156,6 +156,7 @@ function InCombatLockdown() return W.combat end
 function GetTime() return os.clock() end
 function date() return "00:00:00 " end
 function UnitName() return W.char end
+function UnitGUID(unit) if unit == "player" then return "Player-0-" .. W.char end end
 function GetNormalizedRealmName() return "Realm" end
 local printed = {}
 function print(msg) printed[#printed + 1] = msg end
@@ -480,7 +481,7 @@ check(W.slots[180] == nil and #macros == 1 and ns.Face.Slot("FT", "T") == nil, "
 check(ns.Face.Catcher("FT", "T") == nil and not topCatcher.shown and topCatcher.attrs["ps-on"] == nil, "catcher hidden and off")
 
 -- No shadow slot while the cursor holds something: macro text as the fallback, placed on the next apply.
-ns.db.chars["Ann-Realm"].cells["054c/0ce6"].FT = { T = { id = "spell:133", name = "Fireball", kind = "spell" } }
+ns.db.chars["Player-0-Ann"].cells["054c/0ce6"].FT = { T = { id = "spell:133", name = "Fireball", kind = "spell" } }
 W.cursor = { kind = "item" }
 ns.Fire("PLAYER_ENTERING_WORLD")
 hold()
@@ -496,7 +497,7 @@ check(W.slots[180].id == 999 and W.slots[179].id == 133 and press("PAD4", true) 
 W.slots[180] = nil
 
 -- Combat start applies without placing: an entry without its slot runs as text for that fight.
-ns.db.chars["Ann-Realm"].cells["054c/0ce6"].FR = { T = { id = "item:6948", name = "Hearthstone", kind = "item" } }
+ns.db.chars["Player-0-Ann"].cells["054c/0ce6"].FR = { T = { id = "item:6948", name = "Hearthstone", kind = "item" } }
 local placed = 0
 for _ in pairs(W.slots) do placed = placed + 1 end
 ns.Fire("FCT_COMBAT_START")
@@ -508,14 +509,14 @@ check(ns.Face.Slot("FR", "T") and frames.ForeverControllerTweaksFaceRight.attrs[
 assert(ns.Face.SetCellEntry("FR", "T", nil))
 
 -- An entry that no longer resolves is logged and leaves the key native.
-ns.db.chars["Ann-Realm"].cells["054c/0ce6"].FT = { T = { id = "spell:999", name = "Forgotten", kind = "spell" } }
+ns.db.chars["Player-0-Ann"].cells["054c/0ce6"].FT = { T = { id = "spell:999", name = "Forgotten", kind = "spell" } }
 ns.Fire("PLAYER_ENTERING_WORLD")
 check(not W.bindings.PAD4 and lastDebug():find("top entry spell:999 unavailable", 1, true), "unavailable entry logged, key native")
 -- Open chat was removed (1.2.1): a cell saved with it stays saved, routes nothing and errors nothing.
-ns.db.chars["Ann-Realm"].cells["054c/0ce6"].FT = { T = { id = "game:chat", name = "Open chat", kind = "game" } }
+ns.db.chars["Player-0-Ann"].cells["054c/0ce6"].FT = { T = { id = "game:chat", name = "Open chat", kind = "game" } }
 ns.Fire("PLAYER_ENTERING_WORLD")
 check(not W.bindings.PAD4 and lastDebug():find("top entry game:chat unavailable", 1, true) and ns.Face.CellEntry("FT", "T").id == "game:chat", "removed Open chat: kept, key native")
-ns.db.chars["Ann-Realm"].cells["054c/0ce6"].FT = nil
+ns.db.chars["Player-0-Ann"].cells["054c/0ce6"].FT = nil
 assert(ns.Face.SetCellEntry("FT", "T", { id = "spell:133", name = "Fireball" }))
 
 -- Entries belong to the character.
@@ -528,7 +529,7 @@ check(ns.Face.CellEntry("FT", "T").id == "spell:133" and W.bindings.PAD4, "first
 
 -- Old account-wide entries move to the current character once.
 ns.db.faceEntries = { ["054c/0ce6"] = { right = { id = "spell:133", name = "Fireball" } } }
-ns.db.chars["Cid-Realm"] = nil
+ns.db.chars["Player-0-Cid"] = nil
 W.char = "Cid"
 ns.Fire("PLAYER_ENTERING_WORLD")
 check(ns.Face.CellEntry("FR", "T").id == "spell:133" and ns.db.faceEntries == nil, "migrated to the current character")
@@ -537,11 +538,11 @@ ns.Fire("PLAYER_ENTERING_WORLD")
 check(ns.Face.CellEntry("FR", "T") == nil, "not copied to other characters")
 
 -- A character's own faceEntries (before cells) move to the base layer once.
-ns.db.chars["Dee-Realm"] = { faceEntries = { ["054c/0ce6"] = { bottom = { id = "spell:133", name = "Fireball" } } } }
+ns.db.chars["Player-0-Dee"] = { faceEntries = { ["054c/0ce6"] = { bottom = { id = "spell:133", name = "Fireball" } } } }
 W.char = "Dee"
 ns.Fire("PLAYER_ENTERING_WORLD")
 check(ns.Face.CellEntry("FB", "T").kind == "spell" and ns.Face.CellEntry("FB", "T").id == "spell:133", "faceEntries -> cells, kind from the id")
-check(ns.db.chars["Dee-Realm"].faceEntries == nil, "old store dropped")
+check(ns.db.chars["Player-0-Dee"].faceEntries == nil, "old store dropped")
 W.char = "Ann"
 ns.Fire("PLAYER_ENTERING_WORLD")
 
@@ -684,18 +685,18 @@ ns.Fire("GAMEPAD_STANCE_BAR_OVERRIDE_CHANGED")
 for _, cell in ipairs({ { "DU", "L" }, { "FT", "L" }, { "DD", "T" } }) do assert(ns.Face.SetCellEntry(cell[1], cell[2], nil)) end
 check(not W.bindings.PADDUP and not W.bindings.PADDDOWN and W.bindings.PAD4, "cells given back: D-pad native, Y keeps its base entry")
 check(ns.Face.Catcher("DU", "L") == nil and not upCatcher.shown, "given back: its catcher is off")
-check(ns.db.chars["Ann-Realm"].cells["054c/0ce6"].DU == nil and ns.Face.CellEntry("FT", "T").id == "spell:133", "empty rows dropped, base entry kept")
+check(ns.db.chars["Player-0-Ann"].cells["054c/0ce6"].DU == nil and ns.Face.CellEntry("FT", "T").id == "spell:133", "empty rows dropped, base entry kept")
 
 -- Back and Inspect were FCT: macros, whose press and release run in the same instant; old placements move to routed
 -- cells once (with the Gamepad UI on), and the old macro goes through the registry.
 GamepadActionBarBindingUtil = { GetGamepadStorageSlotIndexFromPageAndPageUnitSlotID = function(page, id) return 181 + (page - 1) * 32 + id end }
 macros[#macros + 1] = { "PS:Back", 1, "/click X" }
 ns.db.macros = ns.db.macros or {}
-ns.db.macros["PS:Back"] = { id = "game:back", chars = { ["Ann-Realm"] = true } }
+ns.db.macros["PS:Back"] = { id = "game:back", chars = { ["Player-0-Ann"] = true } }
 local backSlot = 181 + 32 + 8 + 7
 W.slots[backSlot] = { kind = "macro", id = #macros, name = "PS:Back" }
-ns.db.chars["Ann-Realm"].cells["054c/0ce6"].DD = { L = { id = "game:inspect", name = "Inspect", kind = "game" } }
-ns.db.chars["Ann-Realm"].legacyFaceDone = nil
+ns.db.chars["Player-0-Ann"].cells["054c/0ce6"].DD = { L = { id = "game:inspect", name = "Inspect", kind = "game" } }
+ns.db.chars["Player-0-Ann"].legacyFaceDone = nil
 ns.Fire("PLAYER_ENTERING_WORLD")
 local function hasMacro(macroName)
 	for _, m in ipairs(macros) do if m[1] == macroName then return true end end
@@ -703,7 +704,7 @@ end
 check(ns.Face.CellEntry("FR", "L").id == "face:back" and ns.Face.CellEntry("FR", "L").kind == "face", "page 2 L2 + Circle macro slot -> routed Back cell")
 check(W.slots[backSlot] == nil and not hasMacro("PS:Back") and ns.db.macros["PS:Back"] == nil, "slot cleared, PS:Back deleted")
 check(ns.Face.CellEntry("DD", "L").id == "face:inspect" and ns.Face.CellEntry("DD", "L").kind == "face", "old cell id -> the face action")
-check(ns.db.chars["Ann-Realm"].legacyFaceDone, "done once per character")
+check(ns.db.chars["Player-0-Ann"].legacyFaceDone, "done once per character")
 hold("PADLTRIGGER")
 check(press("PAD2", true) == "/click " .. name(TOP, 7) .. " LeftButton 1", "L2 + Circle presses Back")
 check(lastDebug():find("right down left " .. name(TOP, 7), 1, true), "debug line for the routed click")
@@ -723,14 +724,14 @@ assert(ns.Face.SetCellEntry("DD", "L", nil))
 -- because the addon wrote it word for word, then moved and deleted like a registered one.
 macros[#macros + 1] = { "PS:Back", 1, "/click " .. name(TOP, 7) }
 W.slots[backSlot] = { kind = "macro", id = #macros, name = "PS:Back" }
-ns.db.chars["Ann-Realm"].legacyFaceDone = nil
+ns.db.chars["Player-0-Ann"].legacyFaceDone = nil
 ns.Fire("PLAYER_ENTERING_WORLD")
 check(ns.Face.CellEntry("FR", "L").id == "face:back" and W.slots[backSlot] == nil and not hasMacro("PS:Back") and ns.db.macros["PS:Back"] == nil, "old-build PS:Back: adopted, routed, deleted")
 assert(ns.Face.SetCellEntry("FR", "L", nil))
 -- A PS:Back with the player's own text is theirs: left on its slot, and they're told in chat.
 macros[#macros + 1] = { "PS:Back", 1, "/stopcasting\n/cleartarget" }
 W.slots[backSlot] = { kind = "macro", id = #macros, name = "PS:Back" }
-ns.db.chars["Ann-Realm"].legacyFaceDone = nil
+ns.db.chars["Player-0-Ann"].legacyFaceDone = nil
 local said = #printed
 ns.Fire("PLAYER_ENTERING_WORLD")
 check(W.slots[backSlot].name == "PS:Back" and hasMacro("PS:Back") and ns.db.macros["PS:Back"] == nil and ns.Face.CellEntry("FR", "L") == nil, "foreign PS:Back: untouched, not registered")
@@ -743,12 +744,12 @@ table.remove(macros)
 -- A Clear refused (the cursor holds something): the 96 slots aren't scanned again on the next applies, only the
 -- refused slot is tried again until it works.
 macros[#macros + 1] = { "PS:Back", 1, "/click X" }
-ns.db.macros["PS:Back"] = { id = "game:back", chars = { ["Ann-Realm"] = true } }
+ns.db.macros["PS:Back"] = { id = "game:back", chars = { ["Player-0-Ann"] = true } }
 W.slots[backSlot] = { kind = "macro", id = #macros, name = "PS:Back" }
-ns.db.chars["Ann-Realm"].legacyFaceDone = nil
+ns.db.chars["Player-0-Ann"].legacyFaceDone = nil
 W.cursor = { kind = "item", id = 1 }
 ns.Fire("PLAYER_ENTERING_WORLD")
-check(W.slots[backSlot] and ns.Face.CellEntry("FR", "L").id == "face:back" and not ns.db.chars["Ann-Realm"].legacyFaceDone, "cursor held: routed, the slot kept, not done")
+check(W.slots[backSlot] and ns.Face.CellEntry("FR", "L").id == "face:back" and not ns.db.chars["Player-0-Ann"].legacyFaceDone, "cursor held: routed, the slot kept, not done")
 local realAdopt, scans = ns.Actions.AdoptLegacy, 0
 ns.Actions.AdoptLegacy = function(...) scans = scans + 1 return realAdopt(...) end
 said = #printed
@@ -756,7 +757,7 @@ ns.Fire("PLAYER_ENTERING_WORLD")
 check(scans == 0 and W.slots[backSlot] and #printed == said, "next apply: no scan, no chat line, the slot still refused")
 W.cursor = nil
 ns.Fire("PLAYER_ENTERING_WORLD")
-check(scans == 0 and W.slots[backSlot] == nil and not hasMacro("PS:Back") and ns.db.chars["Ann-Realm"].legacyFaceDone, "cursor free: only that slot cleared, done")
+check(scans == 0 and W.slots[backSlot] == nil and not hasMacro("PS:Back") and ns.db.chars["Player-0-Ann"].legacyFaceDone, "cursor free: only that slot cleared, done")
 ns.Actions.AdoptLegacy = realAdopt
 assert(ns.Face.SetCellEntry("FR", "L", nil))
 
@@ -795,13 +796,13 @@ check(W.slots[under1].id == 133 and ns.Face.CellEntry("FR", "L") == nil, "a slot
 local dpadTop, yTop = storage(2, "T", 2), storage(1, "T", 6)
 assert(ns.Actions.Assign(dpadTop, ns.Actions.Find("game:cleartarget")))
 W.slots[yTop] = { kind = "spell", id = 133 }
-local list = ns.db.chars["Ann-Realm"].cells["054c/0ce6"]
+local list = ns.db.chars["Player-0-Ann"].cells["054c/0ce6"]
 list.FR = list.FR or {}
 list.FR.L = { id = "face:back", name = "Back", kind = "face" }
 list.DU = { T = { id = "face:jump", name = "Jump", kind = "face" } }
-ns.db.chars["Ann-Realm"].routedUnderDone = nil
+ns.db.chars["Player-0-Ann"].routedUnderDone = nil
 ns.Fire("PLAYER_ENTERING_WORLD")
-check(W.slots[dpadTop] == nil and not hasMacro("FCT:ClearTarget") and ns.db.chars["Ann-Realm"].routedUnderDone, "login: FCT: macros under routed cells deleted")
+check(W.slots[dpadTop] == nil and not hasMacro("FCT:ClearTarget") and ns.db.chars["Player-0-Ann"].routedUnderDone, "login: FCT: macros under routed cells deleted")
 check(W.slots[under1].id == 133 and W.slots[yTop], "login: the player's spells kept, face base cells have no storage slot")
 W.slots[yTop] = nil
 assert(ns.Actions.Assign(dpadTop, ns.Actions.Find("game:cleartarget")))
@@ -839,11 +840,11 @@ local before = snapshot()
 assert(ns.Face.SetCellEntry("FR", "T", { id = "item:6948", name = "Hearthstone" }))
 assert(ns.Face.SetCellEntry("FT", "T", nil))
 check(unchanged(before) and not W.bindings.PAD4, "off: SetCellEntry and apply write no slot")
-check(ns.db.chars["Ann-Realm"].shadow[yShadow].users[1].id == "spell:133", "off: the owned slot is kept")
+check(ns.db.chars["Player-0-Ann"].shadow[yShadow].users[1].id == "spell:133", "off: the owned slot is kept")
 W.ui = nil
 ns.Fire("CVAR_UPDATE", "InputDeviceInterfaceStyle")
 check(ns.Face.Slot("FR", "T") and W.slots[ns.Face.Slot("FR", "T")].id == 6948, "on again: the new entry placed by the apply")
-check(W.slots[yShadow] == nil and ns.db.chars["Ann-Realm"].shadow[yShadow] == nil, "on again: the given-back cell's slot released")
+check(W.slots[yShadow] == nil and ns.db.chars["Player-0-Ann"].shadow[yShadow] == nil, "on again: the given-back cell's slot released")
 assert(ns.Face.SetCellEntry("FR", "T", nil))
 assert(ns.Face.SetCellEntry("FT", "T", { id = "spell:133", name = "Fireball" }))
 
@@ -901,10 +902,10 @@ ns.db.profiles["045e/0b13"], ns.db.deviceProfile["045e/0b13"] = { name = "Xbox",
 ns.Fire("FCT_LAYOUT_CHANGED", "device")
 check(ns.Face.CellEntry("FT", "T") == nil, "device change: that pad's profile's cells (none)")
 local ySlot = ns.Actions.ShadowSlot("FT", "T", "spell:133")
-check(ySlot and W.slots[ySlot].id == 133 and ns.db.chars["Ann-Realm"].shadow[ySlot], "another pad without cells: the shadow slot is kept")
+check(ySlot and W.slots[ySlot].id == 133 and ns.db.chars["Player-0-Ann"].shadow[ySlot], "another pad without cells: the shadow slot is kept")
 ns.Device.Current = function() return nil end
 ns.Fire("FCT_LAYOUT_CHANGED", "device")
-check(W.slots[ySlot].id == 133 and ns.db.chars["Ann-Realm"].shadow[ySlot], "pad unplugged: the shadow slot is kept")
+check(W.slots[ySlot].id == 133 and ns.db.chars["Player-0-Ann"].shadow[ySlot], "pad unplugged: the shadow slot is kept")
 ns.Device.Current = realCurrent
 ns.Fire("FCT_LAYOUT_CHANGED", "device")
 check(ns.Face.CellEntry("FT", "T").id == "spell:133" and ns.Face.Slot("FT", "T") == ySlot, "back: its cells again, on the same slot")
@@ -923,11 +924,11 @@ assert(ns.Face.SetCellEntry("P1", "L", { id = "face:interact", name = "Interact"
 assert(ns.Face.SetCellEntry("P1", "T", { id = "face:jump", name = "Jump" }, 1))
 check(W.bindings.PADPADDLE1 and W.bindings.PADPADDLE1.click == "ForeverControllerTweaksPaddle1:LeftButton" and W.bindings.PADPADDLE1.priority == false, "PADPADDLE1 bound to its router, non-priority")
 check(not W.bindings.PADPADDLE2 and faceHeader.attrs["ps-key9"] == "PADPADDLE1" and faceHeader.attrs["ps-key4"] == "PAD4", "a paddle without cells stays native; paddle keys after the crossbar keys (Glyphs reads 1-8)")
-check(ns.db.chars["Ann-Realm"].cells["054c/0ce6"].P1.R.id == "spell:133", "stored next to the face cells, per character and pad")
+check(ns.db.chars["Player-0-Ann"].cells["054c/0ce6"].P1.R.id == "spell:133", "stored next to the face cells, per character and pad")
 check(lastDebug():find("P1(PADPADDLE1) PADPADDLE1=Jump PADPADDLE1/L=Interact PADPADDLE1/R=Fireball", 1, true), "debug line for the paddle")
 local pShadow = ns.Face.Slot("P1", "R")
 check(pShadow and W.slots[pShadow].id == 133 and ns.Face.Catcher("P1", "R") == nil, "slot kind: a shadow slot, no catcher (no crossbar slot)")
-check(pShadow == ns.Face.Slot("FT", "T") and #ns.db.chars["Ann-Realm"].shadow[pShadow].users == 2, "slot kind: Fireball on Y and on the paddle share one slot")
+check(pShadow == ns.Face.Slot("FT", "T") and #ns.db.chars["Player-0-Ann"].shadow[pShadow].users == 2, "slot kind: Fireball on Y and on the paddle share one slot")
 hold("PADRTRIGGER")
 check(press("PADPADDLE1", true) == "use " .. pShadow and ns.Face.Pressed("P1", "R"), "RT + paddle 1: UseAction on the shadow slot")
 hold()
@@ -972,13 +973,13 @@ W.cvars.GamepadStanceBarOverride = "1"
 ns.Fire("GAMEPAD_STANCE_BAR_OVERRIDE_CHANGED")
 hold()
 -- Macro text when no shadow slot can be placed, as on any routed cell.
-ns.db.chars["Ann-Realm"].cells["054c/0ce6"].P2 = { B = { id = "spell:133", name = "Fireball", kind = "spell" } }
+ns.db.chars["Player-0-Ann"].cells["054c/0ce6"].P2 = { B = { id = "spell:133", name = "Fireball", kind = "spell" } }
 W.cursor = { kind = "item" }
 ns.Fire("PLAYER_ENTERING_WORLD")
 hold("PADLTRIGGER", "PADRTRIGGER")
 check(press("PADPADDLE2", true) == "/cast Fireball" and press("PADPADDLE2", false) == "", "paddle 2, both triggers: macro text fallback")
 W.cursor = nil
-ns.db.chars["Ann-Realm"].cells["054c/0ce6"].P2 = nil
+ns.db.chars["Player-0-Ann"].cells["054c/0ce6"].P2 = nil
 ns.Fire("PLAYER_ENTERING_WORLD")
 hold()
 -- A role: the paddle outputs that modifier's key, so PADPADDLE1 goes native; its cells stay stored, their shadow slot
@@ -986,7 +987,7 @@ hold()
 assert(ns.Layout.SetRole("P1", "leftmod"))
 check(not ns.Face.PaddleFree("P1") and W.bindings.PADPADDLE1 == nil, "role: paddle 1 unbound")
 check(ns.Face.CellEntry("P1", "R").id == "spell:133" and ns.Face.CellEntry("P1", "T").id == "face:jump", "role: the cells are kept")
-check(ns.Face.Slot("P1", "R") == nil and W.slots[pShadow].id == 133 and ns.Actions.ShadowSlot("FT", "T", "spell:133") == pShadow and #ns.db.chars["Ann-Realm"].shadow[pShadow].users == 1, "role: the paddle lets go of the shared slot, Y keeps it")
+check(ns.Face.Slot("P1", "R") == nil and W.slots[pShadow].id == 133 and ns.Actions.ShadowSlot("FT", "T", "spell:133") == pShadow and #ns.db.chars["Player-0-Ann"].shadow[pShadow].users == 1, "role: the paddle lets go of the shared slot, Y keeps it")
 local noRole, roleWhy = ns.Face.SetCellEntry("P1", "B", { id = "face:jump", name = "Jump" })
 check(not noRole and roleWhy:find("role") and ns.Face.CellEntry("P1", "B") == nil, "role: a new entry is refused")
 assert(ns.Face.SetCellEntry("P1", "T", nil))
@@ -997,12 +998,12 @@ hold("PADRTRIGGER")
 check(pShadow and W.slots[pShadow].id == 133 and press("PADPADDLE1", true) == "use " .. pShadow, "None again: the shadow slot placed again")
 hold()
 -- A paddle this pad doesn't have (no raw source) never routes; a pad without paddles keeps PADPADDLEn native.
-ns.db.chars["Ann-Realm"].cells["054c/0ce6"].P3 = { T = { id = "face:jump", name = "Jump", kind = "face" } }
+ns.db.chars["Player-0-Ann"].cells["054c/0ce6"].P3 = { T = { id = "face:jump", name = "Jump", kind = "face" } }
 ns.Fire("PLAYER_ENTERING_WORLD")
 check(not ns.Face.PaddleFree("P3") and W.bindings.PADPADDLE3 == nil and not ns.Face.SetCellEntry("P3", "L", { id = "face:jump", name = "Jump" }), "P3 not on this pad: native, refused")
-ns.db.chars["Ann-Realm"].cells["054c/0ce6"].P3 = nil
+ns.db.chars["Player-0-Ann"].cells["054c/0ce6"].P3 = nil
 for _, layer in ipairs({ "L", "R" }) do assert(ns.Face.SetCellEntry("P1", layer, nil)) end
-check(W.bindings.PADPADDLE1 == nil and faceHeader.attrs["ps-key9"] == nil and ns.db.chars["Ann-Realm"].cells["054c/0ce6"].P1 == nil, "cells given back: paddle native, row dropped")
+check(W.bindings.PADPADDLE1 == nil and faceHeader.attrs["ps-key9"] == nil and ns.db.chars["Player-0-Ann"].cells["054c/0ce6"].P1 == nil, "cells given back: paddle native, row dropped")
 ns.Device.Current = realCurrent
 ns.Fire("FCT_LAYOUT_CHANGED", "device")
 
@@ -1027,7 +1028,7 @@ check(W.bindings.PADLSTICK and press("PADLSTICK", true) == "/click " .. name(TOP
 press("PADLSTICK", false)
 assert(ns.Face.SetCellEntry("R3", "R", nil))
 assert(ns.Face.SetCellEntry("L3", "T", nil))
-check(W.bindings.PADRSTICK == nil and W.bindings.PADLSTICK == nil and ns.db.chars["Ann-Realm"].cells["054c/0ce6"].R3 == nil, "cleared: both native again, row dropped")
+check(W.bindings.PADRSTICK == nil and W.bindings.PADLSTICK == nil and ns.db.chars["Player-0-Ann"].cells["054c/0ce6"].R3 == nil, "cleared: both native again, row dropped")
 
 -- Debug off: no route attribute, no new lines.
 SlashCmdList.FOREVERCONTROLLERTWEAKS("debug off")

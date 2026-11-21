@@ -318,6 +318,7 @@ end
 C_ActionBar = { HasAction = HasAction, GetActionTexture = GetActionTexture, GetActionText = GetActionText }
 -- A1's per-character data and macro registry read the character and the storage slot range.
 function UnitName() return "Ann" end
+function UnitGUID(unit) if unit == "player" then return "Player-0-Ann" end end
 function GetNormalizedRealmName() return "Realm" end
 C_GamepadUI = { GetFirstGamepadActionStorageSlotIndex = function() return 200 end }
 function GetCursorInfo() return W.cursor end

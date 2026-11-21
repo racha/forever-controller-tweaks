@@ -190,6 +190,7 @@ function InCombatLockdown() return W.combat end
 function GetTime() return 0 end
 function date() return "00:00:00 " end
 function UnitName() return W.char end
+function UnitGUID(unit) if unit == "player" then return "Player-0-" .. W.char end end
 function GetNormalizedRealmName() return "Realm" end
 local printed = {}
 function print(msg) printed[#printed + 1] = msg end
@@ -744,7 +745,7 @@ local function nextFrame() while afters[1] do table.remove(afters, 1)() end end
 nextFrame()
 W.cvars[AXIS], W.writes = "0", {}
 open()
-check(W.cvars[AXIS] == "1" and ns.db.rings.axisSaved == "0" and #W.writes == 1, "axis: a held ring switches it on and saves the old value")
+check(W.cvars[AXIS] == "1" and ns.db.ringAxisSaved == "0" and #W.writes == 1, "axis: a held ring switches it on and saves the old value")
 -- The CVar write and its restore change the controller config: Remap is held from before the one until after the other.
 local on, at = lastHold()
 check(on == true and at == 0, "axis: Remap is held before the CVar write")
@@ -752,7 +753,7 @@ press("PAD2", true)
 check(W.cvars[AXIS] == "1" and #W.writes == 1, "axis: still on in the click that closed the ring")
 check(lastHold() == true, "axis: Remap still held in the click that closed the ring")
 nextFrame()
-check(W.cvars[AXIS] == "0" and ns.db.rings.axisSaved == nil and #W.writes == 2, "axis: closing puts it back")
+check(W.cvars[AXIS] == "0" and ns.db.ringAxisSaved == nil and #W.writes == 2, "axis: closing puts it back")
 on, at = lastHold()
 check(on == false and at == 2, "axis: Remap let go only after the restore write")
 W.cvars[AXIS] = "1"
@@ -760,34 +761,34 @@ open()
 check(lastHold() == true, "axis: already on: Remap is still held while the ring aims")
 press("PAD2", true)
 nextFrame()
-check(W.cvars[AXIS] == "1" and ns.db.rings.axisSaved == nil and #W.writes == 2 and lastHold() == false, "axis: already on: neither saved nor written, Remap let go")
+check(W.cvars[AXIS] == "1" and ns.db.ringAxisSaved == nil and #W.writes == 2 and lastHold() == false, "axis: already on: neither saved nor written, Remap let go")
 W.cvars[AXIS] = "0"
 W.combat = true
 open()
 press("PAD2", true)
 nextFrame()
-check(W.cvars[AXIS] == "1" and ns.db.rings.axisSaved == "0" and #W.writes == 3, "axis: closed in combat, it stays on until the fight ends")
+check(W.cvars[AXIS] == "1" and ns.db.ringAxisSaved == "0" and #W.writes == 3, "axis: closed in combat, it stays on until the fight ends")
 open()
 press("PAD2", true)
-check(ns.db.rings.axisSaved == "0" and #W.writes == 3, "axis: opened again in combat: no write, the first saved value kept")
+check(ns.db.ringAxisSaved == "0" and #W.writes == 3, "axis: opened again in combat: no write, the first saved value kept")
 W.combat = false
 local held = #holds
 ns.Fire("PLAYER_REGEN_ENABLED")
-check(W.cvars[AXIS] == "0" and ns.db.rings.axisSaved == nil and #W.writes == 4, "axis: put back after the fight")
+check(W.cvars[AXIS] == "0" and ns.db.ringAxisSaved == nil and #W.writes == 4, "axis: put back after the fight")
 check(holds[held + 1] and holds[held + 1][1] == true and holds[held + 1][2] == 3 and holds[#holds][1] == false and holds[#holds][2] == 4, "axis: the restore after the fight holds Remap around its write")
-ns.db.rings.axisSaved, W.cvars[AXIS] = "0", "1"
+ns.db.ringAxisSaved, W.cvars[AXIS] = "0", "1"
 ns.Fire("FCT_READY")
-check(W.cvars[AXIS] == "0" and ns.db.rings.axisSaved == nil and #W.writes == 5, "axis: a value left saved (a /reload mid-ring) is put back at login")
-ns.db.rings.axisSaved = "0"
+check(W.cvars[AXIS] == "0" and ns.db.ringAxisSaved == nil and #W.writes == 5, "axis: a value left saved (a /reload mid-ring) is put back at login")
+ns.db.ringAxisSaved = "0"
 ns.Fire("FCT_READY")
-check(ns.db.rings.axisSaved == nil and #W.writes == 5, "axis: at login, already the saved value: cleared, not written")
+check(ns.db.ringAxisSaved == nil and #W.writes == 5, "axis: at login, already the saved value: cleared, not written")
 local setCVar = SetCVar
 SetCVar = function() error("blocked") end
 open()
 aim(90)
 check(ring.shown and W.cvars[AXIS] == "0" and press("PAD1", true) == nil and press("PAD1", false) == "spell 639", "axis: a failed write: the ring opens and A still fires")
 nextFrame()
-check(ns.db.rings.axisSaved == nil and #W.writes == 5, "axis: after a failed write nothing is left to put back")
+check(ns.db.ringAxisSaved == nil and #W.writes == 5, "axis: after a failed write nothing is left to put back")
 SetCVar = setCVar
 
 -- The keys and Remap's hold follow ps-mode, not the frame's show: a held ring opened over a touch ring already up, a
@@ -803,7 +804,7 @@ check(type(stillOpen) == "function" and stillOpen(), "mode: Remap's failsafe is 
 secure(ring.RunAttribute, ring, "_open", heals.id, "touch")
 check(ring.shown and W.cvars[AXIS] == "1" and lastHold() == true and stillOpen(), "mode: a touch ring over the held one: put back next frame")
 nextFrame()
-check(ring.shown and W.cvars[AXIS] == "0" and ns.db.rings.axisSaved == nil and lastHold() == false and not stillOpen(), "mode: then keys off and Remap let go, the touch ring still up")
+check(ring.shown and W.cvars[AXIS] == "0" and ns.db.ringAxisSaved == nil and lastHold() == false and not stillOpen(), "mode: then keys off and Remap let go, the touch ring still up")
 secure(ring.RunAttribute, ring, "_close")
 -- Closed in combat: Remap stays held while the keys are still on.
 W.combat = true
@@ -823,7 +824,7 @@ local getCVar = GetCVar
 GetCVar = function(k) return temps[k] or W.cvars[k] end
 W.writes = {}
 open()
-check(GetCVar(AXIS) == "1" and temps[AXIS] == "1" and #W.writes == 0 and ns.db.rings.axisSaved == nil and lastHold() == true, "temp: on as a temp value, nothing written or saved, Remap held")
+check(GetCVar(AXIS) == "1" and temps[AXIS] == "1" and #W.writes == 0 and ns.db.ringAxisSaved == nil and lastHold() == true, "temp: on as a temp value, nothing written or saved, Remap held")
 press("PAD2", true)
 nextFrame()
 check(temps[AXIS] == nil and GetCVar(AXIS) == "0" and W.cvars[AXIS] == "0" and #W.writes == 2 and lastHold() == false, "temp: the close removes it, flips the saved value and back (the controller refreshes), then Remap let go")
@@ -832,10 +833,10 @@ local removed
 C_CVar = { SetTempCVar = function() end, RemoveTempCVar = function(k) removed = k end }
 W.writes = {}
 open()
-check(removed == AXIS and W.cvars[AXIS] == "1" and ns.db.rings.axisSaved == "0" and #W.writes == 1, "temp: not read back: removed, the saved write instead")
+check(removed == AXIS and W.cvars[AXIS] == "1" and ns.db.ringAxisSaved == "0" and #W.writes == 1, "temp: not read back: removed, the saved write instead")
 press("PAD2", true)
 nextFrame()
-check(W.cvars[AXIS] == "0" and ns.db.rings.axisSaved == nil and #W.writes == 2, "temp: then put back as before")
+check(W.cvars[AXIS] == "0" and ns.db.ringAxisSaved == nil and #W.writes == 2, "temp: then put back as before")
 C_CVar, GetCVar = nil, getCVar
 
 -- A button the layout moves (L1 as the right modifier, PADRTRIGGER) held as the ring opens: no CVar change, which would
@@ -844,7 +845,7 @@ ns.Remap.Outputs = function() return { L1 = "PADRTRIGGER", L2 = "PADLTRIGGER", R
 IsKeyDown = function(k) return k == "PADRTRIGGER" end
 W.cvars[AXIS], W.writes = "0", {}
 open()
-check(ring.shown and W.cvars[AXIS] == "0" and #W.writes == 0 and ns.db.rings.axisSaved == nil and lastHold() == true, "moved: L1 held as the right modifier: the keys stay off, Remap held")
+check(ring.shown and W.cvars[AXIS] == "0" and #W.writes == 0 and ns.db.ringAxisSaved == nil and lastHold() == true, "moved: L1 held as the right modifier: the keys stay off, Remap held")
 aim(90)
 check(press("PAD1", true) == nil and press("PAD1", false) == "spell 639", "moved: A fires the slot aimed at")
 nextFrame()
@@ -1299,21 +1300,22 @@ check(fromR3 == "left" and ring.attrs["ps-aimside"] == "right", "dynamic: R3 aim
 secure(ring.RunAttribute, ring, "_close")
 assert(Rings.SetStick(heals.id, "right"))
 
--- Renames and icons follow on every binding; deleting a ring clears every binding to it, every character.
+-- Renames and icons follow on every binding; deleting a ring clears this character's bindings to it (rings are per
+-- character since 1.5.2: another character's ring:<id> is its own ring).
 assert(Rings.Rename(heals.id, "Big heals"))
 local cell = ns.Face.CellEntry("FB", "T")
 check(cell.name == "Open ring: Big heals" and ns.Touch.Entry("left", 1).name == "Open ring: Big heals", "bindings: renamed with the ring")
 assert(Rings.SetIcon(heals.id, 77))
 check(ns.Face.CellEntry("FB", "T").icon == 77 and Rings.Icon(heals) == 77, "bindings: the icon follows")
 local other = assert(Rings.New())
-ns.db.chars["Bob-Realm"] = { cells = { ["054c/0ce6"] = { DD = { R = { id = "ring:" .. heals.id, name = "x" }, B = { id = "spell:133", name = "Fireball" } } } }, touch = { bars = { right = { [2] = { L = { id = "ring:" .. heals.id } } } } } }
-ns.db.chars["Cy-Realm"] = { cells = { ["054c/0ce6"] = { DU = { T = { id = "ring:" .. other.id } } } } }
-check(Rings.BindingCount(heals.id) == 4, "delete: every binding counted")
+ns.db.chars["Player-0-Bob"] = { cells = { ["054c/0ce6"] = { DD = { R = { id = "ring:" .. heals.id, name = "x" }, B = { id = "spell:133", name = "Fireball" } } } }, touch = { bars = { right = { [2] = { L = { id = "ring:" .. heals.id } } } } } }
+ns.db.chars["Player-0-Cy"] = { cells = { ["054c/0ce6"] = { DU = { T = { id = "ring:" .. other.id } } } } }
+check(Rings.BindingCount(heals.id) == 2, "delete: this character's bindings counted")
 assert(Rings.Delete(heals.id))
 check(ns.Face.CellEntry("FB", "T") == nil and ns.Touch.Entry("left", 1) == nil, "delete: this character's bindings cleared")
-local bob = ns.db.chars["Bob-Realm"]
-check(bob.cells["054c/0ce6"].DD.R == nil and bob.cells["054c/0ce6"].DD.B.id == "spell:133" and bob.touch.bars.right[2] == nil, "delete: other characters' bindings cleared, the rest kept")
-check(ns.db.chars["Cy-Realm"].cells["054c/0ce6"].DU.T.id == "ring:" .. other.id, "delete: another ring's binding kept")
+local bob = ns.db.chars["Player-0-Bob"]
+check(bob.cells["054c/0ce6"].DD.R.id == "ring:" .. heals.id and bob.touch.bars.right[2].L.id == "ring:" .. heals.id, "delete: another character's bindings (its own ring) untouched")
+check(ns.db.chars["Player-0-Cy"].cells["054c/0ce6"].DU.T.id == "ring:" .. other.id, "delete: another ring's binding kept")
 check(ring.attrs[p .. "n"] == nil and ring.attrs[p .. "t1"] == nil and ring.attrs[p .. "m"] == nil and ring.attrs[p .. "l"] == nil and router.attrs["ps-ring-top"] == nil and touch.attrs["ps-ring-T"] == nil, "delete: secure attributes gone")
 check(ns.Face.CharDB().ringLast[heals.id] == nil, "delete: the last pick goes too")
 check(Actions.Find("ring:" .. heals.id) == nil, "delete: gone from the catalog")
@@ -1328,8 +1330,8 @@ local db = {
 	} },
 	ringMarker = "yes",
 	chars = {
-		["Bob-Realm"] = { cells = { dev = { FB = { T = { id = "ring:9" }, L = { id = "spell:133" } } } }, touch = { bars = { left = { [1] = { T = { id = "ring:7" } } } } }, ringLast = { [1] = { 1, "spell:133" }, [9] = { 1, "spell:1" }, hspell133 = { 2, "spell:133" }, [7] = "bad", x = { 1, "a" }, [2] = { 0.5, "spell:1" } } },
-		["Cy-Realm"] = { ringLast = 5, cells = { dev = { DU = { T = { id = "spell:133", healer = true, healerLast = true }, L = { id = "spell:133", healerLast = true }, R = { id = "spell:133", healer = true, healerLast = 1 } } } } },
+		["Player-0-Bob"] = { cells = { dev = { FB = { T = { id = "ring:9" }, L = { id = "spell:133" } } } }, touch = { bars = { left = { [1] = { T = { id = "ring:7" } } } } }, ringLast = { [1] = { 1, "spell:133" }, [9] = { 1, "spell:1" }, hspell133 = { 2, "spell:133" }, [7] = "bad", x = { 1, "a" }, [2] = { 0.5, "spell:1" } } },
+		["Player-0-Cy"] = { ringLast = 5, cells = { dev = { DU = { T = { id = "spell:133", healer = true, healerLast = true }, L = { id = "spell:133", healerLast = true }, R = { id = "spell:133", healer = true, healerLast = 1 } } } } },
 	},
 }
 local fixes = {}
@@ -1341,19 +1343,28 @@ check(list[1].stick == "right" and list[2].stick == "right", "repair: a missing 
 check(list[1].show == "toggle" and list[2].show == "toggle", "repair: a missing or unknown Show is Toggle")
 check(list[1].style == "full" and list[2].style == "full", "repair: a missing or unknown Style is Full")
 check(list[1].middle == "cancel" and list[2].middle == "cancel", "repair: a missing or unknown Middle is Cancel")
-local bobLast = db.chars["Bob-Realm"].ringLast
-local cy = db.chars["Cy-Realm"].cells.dev.DU
+local bobLast = db.chars["Player-0-Bob"].ringLast
+local cy = db.chars["Player-0-Cy"].cells.dev.DU
 check(db.ringMarker == nil and fixes[1] ~= nil, "repair: a bad ring marker setting is on again")
 check(cy.T.healerLast == true and cy.L.healerLast == nil and cy.R.healerLast == nil, "repair: Last target only true and only in Healer mode")
-check(bobLast[1][1] == 1 and bobLast.hspell133 and bobLast[9] == nil and bobLast[7] == nil and bobLast.x == nil and bobLast[2] == nil and db.chars["Cy-Realm"].ringLast == nil, "repair: last picks of existing and healer rings kept, the rest dropped")
+check(bobLast[1][1] == 1 and bobLast.hspell133 and bobLast[9] == nil and bobLast[7] == nil and bobLast.x == nil and bobLast[2] == nil and db.chars["Player-0-Cy"].ringLast == nil, "repair: last picks of existing and healer rings kept, the rest dropped")
 local s = list[1].slots
 check(s[1].id == "spell:133" and s[1].kind == "spell" and s[2] == nil and s[3] == nil and s[13] == nil and s[4].icon == nil and s[4].name == "item:6948" and next(list[2].slots) == nil, "repair: slots")
-local bobCells = db.chars["Bob-Realm"].cells.dev.FB
-check(bobCells.T == nil and bobCells.L.id == "spell:133" and db.chars["Bob-Realm"].touch.bars.left[1].T.id == "ring:7", "repair: a binding to a missing ring dropped, the others kept")
+local bobCells = db.chars["Player-0-Bob"].cells.dev.FB
+check(bobCells.T == nil and bobCells.L.id == "spell:133" and db.chars["Player-0-Bob"].touch.bars.left[1].T.id == "ring:7", "repair: a binding to a missing ring dropped, the others kept")
 check(#fixes >= 10, "repair: each fix reported (" .. #fixes .. ")")
 local clean = {}
 Rings.Repair(clean, function() error("a fresh db needs no repair") end)
-check(clean.rings.nextId == 1 and #clean.rings.list == 0, "repair: a fresh db")
+check(clean.rings == nil, "repair: a fresh db gets no account list")
+-- Per character: each record's own list, its bindings checked against it.
+local per = { chars = {
+	["Player-0-Bob"] = { rings = { nextId = "x", list = { { id = 3, name = "Mine", count = 6, slots = {} } } }, cells = { dev = { FB = { T = { id = "ring:3" }, L = { id = "ring:7" } } } }, touchBars = { p1 = { left = { [1] = { T = { id = "ring:7" } } } } } },
+	["Player-0-Cy"] = { cells = { dev = { DU = { T = { id = "ring:3" } } } } },
+} }
+Rings.Repair(per, function() end)
+local bobPer = per.chars["Player-0-Bob"]
+check(bobPer.rings.nextId == 4 and bobPer.cells.dev.FB.T.id == "ring:3" and bobPer.cells.dev.FB.L == nil and bobPer.touchBars.p1.left[1] == nil, "repair: per character, bindings to rings it lacks dropped (touch per profile too)")
+check(per.chars["Player-0-Cy"].cells.dev.DU == nil and per.rings == nil, "repair: a character without rings keeps no ring binding")
 local wide = { rings = { nextId = 2, list = { { id = 1, name = "Wide", count = 12, slots = {} } } } }
 for i = 1, 12 do wide.rings.list[1].slots[i] = { id = "spell:" .. i } end
 Rings.Repair(wide, function() end)

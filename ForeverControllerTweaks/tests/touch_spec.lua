@@ -117,6 +117,7 @@ function InCombatLockdown() return W.combat end
 function GetCVar(k) return W.cvars[k] end
 function GetCVarBool(k) return W.cvars[k] == "1" end
 function UnitName() return W.char end
+function UnitGUID(unit) if unit == "player" then return "Player-0-" .. W.char end end
 function GetNormalizedRealmName() return "Realm" end
 InputUtil = { IsGamepadUIEnabled = function() return W.ui ~= false end }
 SlashCmdList = {}
@@ -225,7 +226,7 @@ local faceSlot = ns.Actions.Shadow("FB", "T", ns.Actions.Find("spell:133"))
 assert(Touch.SetEntry("left", 1, ns.Actions.Find("spell:133")))
 assert(Touch.SetEntry("right", 1, ns.Actions.Find("item:111")))
 local leftSlot, rightSlot = first.attrs.action, Touch.Button("right", 1).attrs.action
-local shadows = ns.db.chars["Ann-Realm"].shadow
+local shadows = ns.db.chars["Player-0-Ann"].shadow
 check(first.attrs.type == "action" and first.attrs.typerelease == "actionrelease" and W.slots[leftSlot].id == 133 and W.slots[rightSlot].id == 111, "touch: entries on action slots")
 check(faceSlot and leftSlot == faceSlot and rightSlot >= 145 and rightSlot <= 180 and rightSlot ~= faceSlot, "touch: Fireball shares the routed cell's slot, the Badge has its own")
 local users = shadows[leftSlot].users
@@ -510,7 +511,7 @@ check(Touch.Entry("left", 1).id == "spell:133" and btn.attrs["ps-action-T"] == k
 check(Touch.Reset() and Touch.Config().sides.right.size == 52 and Touch.Config().sides.right.count == 6, "touch: Reset() resets both sides")
 
 -- Migration: the single settings go to both sides, each old entry becomes its button's T entry, its slot follows.
-ns.db.chars["Bob-Realm"] = {
+ns.db.chars["Player-0-Bob"] = {
 	touch = { enabled = true, show = "always", showEmpty = true, count = 4, size = 40, gap = 2, inset = 10, offsetY = 5, alpha = 0.8, bars = { left = { [2] = { id = "spell:133", name = "Fireball", kind = "spell" } } } },
 	shadow = { [170] = { code = "TL", layer = 2, id = "spell:133", holds = "spell:133" } },
 }
@@ -523,7 +524,7 @@ check(bob.sides.left.count == 4 and bob.sides.right.size == 40 and bob.sides.rig
 check(Touch.Entry("left", 2).id == "spell:133" and Touch.Entry("left", 2, "L") == nil and ns.Actions.ShadowSlot("TLT", 2, "spell:133") == 170, "touch: migration: the entry is T, its slot keyed for T")
 check(bob.sides.left.showEmpty == true and bob.sides.right.showEmpty == true and bob.showEmpty == nil and bob.sides.left.shape == "circle", "touch: migration: the old global showEmpty on both sides, circles")
 -- A config already per side but with the global showEmpty of the build before: copied to both sides once.
-ns.db.chars["Cat-Realm"] = { touch = { enabled = false, show = "gamepad", showEmpty = true, sides = { left = { count = 3, showEmpty = false }, right = { count = 2 } }, bars = {} } }
+ns.db.chars["Player-0-Cat"] = { touch = { enabled = false, show = "gamepad", showEmpty = true, sides = { left = { count = 3, showEmpty = false }, right = { count = 2 } }, bars = {} } }
 W.char = "Cat"
 local cat = Touch.Config()
 check(cat.showEmpty == nil and cat.sides.right.showEmpty == true and cat.sides.left.showEmpty == false and cat.sides.left.count == 3, "touch: migration: global showEmpty fills a side that has none")
@@ -536,6 +537,24 @@ ns.Fire("PLAYER_ENTERING_WORLD")
 local failedApply = false
 for _, line in ipairs(ns.db.debugLog) do if line:find("touch apply failed", 1, true) then failedApply = true end end
 check(not failedApply, "touch: no apply failed, combat included")
+
+-- Buttons per profile (1.5.2): another profile has its own (empty until set), the layout is the character's.
+do
+	local current = ns.Device.Current
+	local ann = ns.db.chars["Player-0-Ann"]
+	local before = Touch.Entry("left", 1)
+	ns.Device.Current = function() return { key = "p2" } end
+	local other = Touch.Config()
+	check(Touch.Entry("left", 1) == nil and other.sides.left.size == 52 and (ann.touchBars or {}).p2 == nil, "touch: another profile starts without buttons, same layout, nothing stored by a read")
+	assert(Touch.SetEntry("left", 3, ns.Actions.Find("spell:133")))
+	check(ann.touchBars.p2.left[3].T.id == "spell:133" and ann.touch.bars == nil, "touch: a write goes to that profile's buttons")
+	local all = 0
+	for _, need in ipairs(Touch.AllShadowNeeds()) do if need.id == "spell:133" then all = all + 1 end end
+	check(#Touch.ShadowNeeds() == 1 and all >= 2, "touch: needs of this profile; all needs cover every profile")
+	assert(Touch.SetEntry("left", 3, nil))
+	ns.Device.Current = current
+	check(Touch.Entry("left", 1) == before, "touch: back on the first profile, its buttons")
+end
 
 -- /fct release gives the touch slots back; the buttons fall back to text until /reload.
 local touchSlot = Touch.Button("left", 1).attrs.action

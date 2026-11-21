@@ -52,7 +52,7 @@ ForeverControllerTweaksDB = {
 	version = 2,
 	devices = { [DS] = { raw = {}, roles = { L2 = "leftmod", L1 = "rightmod", R1 = "friendly", R2 = "hostile" }, face = {}, confirmed = true } },
 	sync = { pads = { [DS] = "DualSense Wireless Controller" } },
-	chars = { ["Ann-Realm"] = { cells = { [DS] = { FB = { R = { id = "spell:133", name = "Fireball", icon = 1, kind = "spell" } } } } } },
+	chars = { ["Player-0-Ann"] = { cells = { [DS] = { FB = { R = { id = "spell:133", name = "Fireball", icon = 1, kind = "spell" } } } } } },
 }
 local ns = {}
 for line in io.lines(dir .. "/ForeverControllerTweaks.toc") do
@@ -140,7 +140,7 @@ check(db.profiles[DS].name == "Couch pad", "a typed name is kept")
 node(ST.COPY).select()
 W.advance(0.2)
 local copyId = P.CurrentId()
-check(copyId ~= DS and db.profiles[copyId].name == "Couch pad 2" and db.chars["Ann-Realm"].cells[copyId].FB.R.id == "spell:133" and db.profiles[copyId].roles.L1 == "rightmod", "Copy: this profile's layout and bindings, a unique name")
+check(copyId ~= DS and db.profiles[copyId].name == "Couch pad 2" and db.chars["Player-0-Ann"].cells[copyId].FB.R.id == "spell:133" and db.profiles[copyId].roles.L1 == "rightmod", "Copy: this profile's layout and bindings, a unique name")
 
 -- Delete asks first, then moves this controller to the first profile left.
 node(ST.DELETE).select()
@@ -150,7 +150,7 @@ check(not UI.DialogShown() and P.Get(copyId), "Cancel keeps it")
 node(ST.DELETE).select()
 UI.Dialog():OnPad("PAD1")
 W.advance(0.2)
-check(db.profiles[copyId].gone and db.chars["Ann-Realm"].cells[copyId] == nil and P.CurrentId() == P.List()[1].id, "Delete: gone, bindings gone, this controller on the first left")
+check(db.profiles[copyId].gone and db.chars["Player-0-Ann"].cells[copyId] == nil and P.CurrentId() == P.List()[1].id, "Delete: gone, bindings gone, this controller on the first left")
 P.Use(DS)
 W.advance(0.2)
 P.Delete(newId)
@@ -197,7 +197,7 @@ dialog:OnPad("PADDRIGHT")
 dialog:OnPad("PAD1")
 W.advance(0.2)
 local copied = P.Get(P.CurrentId())
-check(copied and copied.name == "8BitDo Pro 2" and db.chars["Ann-Realm"].cells[P.CurrentId()].FB.R.id == "spell:133" and db.deviceProfile["2dc8/6003"], "Copy…: a copy named after the controller, with the bindings")
+check(copied and copied.name == "8BitDo Pro 2" and db.chars["Player-0-Ann"].cells[P.CurrentId()].FB.R.id == "spell:133" and db.deviceProfile["2dc8/6003"], "Copy…: a copy named after the controller, with the bindings")
 
 -- In a fight or a loading screen the question waits until it ends.
 UI.CloseAll()
@@ -219,7 +219,7 @@ dialog:OnPad("PADDRIGHT")
 dialog:OnPad("PAD1")
 W.advance(0.2)
 local fresh = P.Get(P.CurrentId())
-check(fresh and fresh.name == "Steam Virtual Gamepad" and not next(fresh.roles) and db.chars["Ann-Realm"].cells[P.CurrentId()] == nil, "New empty: the game's layout, no bindings")
+check(fresh and fresh.name == "Steam Virtual Gamepad" and not next(fresh.roles) and db.chars["Player-0-Ann"].cells[P.CurrentId()] == nil, "New empty: the game's layout, no bindings")
 UI.CloseAll()
 
 io.stdout:write(("settings_spec: %d checks passed\n"):format(checks))

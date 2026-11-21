@@ -33,7 +33,8 @@ Tweaks.KEYS = {
 	"fastLoot", "passUnusable", "upgradeArrows", "wearRewards",
 	"whisperAlert",
 }
-Tweaks.NUMBERS = { rumbleStrength = { 0.1, 1, 0.1, 0.6 } }
+-- cameraZoom: yards, nil until the player moves it; its slider stops at the game's own limit (Tweaks.CameraMax).
+Tweaks.NUMBERS = { rumbleStrength = { 0.1, 1, 0.1, 0.6 }, cameraZoom = { 0, 100, 1, nil } }
 Tweaks.CHOICES = {
 	lightBar = { "default", "class", "custom" },
 	lightColor = { "red", "orange", "yellow", "green", "teal", "cyan", "blue", "purple", "pink", "white" },
@@ -1350,6 +1351,7 @@ end)
 function Tweaks.Set(key, value)
 	if not ns.db then return end
 	if Tweaks.CHOICES[key] or Tweaks.NUMBERS[key] then ns.db.tweaks[key] = Tweaks.Repair({ [key] = value })[key] else ns.db.tweaks[key] = not not value end
+	if key == "cameraZoom" and Tweaks.ZoomTo then Tweaks.ZoomTo(ns.db.tweaks.cameraZoom) end
 	Tweaks.Refresh()
 	Tweaks.Light()
 end

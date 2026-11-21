@@ -157,23 +157,227 @@ function Face.ClickBoth(name) return Face.CLICK_BOTH:format(name, name) end
 -- Self, focus and mouseover cast modifiers, as Blizzard's action buttons set them (ActionButton.lua OnLoad).
 Face.CHECK_CASTS = { "checkselfcast", "checkfocuscast", "checkmouseovercast" }
 
+-- Records are keyed by the character's GUID. Forever has no realms and every character has a first and a second name;
+-- UnitName gives only the first, which other characters share, so 1.5.1's "Name-Realm" and "Name-" keys were shared
+-- by every character of that first name. nil while the game doesn't give it (or gives a secret).
+local function secret(value) return issecretvalue and issecretvalue(value) end
+
 local function charKey()
+	local guid = UnitGUID and UnitGUID("player")
+	if secret(guid) or type(guid) ~= "string" or guid == "" then return end
+	return guid
+end
+Face.CharKey = charKey
+
+-- The first name, kept in the record for display only.
+local function firstName()
 	local name = UnitName and UnitName("player")
-	local realm = GetNormalizedRealmName and GetNormalizedRealmName()
-	return name and realm and name .. "-" .. realm
+	if secret(name) or type(name) ~= "string" or name == "" or name == UNKNOWNOBJECT then return end
+	return name
 end
 
--- The character can't change before a reload, so its key is read once from PLAYER_LOGIN on.
-local loggedKey
-ns.On("PLAYER_LOGIN", function() loggedKey = charKey() end)
+local function isGuid(key) return type(key) == "string" and key:find("^Player%-") ~= nil end
+Face.IsGuid = isGuid
 
--- This character's table in ns.db.chars["Name-Realm"], and its key; nil before the name is known.
+local NONE = {}
+
+local function isSpell(id) return type(id) == "string" and (id:find("^spell:") or id:find("^spellgroup:")) ~= nil end
+
+-- Every spell id an old record holds: its cells and touch buttons in every profile (and 1.5.1's touch.bars), and the
+-- slots of the rings those open.
+function Face.SpellsOf(record)
+	local out, rings = {}, {}
+	local function grid(rows)
+		for _, row in pairs(type(rows) == "table" and rows or NONE) do
+			for _, entry in pairs(type(row) == "table" and row or NONE) do
+				local id = type(entry) == "table" and entry.id
+				if isSpell(id) then out[#out + 1] = id end
+				local ring = tonumber(tostring(id):match("^ring:(%d+)$"))
+				if ring then rings[ring] = true end
+			end
+		end
+	end
+	local function sides(bars) for _, list in pairs(type(bars) == "table" and bars or NONE) do grid(list) end end
+	for _, rows in pairs(type(record.cells) == "table" and record.cells or NONE) do grid(rows) end
+	for _, bars in pairs(type(record.touchBars) == "table" and record.touchBars or NONE) do sides(bars) end
+	sides(type(record.touch) == "table" and record.touch.bars)
+	local list = type(record.rings) == "table" and type(record.rings.list) == "table" and record.rings.list or NONE
+	for _, ring in ipairs(list) do
+		if type(ring) == "table" and rings[ring.id] then
+			for _, slot in pairs(type(ring.slots) == "table" and ring.slots or NONE) do
+				if type(slot) == "table" and isSpell(slot.id) then out[#out + 1] = slot.id end
+			end
+		end
+	end
+	return out
+end
+
+-- ponytail: an old record is this character's when it holds a spell and this character knows every spell in it. A
+-- low-level twin of the same first name and class can claim wrongly; the upgrade is a one-time Yes/No dialog.
+function Face.Owns(record, known)
+	local spells = Face.SpellsOf(record)
+	if not spells[1] then return false end
+	for _, id in ipairs(spells) do
+		if not known(id) then return false end
+	end
+	return true
+end
+
+-- The old records of this first name ("Name-Realm", "Name-"), newest first: by the latest sync stamp of their sections,
+-- else "Name-" (1.5.1 wrote the newest sessions there) before the others.
+local function candidates(chars, name, stamps)
+	local out = {}
+	for key in pairs(chars) do
+		if not isGuid(key) and type(key) == "string" and key:match("^(.*)%-[^%-]*$") == name then out[#out + 1] = key end
+	end
+	local newest = {}
+	for _, key in ipairs(out) do
+		newest[key] = 0
+		for section, at in pairs(stamps or NONE) do
+			local owner = type(section) == "string" and (section:match("^t?b:(.+):[^:]+$") or section:match("^[tpr]:(.+)$"))
+			if owner == key and type(at) == "number" and at > newest[key] then newest[key] = at end
+		end
+	end
+	table.sort(out, function(a, b)
+		if newest[a] ~= newest[b] then return newest[a] > newest[b] end
+		local ea, eb = a:sub(-1) == "-", b:sub(-1) == "-"
+		if ea ~= eb then return ea end
+		return a < b
+	end)
+	return out
+end
+Face.Candidates = candidates
+
+-- Fill-only, all the way down: what the record lacks comes from old, so a table made early for this character (an
+-- empty cells[profile] from the first apply, empty touch sides) still gets the old record's contents. An entry
+-- ({ id, ... }) or a slot record ({ holds, ... }) is one value: two different actions are never mixed field by field.
+-- Rings merge per ring id.
+local function single(value) return type(value) ~= "table" or type(value.id) == "string" or type(value.holds) == "string" end
+
+local function fillInto(own, old)
+	for key, value in pairs(old) do
+		local mine = own[key]
+		if mine == nil then
+			own[key] = value
+		elseif type(mine) == "table" and type(value) == "table" and not single(mine) and not single(value) then
+			fillInto(mine, value)
+		end
+	end
+end
+
+local function fill(own, old)
+	for field, value in pairs(old) do
+		if field == "rings" and type(value) == "table" and type(own.rings) == "table" then
+			own.rings.list = type(own.rings.list) == "table" and own.rings.list or {}
+			local have = {}
+			for _, ring in ipairs(own.rings.list) do have[ring.id] = true end
+			for _, ring in ipairs(type(value.list) == "table" and value.list or NONE) do
+				if type(ring) == "table" and not have[ring.id] then own.rings.list[#own.rings.list + 1], have[ring.id] = ring, true end
+			end
+			if type(value.nextId) == "number" and (type(own.rings.nextId) ~= "number" or own.rings.nextId < value.nextId) then own.rings.nextId = value.nextId end
+		else
+			fillInto(own, { [field] = value })
+		end
+	end
+end
+
+-- Claims every old record of this first name that Face.Owns, newest first, into chars[key]; claimed records are
+-- removed, ambiguous ones left alone. known(id): this character knows that spell. Returns the claimed keys.
+function Face.ClaimOld(chars, key, name, known, stamps)
+	local own, claimed = chars[key], {}
+	if type(own) ~= "table" or not name then return claimed end
+	for _, old in ipairs(candidates(chars, name, stamps)) do
+		local record = chars[old]
+		if type(record) == "table" and Face.Owns(record, known) then
+			fill(own, record)
+			chars[old] = nil
+			claimed[#claimed + 1] = old
+		end
+	end
+	return claimed
+end
+
+-- A key is learned the first time it reads (PLAYER_LOGIN, else a world entry, else a short retry, which refreshes
+-- everything). The claim waits for the spellbook (Actions' catalog has spells), out of combat, once per session.
+local knownKey, learn, cellCache, claimTried
+local RETRIES = 10
+
+local function spellbookReady()
+	for _, category in ipairs(ns.Actions.Catalog()) do
+		for _, entry in ipairs(category.entries) do
+			if entry.kind == "spell" or entry.kind == "spellgroup" then return true end
+		end
+	end
+	return false
+end
+
+local function tryClaim()
+	if claimTried or not (knownKey and ns.db and ns.Actions) or InCombatLockdown() then return end
+	local chars = ns.db.chars
+	local own = chars and chars[knownKey]
+	if not (own and own.name) or not candidates(chars, own.name)[1] then
+		claimTried = true
+		return
+	end
+	if not spellbookReady() then return end
+
+	claimTried = true
+	local stamps = type(ns.db.sync) == "table" and ns.db.sync.stamps or nil
+	local claimed = Face.ClaimOld(chars, knownKey, own.name, function(id) return ns.Actions.Find(id) ~= nil end, stamps)
+	if not claimed[1] then return ns.debug("face: old records of %s left alone (not this character's spells)", own.name) end
+	ns.debug("face: claimed %s", table.concat(claimed, ", "))
+	-- The account macros those records used are this character's now (Actions' registry keeps a macro while used).
+	for _, info in pairs(type(ns.db.macros) == "table" and ns.db.macros or NONE) do
+		for _, old in ipairs(type(info.chars) == "table" and claimed or NONE) do
+			if info.chars[old] then info.chars[old], info.chars[knownKey] = nil, true end
+		end
+	end
+	cellCache = nil
+	ns.Fire("FCT_RINGS_CHANGED")
+	ns.Fire("FCT_LAYOUT_CHANGED", "device")
+end
+
+local function learnLater(left)
+	if knownKey or left < 1 or not C_Timer then return end
+	C_Timer.After(1, function()
+		if learn() then
+			ns.Fire("FCT_LAYOUT_CHANGED", "device")
+			return tryClaim()
+		end
+		learnLater(left - 1)
+	end)
+end
+
+function learn()
+	local key = ns.db and charKey()
+	if not key or key == knownKey then return false end
+
+	knownKey, claimTried, cellCache = key, nil, nil
+	ns.db.chars = type(ns.db.chars) == "table" and ns.db.chars or {}
+	local char = type(ns.db.chars[key]) == "table" and ns.db.chars[key] or {}
+	ns.db.chars[key] = char
+	char.name = firstName() or char.name
+	return true
+end
+
+ns.On("PLAYER_LOGIN", function()
+	learn()
+	tryClaim()
+end)
+ns.On("PLAYER_ENTERING_WORLD", function()
+	if not learn() and not knownKey then learnLater(RETRIES) end
+	tryClaim()
+end)
+ns.On("FCT_CATALOG_CHANGED", function() tryClaim() end)
+ns.On("PLAYER_REGEN_ENABLED", function() tryClaim() end)
+
+-- This character's table in ns.db.chars[GUID], and its key; nil before the GUID is known.
 function Face.CharDB()
-	local key = loggedKey or charKey()
+	local key = charKey() or knownKey
 	if not (ns.db and key) then return nil end
 
 	ns.db.chars = ns.db.chars or {}
-	ns.db.chars[key] = ns.db.chars[key] or {}
+	ns.db.chars[key] = ns.db.chars[key] or { name = firstName() }
 	return ns.db.chars[key], key
 end
 
@@ -219,7 +423,6 @@ end
 
 -- Glyphs reads cells many times a second, so the resolved table is kept (false: none yet for this device) until the
 -- layout, the device or the character changes.
-local cellCache
 local function cells(create)
 	if cellCache == nil or (create and not cellCache) then
 		local list, known = resolveCells(create)

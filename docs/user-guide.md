@@ -139,7 +139,7 @@ Circle goes back to the list.
 - Actions on the game's own crossbar slots go straight into those slots, as if you had dragged them there.
 - Actions moved onto other face or D-pad cells, and touch bar buttons, are stored in **empty** slots of keyboard action bars 6–8 (slots 145–180). The Gamepad UI never shows those bars. Only empty slots are used, and they're freed when you clear the cell. If you play with a keyboard and use those bars, you'll see them there.
 - Game actions are small macros named `FCT:Bags`, `FCT:Map` and so on. The addon creates them in your account macros (or character macros when those are full) and deletes one only when no character uses it any more. Your own macros are never changed, even one you name `FCT:…`.
-- Bindings are saved per character and per profile (see [Profiles](#profiles)): controllers on the same profile share them.
+- Bindings are saved per character and per profile (see [Profiles](#profiles)): controllers on the same profile share them. Touch buttons are too; rings are saved per character.
 
 ## Modifiers
 
@@ -165,7 +165,7 @@ Two bars of tap buttons on the left and right edges of the screen, for playing t
 - **Slots x / 36** counts the hidden action slots (keyboard bars 6-8) your touch buttons and moved actions use. If none is free, a new action still works, but without a live cooldown until one frees up. If your own actions sit on those bars, **Free up slots** next to the counter lists them and, after you confirm, clears them from there (the actions themselves stay in your spellbook, bags and macros).
 - Under them, switch between **Left bar** and **Right bar**, then D-pad left / right change that side's buttons per bar (1–12), button size, spacing, distance from the edge, up / down, opacity, **Shape** (Circle or Square) and **Empty buttons** (Hide or Show).
 
-Touch buttons look and behave like native crossbar slots. They're saved per character, and they work in combat.
+Touch buttons look and behave like native crossbar slots, and they work in combat. What each button does is saved per character and per profile, like bindings: a new profile starts with empty buttons, and **Copy profile** copies them. The bars' size, place, shape and On / Show are one setting per character, the same in every profile.
 
 ## Keyboard
 
@@ -188,7 +188,7 @@ An on-screen keyboard for chat and text boxes, while the Gamepad UI is on. It op
 
 ## Rings
 
-Radial menus of actions you build yourself. Open the **Rings** tab, or `/fct rings`.
+Radial menus of actions you build yourself. Open the **Rings** tab, or `/fct rings`. Each character has its own rings (characters are told apart by their unique game ID, not their first name); a new character starts with none. **Arrow on ring buttons** is one setting for all of them.
 
 - **New ring** adds one, up to 12. **Rename**, **Icon** (a grid of every macro icon) and **Delete** work on the selected ring.
 - **Slots:** 4 to 8. **Cross on a slot** opens the action picker: spells (with Highest Rank), items, toys, mounts, macros, game actions and other addons' bindings.
@@ -272,6 +272,10 @@ Small conveniences, on the **Tweaks** tab (the one before Settings). **Each one 
 - **Rare nearby alert:** a line on screen and a rumble when a rare is near. Once per rare, never in a fight, on a flight or while dead.
 - **Light bar:** **Game default**, **Class colour** or **Custom**, with **Colour** picking one of 10 colours. **Combat flash** turns the light red while you're in combat. For pads with a light bar, such as the DualSense; Steam may take the light over.
 
+### Camera
+
+- **Camera zoom:** where the camera sits, in yards, up to the game's own limit. D-pad left / right move it a yard at a time and the camera follows at once; it goes back there when you log in. Until you move it, the addon never touches your camera, and the slider shows where the camera is now.
+
 ### Loot & gear
 
 - **Fast loot:** takes all loot at once. Bind-on-pickup items still ask; with full bags only coins are taken.
@@ -304,8 +308,9 @@ These are in the action picker for any face, D-pad or paddle cell, touch button 
 | Misc | **Track nearest quest** | Tracks the nearest quest; press again for the next nearest |
 | Misc | **Ready check**, **Pull countdown (5 s)** | The game's ready check and a 5-second countdown |
 | Misc | **Minimap zoom** | Zooms the minimap in step by step, then back out |
+| Misc | **Zoom in**, **Zoom out** | The camera one step closer or farther; hold to keep zooming. In combat too |
 
-The two hold actions work while you hold the button. On a touch button or ring slot a tap turns them on and off. The potion, grenade and food actions find items by their English names, so they need an English game client.
+The two "(hold)" actions work while you hold the button. On a touch button or ring slot a tap turns them on and off, and a tap on Zoom in or Zoom out is one step. The potion, grenade and food actions find items by their English names, so they need an English game client.
 
 ## Glyphs
 
@@ -357,7 +362,7 @@ After an update, a window opens once with what changed since the version you las
 
 ## Profiles
 
-A profile is a layout (which buttons are modifiers, where Jump, Interact, Back and Inspect sit) plus every character's bindings. Each controller plays on one profile; controllers on the same profile share everything in it. What a controller keeps for itself: its glyphs (PlayStation, Xbox or Switch symbols), its controller type and its button setup (Learn, detection).
+A profile is a layout (which buttons are modifiers, where Jump, Interact, Back and Inspect sit) plus every character's bindings and touch buttons. Each controller plays on one profile; controllers on the same profile share everything in it. What a controller keeps for itself: its glyphs (PlayStation, Xbox or Switch symbols), its controller type and its button setup (Learn, detection).
 
 - **After updating from 1.5.0:** every controller you used became its own profile, named after it, with its layout and bindings as they were. Nothing changes until you share one.
 - **Your first controller** gets a profile named **Default**, without asking.
@@ -387,13 +392,13 @@ The **Settings** tab, the last side tab, in the Tweaks tab's look. Hover or focu
 
 World of Warcraft saves the addon's settings on each computer, but keeps your macros and action bars for your account. So the addon also keeps a copy of its settings in a few account macros, **FCT:Sync 1**, **FCT:Sync 2**… (usually 6 to 8), and every computer you log in on uses the newest copy. It's on by default.
 
-- **What syncs:** profiles (their names, layouts and every character's bindings), which profile each controller uses, touch bars, rings, controller setup (detection, controller type), tweaks, keyboard settings and quick messages, the other options, and whether you've done the setup guide.
+- **What syncs:** profiles (their names, layouts and every character's bindings and touch buttons), which profile each controller uses, each character's touch bar layout and rings, controller setup (detection, controller type), tweaks, keyboard settings and quick messages, the other options, and whether you've done the setup guide.
 - **What stays on each computer:** the keyboard's learned words, which slot each ring used last, Healer mode's last target, the What's new state, the debug log, and the addon's own records of its macros and hidden slots (it finds those again by itself).
 - **When:** it reads at login, once the game has loaded your macro list, before the crossbar is set up. It never writes before it has read (and taken in) what the other computer saved. It writes a few seconds after you change something, out of combat and at most every 30 seconds. A change made just before quitting goes out at your next login on that computer.
 - **Parts:** each part (one character's bindings in one profile, a profile's layout, the rings, the tweaks…) syncs on its own. If the same part changed on two computers, the newer change wins, chat says so, and **Undo last sync** brings the other back.
 - **First time on a computer with its own setup:** it asks once, **Use synced** or **Keep mine**. Either way the other copy is kept for Undo. A new install just takes the synced settings.
 - **Another controller:** a handheld with a different pad asks which profile to use (see [Profiles](#profiles)); pick your main controller's to have the same bindings. Which profile each controller uses syncs too, so you answer once for all your computers. Deleting a profile on one computer deletes it on the others.
-- **Update every computer:** 1.5.1 writes sync in a new format. A computer still on 1.5.0 pauses sync and asks you to update; it never writes over the newer copy.
+- **Update every computer:** 1.5.2 writes sync in a new format. A computer on an older version pauses sync and asks you to update; it never writes over the newer copy.
 
 The switch, the status, **Sync now** and **Undo last sync** are in the [Settings](#settings) tab.
 
@@ -403,8 +408,8 @@ If the account macros are full, nothing is written (never half a copy) and the w
 
 ### Export and import
 
-- **Export…** (`/fct export`) shows your settings as one long text, already selected: press Ctrl+C (Cmd+C on a Mac). The game doesn't let addons copy for you, and chat text can't be selected, so this box is the way to copy it. In **Settings → Backup**. An export holds this controller's profile (its name, layout and this character's bindings in it), touch bars, rings, tweaks, keyboard settings and options. It has no character or realm names; the profile's name is the only name in it.
-- **Import…** (`/fct import`): click the box and paste (Ctrl+V or Cmd+V). It goes into this controller's profile (which keeps its name); exports from 1.5.0 import too. The parts that would change are listed with what changes; untick any you want to keep as they are. **Import** asks once, then replaces the ticked parts; **Undo last sync** puts yours back. Pasting needs a keyboard: a controller alone can't paste.
+- **Export…** (`/fct export`) shows your settings as one long text, already selected: press Ctrl+C (Cmd+C on a Mac). The game doesn't let addons copy for you, and chat text can't be selected, so this box is the way to copy it. In **Settings → Backup**. An export holds this controller's profile (its name, layout and this character's bindings in it), this character's touch bars (with this profile's buttons) and rings, tweaks, keyboard settings and options. It has no character or realm names; the profile's name is the only name in it.
+- **Import…** (`/fct import`): click the box and paste (Ctrl+V or Cmd+V). It goes into this controller's profile (which keeps its name), its rings to this character; exports from 1.5.0 and 1.5.1 import too. The parts that would change are listed with what changes; untick any you want to keep as they are. **Import** asks once, then replaces the ticked parts; **Undo last sync** puts yours back. Pasting needs a keyboard: a controller alone can't paste.
 
 ## Turning it off
 

@@ -7,6 +7,9 @@ local ns = ForeverControllerTweaks
 -- action slot from Actions' shadow allocator (keyboard bars 6-8, empty slots only, shared with routed cells), keyed
 -- ("TL" | "TR") .. layer and the button's index. Nothing is written to a Blizzard frame; the bars hang off our own
 -- header under UIParent. A layer in Healer mode (healer = true, Touch.SetHealer) opens its healer ring instead (Rings.lua).
+-- Storage per character: the layout in char.touch = { enabled, show, sides }, the buttons per profile in
+-- char.touchBars[profile id] = { left = { [i] = { T, L, R, B } }, right = ... } (Profile.lua: a new profile starts empty,
+-- Copy copies them, Delete drops them).
 local Touch = {}
 ns.Touch = Touch
 
@@ -101,10 +104,19 @@ local function migrate(config, char)
 	for key in pairs(SIDE_DEFAULTS) do config[key] = nil end
 end
 
+-- The id char.cells uses (Face.lua): the profile's, the device key without profiles.
+local function profileId(create)
+	local Profile = ns.Profile
+	if Profile then return select(2, (create and Profile.Ensure or Profile.Current)()) end
+	local device = ns.Device and ns.Device.Current()
+	return device and device.key
+end
+
 -- This character's settings, defaults filled in: { enabled, show, sides = { left = { count, size, gap, inset, offsetY,
--- alpha, shape, showEmpty }, right = { ... } }, bars = { left = { [i] = { T, L, R, B } }, right = ... } }; nil before the
--- character is known. Callers must not modify it.
-function Touch.Config()
+-- alpha, shape, showEmpty }, right = { ... } }, bars = { left = { [i] = { T, L, R, B } }, right = ... } }, bars being
+-- this controller's profile's (an empty set not stored until create, a write, and only with a profile); nil before the
+-- character is known. Callers must not modify it, but for its bars (a write path passes create).
+function Touch.Config(create)
 	local char = ns.Face and ns.Face.CharDB()
 	if not char then return nil end
 
@@ -121,16 +133,24 @@ function Touch.Config()
 	for key, value in pairs(GLOBALS) do
 		if config[key] == nil then config[key] = value end
 	end
-	config.bars = config.bars or {}
+	local id = profileId(create)
+	if config.bars ~= nil then ns.MoveTouchBars(ns.db, char) end
+	local stored = id and type(char.touchBars) == "table" and char.touchBars[id]
+	-- Without a profile yet, the buttons of before 1.5.2 still sit in config.bars (MoveTouchBars waits).
+	local bars = type(stored) == "table" and stored or type(config.bars) == "table" and config.bars or {}
+	if create and id and not stored then
+		char.touchBars = type(char.touchBars) == "table" and char.touchBars or {}
+		char.touchBars[id] = bars
+	end
 	for side in pairs(SIDES) do
 		local settings = config.sides[side] or {}
 		config.sides[side] = settings
 		for key, value in pairs(SIDE_DEFAULTS) do
 			if settings[key] == nil then settings[key] = value end
 		end
-		config.bars[side] = config.bars[side] or {}
+		bars[side] = bars[side] or {}
 	end
-	return config
+	return setmetatable({ bars = bars }, { __index = config, __newindex = config })
 end
 
 local function valid(key, value)
@@ -208,18 +228,30 @@ end
 -- Our secure button, or nil before it is made (out of combat, once the bar shows that many).
 function Touch.Button(side, i) return buttons[side] and buttons[side][i] end
 
--- The touch button layers whose entry fires from a shadow slot: { code, layer, id } each, as Actions.Shadow keys them
--- (Healer mode layers fire none). Actions.lua gives them back their slots after lost settings.
-function Touch.ShadowNeeds()
-	local config, out = Touch.Config(), {}
-	for side, list in pairs(config and config.bars or NONE) do
-		for i, layers in pairs(type(list) == "table" and list or NONE) do
+local function needsOf(bars, out, healerToo)
+	for side, list in pairs(type(bars) == "table" and bars or NONE) do
+		for i, layers in pairs(SIDES[side] and type(list) == "table" and list or NONE) do
 			for layer, entry in pairs(type(layers) == "table" and layers or NONE) do
-				if type(entry) == "table" and not entry.healer and ns.Actions.SLOT_KINDS[ns.Actions.KindOf(entry)] then out[#out + 1] = { code = slotCode(side, layer), layer = i, id = entry.id } end
+				if type(entry) == "table" and (healerToo or not entry.healer) and type(entry.id) == "string" and ns.Actions.SLOT_KINDS[ns.Actions.KindOf(entry)] then out[#out + 1] = { code = slotCode(side, layer), layer = i, id = entry.id } end
 			end
 		end
 	end
 	return out
+end
+
+-- The touch button layers of this profile whose entry fires from a shadow slot: { code, layer, id } each, as
+-- Actions.Shadow keys them (Healer mode layers fire none). Actions.lua gives them back their slots after lost settings.
+function Touch.ShadowNeeds()
+	local config = Touch.Config()
+	return needsOf(config and config.bars, {})
+end
+
+-- Every touch button entry of this character a slot could hold, in every profile, Healer mode or not: a synced bars
+-- 6-8 slot is freed only when none of them wants its action (another computer may play on that profile).
+function Touch.AllShadowNeeds()
+	local char, out = ns.Face and ns.Face.CharDB(), {}
+	for _, bars in pairs(char and type(char.touchBars) == "table" and char.touchBars or NONE) do needsOf(bars, out, true) end
+	return needsOf(char and type(char.touch) == "table" and char.touch.bars, out, true)
 end
 
 -- True while a button's layer holds an action a slot could hold but runs as macro text: no slot was free for it.
@@ -244,7 +276,7 @@ function Touch.SetEntry(side, i, entry, layer)
 	local Actions = ns.Actions
 	local kind = entry and Actions.KindOf(entry)
 	if entry and not (Actions.SLOT_KINDS[kind] or kind == "face" or kind == "ring" or kind == "hold") then return nil, tostring(entry.name) .. " can't go on a touch button." end
-	local config = Touch.Config()
+	local config = Touch.Config(true)
 	if not config then return nil, "no character yet" end
 
 	local new = entry and { id = entry.id, name = entry.name, icon = entry.icon, kind = kind }
@@ -281,7 +313,7 @@ function Touch.SetHealer(side, i, layer, on)
 	local new = {}
 	for key, value in pairs(entry) do new[key] = value end
 	new.healer = on or nil
-	Touch.Config().bars[side][i][layer] = new
+	Touch.Config(true).bars[side][i][layer] = new
 	apply()
 	ns.Fire("FCT_LAYOUT_CHANGED", "touch")
 	return true

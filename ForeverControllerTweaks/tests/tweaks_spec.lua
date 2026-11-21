@@ -265,10 +265,10 @@ UI.TweaksTab.Open()
 local w = UI.Current()
 local ST = UI.TweaksTab.T
 check(w and w.tabs.index == #UI.TABS - 1, "the tab opens as its own side tab")
-check(#w.nodes == 33, "thirty-three rows: " .. #w.nodes)
+check(#w.nodes == 34, "thirty-four rows: " .. #w.nodes)
 local headers = {}
 for _, f in ipairs(W.frames) do if f.parent == w and f.text and type(f.text) == "table" and f.text.text then headers[f.text.text] = true end end
-check(headers[ST.BAGS] and headers[ST.NPCS] and headers[ST.RUMBLE] and headers[ST.CONTROLLER] and headers[ST.GEAR] and headers[ST.SOCIAL], "six section headers")
+check(headers[ST.BAGS] and headers[ST.NPCS] and headers[ST.RUMBLE] and headers[ST.CONTROLLER] and headers[ST.GEAR] and headers[ST.SOCIAL] and headers[ST.CAMERA], "seven section headers")
 local function footer()
 	local out = {}
 	for _, prompt in ipairs(w.footer.prompts) do if prompt:IsShown() then out[prompt.key] = prompt.label.text end end
@@ -1079,7 +1079,7 @@ function UnitIsPlayer(unit) return foes[unit] and foes[unit][1] end
 function UnitIsEnemy(_, unit) return foes[unit] and foes[unit][2] end
 function UnitFactionGroup(unit) if unit == "player" then return "Alliance", "Alliance" end return foes[unit][3], foes[unit][4] end
 function UnitName(unit) return foes[unit] and foes[unit][5] or "Ann" end
-function UnitGUID(unit) return foes[unit] and foes[unit][6] end
+function UnitGUID(unit) return foes[unit] and foes[unit][6] or unit == "player" and "Player-0-Ann" or nil end
 function UnitLevel(unit) return foes[unit] and foes[unit][7] or 10 end
 local zone = "contested"
 C_PvP = { GetZonePVPInfo = function() return zone end }
@@ -1293,7 +1293,7 @@ check(count("SetVibration") == 0, "once per rare")
 local plates = { nameplate1 = { "rare", "Snort", "Creature-3", 24 }, nameplate2 = { "rare", SECRET, "Creature-4", 30 }, nameplate3 = { "elite", "Brute", "Creature-5", 30 } }
 function UnitClassification(unit) return plates[unit] and plates[unit][1] end
 function UnitName(unit) return plates[unit] and plates[unit][2] or "Ann" end
-function UnitGUID(unit) return plates[unit] and plates[unit][3] end
+function UnitGUID(unit) return plates[unit] and plates[unit][3] or unit == "player" and "Player-0-Ann" or nil end
 function UnitLevel(unit) return plates[unit] and plates[unit][4] or 10 end
 function UnitCanAttack() return true end
 function UnitIsDead() return false end
@@ -1750,5 +1750,55 @@ W.advance(0.05)
 check(redraws == 1, "one redraw for the burst: " .. redraws)
 bindings.OnRefresh = redraw
 UI.CloseAll()
+
+
+-- Camera zoom: the hold actions step on the press and keep moving while held; the Tweaks slider moves the camera by
+-- the difference now and once at the next login, never past the game's limit.
+do
+	local cam, moves = { zoom = 10 }, {}
+	function GetCameraZoom() return cam.zoom end
+	function CameraZoomIn(by) cam.zoom = cam.zoom - by moves[#moves + 1] = ("in %g"):format(by) end
+	function CameraZoomOut(by) cam.zoom = cam.zoom + by moves[#moves + 1] = ("out %g"):format(by) end
+	function MoveViewInStart() moves[#moves + 1] = "in start" end
+	function MoveViewInStop() moves[#moves + 1] = "in stop" end
+	W.cvars.cameraDistanceMaxZoomFactor = "2"
+	local T = ns.Tweaks
+	check(T.CameraMax() == 30 and T.Get("cameraZoom") == nil, "zoom: the limit is the game's (factor x 15 yards); untouched it is nil")
+	check(ns.Actions.Find("hold:zoomin") and ns.Actions.Find("hold:zoomout") and ns.Actions.Find("hold:zoomin").category == "Misc", "zoom: Zoom in and Zoom out are Misc hold actions")
+	local zin = _G.ForeverControllerTweaksZoomIn
+	zin.scripts.OnClick(zin, "LeftButton", true)
+	zin.scripts.OnClick(zin, "LeftButton", false)
+	W.advance(0.5)
+	check(table.concat(moves, ",") == "in 1", "zoom: a press is one step, a quick release starts nothing: " .. table.concat(moves, ","))
+	moves = {}
+	zin.scripts.OnClick(zin, "LeftButton", true)
+	W.advance(0.5)
+	zin.scripts.OnClick(zin, "LeftButton", false)
+	check(table.concat(moves, ",") == "in 1,in start,in stop", "zoom: held, it keeps moving until the release: " .. table.concat(moves, ","))
+	moves = {}
+	zin.scripts.OnClick(zin, "LeftButton", true)
+	W.advance(0.5)
+	W.fire("PLAYER_REGEN_DISABLED")
+	check(moves[#moves] == "in stop", "zoom: a fight starting stops it (a lost release)")
+	W.fire("PLAYER_REGEN_ENABLED")
+	moves = {}
+	zin.scripts.OnClick(zin, "RightButton", false)
+	check(table.concat(moves, ",") == "in 1", "zoom: a tap (touch button, ring) is one step")
+	cam.zoom, moves = 10, {}
+	T.Set("cameraZoom", 25)
+	check(T.Get("cameraZoom") == 25 and cam.zoom == 25 and moves[1] == "out 15", "zoom: the setting moves the camera by the difference: " .. tostring(T.Get("cameraZoom")) .. " " .. cam.zoom .. " " .. table.concat(moves, ","))
+	T.Set("cameraZoom", 99)
+	check(cam.zoom == 30, "zoom: never past the game's limit")
+	T.Set("cameraZoom", 5)
+	check(cam.zoom == 5 and moves[#moves] == "in 25", "zoom: in by the difference")
+	check(T.Repair({ cameraZoom = "x" }).cameraZoom == nil and T.Repair({ cameraZoom = 12.4 }).cameraZoom == 12 and T.Repair({ cameraZoom = -3 }).cameraZoom == nil, "zoom: repair keeps whole yards in range, else nil")
+	ns.db.tweaks.cameraZoom = nil
+	UI.TweaksTab.Open()
+	local tab = UI.Current()
+	local row
+	for _, node in ipairs(tab.nodes) do if node.region.key == "cameraZoom" then row = node.region end end
+	check(row and row.control.value.text == "5 yd", "zoom: the slider shows where the camera is when nothing is saved: " .. tostring(row and row.control.value.text))
+	UI.CloseAll()
+end
 
 io.stdout:write("tweaks_spec: " .. checks .. " checks passed\n")

@@ -32,7 +32,7 @@ local W = new({
 W.login()
 local db = W.ns.db
 local options, devices, profiles = db.options, db.devices, db.profiles
-assert(db.version == 3 and ForeverControllerTweaksDB == db)
+assert(db.version == 4 and ForeverControllerTweaksDB == db)
 assert(options.glyphs == true and options.toggleKey == "PADSOCIAL" and options.debug == false and options.glyphHide == "overlay")
 assert(#db.debugLog == 500 and db.debugLog[1] == "line 101", "debug log capped, newest kept")
 assert(db.faceEntries["054c/0ce6"].bottom.kind == "spell" and db.onboarded.playstation, "other units' keys untouched")
@@ -57,7 +57,7 @@ assert(W.ns.Device.Current().key == "054c/0ce6" and W.ns.Remap.State() == "off",
 local fresh = new(nil)
 fresh.login()
 local fdb = fresh.ns.db
-assert(fdb.version == 3 and not fresh.said("repaired") and fdb.devices["054c/0ce6"].roles == nil)
+assert(fdb.version == 4 and not fresh.said("repaired") and fdb.devices["054c/0ce6"].roles == nil)
 -- The first controller ever: a Default profile, no question.
 local pick = fdb.deviceProfile["054c/0ce6"]
 assert(pick and pick.id == "p1" and pick.at == 0 and fdb.profiles.p1.name == "Default" and not fresh.ns.Profile.Pending(), "first controller: Default, no question")
@@ -65,7 +65,7 @@ assert(pick and pick.id == "p1" and pick.at == 0 and fdb.profiles.p1.name == "De
 -- Not a table at all.
 local junk = new("garbage")
 junk.login()
-assert(type(junk.ns.db.devices) == "table" and junk.ns.db.version == 3)
+assert(type(junk.ns.db.devices) == "table" and junk.ns.db.version == 4)
 
 -- Saved by a newer the addon: kept as it is, no migration down.
 local newer = new({ version = 9, options = {}, devices = {} })
@@ -76,7 +76,7 @@ assert(newer.ns.db.version == 9 and newer.said("newer version of Controller Twea
 for _, version in ipairs({ 0, -3, 1.5, 0 / 0, math.huge }) do
 	local odd = new({ version = version, options = {}, devices = { ["2dc8/6001"] = { raw = { L1 = { button = 4 }, R1 = { button = 10 }, L2 = { axis = "LTrigger" }, R2 = { axis = "RTrigger" } }, roles = {}, face = {} } } })
 	odd.login()
-	assert(odd.ns.db and odd.ns.db.version == 3 and odd.ns.db.devices["2dc8/6001"].confirmed and odd.ns.db.profiles["2dc8/6001"], "version " .. tostring(version))
+	assert(odd.ns.db and odd.ns.db.version == 4 and odd.ns.db.devices["2dc8/6001"].confirmed and odd.ns.db.profiles["2dc8/6001"], "version " .. tostring(version))
 end
 
 -- The macro and character stores: wrong types and bad entries are dropped, good ones kept.

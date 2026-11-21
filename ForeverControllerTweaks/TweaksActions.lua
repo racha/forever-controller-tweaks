@@ -15,6 +15,10 @@
 --                       of combat on bag changes.
 --   Minimap zoom        our secure button clicks the minimap's own zoom-in button, then zoom-out once fully in, and
 --                       back. Blizzard's button does the zooming; nothing of the minimap is written here.
+--   Zoom in, Zoom out   the camera one step on the press (CameraZoomIn/Out); held, it keeps moving (MoveViewIn/
+--                       OutStart) until the release, a fight starting, the world unloading or a window taking the pad
+--                       (a lost release). A tap from a touch button or ring is one step.
+--   Camera zoom (Tweaks) where the camera sits, in yards up to the game's limit: moved now, and once at login.
 local _, ns = ...
 local Tweaks = ns.Tweaks
 local Gear = Tweaks.Gear
@@ -182,3 +186,81 @@ end)
 ns.On("PLAYER_ENTERING_WORLD", function()
 	if not InCombatLockdown() and Minimap and Minimap.ZoomIn and not zoom:GetAttribute("clickbutton") then zoom:SetAttribute("clickbutton", Minimap.ZoomIn) end
 end)
+
+---------------------------------------------------------------------------------------------------------------------
+-- Camera zoom: hold actions, and the Tweaks setting.
+
+-- A press that is still down this long keeps the camera moving.
+local ZOOM_HOLD, YARDS_PER_FACTOR = 0.25, 15
+local ZOOMS = {
+	ForeverControllerTweaksZoomIn = { step = "CameraZoomIn", start = "MoveViewInStart", stop = "MoveViewInStop" },
+	ForeverControllerTweaksZoomOut = { step = "CameraZoomOut", start = "MoveViewOutStart", stop = "MoveViewOutStop" },
+}
+local moving, pressToken = nil, 0
+
+local function camera(name, ...)
+	local fn = _G[name]
+	if fn then call(fn, ...) end
+end
+
+local function stopMoving()
+	pressToken = pressToken + 1
+	if moving then camera(moving.stop) end
+	moving = nil
+end
+
+for name, zoomSpec in pairs(ZOOMS) do
+	local button = CreateFrame("Button", name, UIParent)
+	button:RegisterForClicks("AnyUp", "AnyDown")
+	button:SetScript("OnClick", function(_, mouseButton, down)
+		if mouseButton == "RightButton" then return camera(zoomSpec.step, 1) end
+		if not down then return stopMoving() end
+		stopMoving()
+		camera(zoomSpec.step, 1)
+		local token = pressToken
+		C_Timer.After(ZOOM_HOLD, function()
+			if token ~= pressToken then return end
+			moving = zoomSpec
+			camera(zoomSpec.start)
+		end)
+	end)
+end
+ns.On("PLAYER_REGEN_DISABLED", stopMoving)
+ns.On("PLAYER_LEAVING_WORLD", stopMoving)
+ns.On("FCT_PAD_FREE", function(free) if not free then stopMoving() end end)
+
+-- The game's farthest camera distance in yards, read live (cameraDistanceMaxZoomFactor), never past the stored range.
+function Tweaks.CameraMax()
+	local factor = tonumber(GetCVar("cameraDistanceMaxZoomFactor")) or 1
+	return math.max(1, math.min(Tweaks.NUMBERS.cameraZoom[2], math.floor(factor * YARDS_PER_FACTOR)))
+end
+
+-- The camera's distance now in yards, or nil when the game doesn't say.
+function Tweaks.CameraNow()
+	local now = call(GetCameraZoom)
+	if type(now) ~= "number" or secret(now) then return end
+	return now
+end
+
+-- Moves the camera to yards (clamped to the game's limit) by the difference from where it is.
+function Tweaks.ZoomTo(yards)
+	local now = Tweaks.CameraNow()
+	if type(yards) ~= "number" or not now then return end
+	local by = math.min(yards, Tweaks.CameraMax()) - now
+	if by > 0 then camera("CameraZoomOut", by) elseif by < 0 then camera("CameraZoomIn", -by) end
+end
+
+-- Once after the first world entry, out of combat (a fight first: after it). Never touched (nil): nothing.
+local zoomPending
+local function zoomAtLogin()
+	if not zoomPending then return end
+	if InCombatLockdown() then return end
+	zoomPending = false
+	Tweaks.ZoomTo(Tweaks.Get("cameraZoom"))
+end
+ns.On("PLAYER_ENTERING_WORLD", function()
+	if zoomPending ~= nil then return end
+	zoomPending = Tweaks.Get("cameraZoom") ~= nil
+	C_Timer.After(1, zoomAtLogin)
+end)
+ns.On("PLAYER_REGEN_ENABLED", zoomAtLogin)

@@ -1,11 +1,12 @@
--- Forever Controller Tweaks action rings (design/rings.md): radial menus of catalog actions, account-wide, opened from
+-- Forever Controller Tweaks action rings (design/rings.md): radial menus of catalog actions, per character, opened from
 -- any routed face or D-pad cell (Face.lua) or touch button (Touch.lua) that holds the entry "ring:<id>".
 --
--- Storage: ns.db.rings = { nextId, list = { { id, name, icon, count, stick, show, style, middle, slots = { [i] = { id, name, icon, kind } } } } }.
+-- Storage: ns.db.chars[char].rings = { nextId, list = { { id, name, icon, count, stick, show, style, middle, slots = { [i] = { id, name,
+-- icon, kind } } } } } (1.5.1 kept one list for the account in ns.db.rings: Core.MoveRings hands it out at load).
 -- Per character, the slot each ring fired last: ns.db.chars[char].ringLast[ring id] = { i, slot id } (healer rings by
 -- their "h<entry id>"); kept only while that slot still holds that action.
--- axisSaved: the player's GamePadStickAxisButtons value while a held ring has it switched on by a saved write (a client
--- that refuses the temp value), until put back.
+-- ns.db.ringAxisSaved: the player's GamePadStickAxisButtons value while a held ring has it switched on by a saved write
+-- (a client that refuses the temp value), until put back. It and ns.db.ringMarker stay account-wide.
 -- stick: which stick aims a held ring, "right", "left" or "dynamic" (opened from a D-pad cell: right; from a face
 -- button cell: left, the hand that isn't on the button; from a stick press: the other stick). Touch rings are tapped.
 -- show: how a held ring stays up. "toggle": a press opens it and it stays until a slot is used, the button is pressed
@@ -43,7 +44,7 @@
 --   _close()              hides it; _arm(ref, which, id, i) writes one slot's action on a button.
 -- No action slot is used: the actions fire through direct secure attributes (spell, item, toy, macrotext).
 -- Healer mode (design/healer-mode.md): a binding with healer = true opens a healer ring, id "h<entry id>", made from the
--- binding (Rings.HealerRing), not stored in ns.db.rings: always Hold, Dynamic stick, Compact, 7 slots that all fire the
+-- binding (Rings.HealerRing), not stored: always Hold, Dynamic stick, Compact, 7 slots that all fire the
 -- binding's spell or item, slot i on unit HEALER_UNITS[i] (r<id>u<i>). _arm sets the button's unit (and drops the
 -- self/focus/mouseover cast checks there); _pick skips a slot whose unit is missing or can't be helped (dead allies
 -- can), returning false so a kept pick is dropped too; a tapped slot does the same check.
@@ -173,12 +174,18 @@ end
 ---------------------------------------------------------------------------------------------------------------------
 -- Storage
 
-local function store()
-	ns.db.rings = ns.db.rings or { nextId = 1, list = {} }
-	return ns.db.rings
+-- This character's rings; nil before the character is known. create: made on first write.
+local function store(create)
+	local char = ns.db and ns.Face and ns.Face.CharDB()
+	if not char then return end
+	if create and type(char.rings) ~= "table" then char.rings = { nextId = 1, list = {} } end
+	return type(char.rings) == "table" and char.rings or nil
 end
 
-function Rings.List() return ns.db and store().list or NONE end
+function Rings.List()
+	local rings = store()
+	return rings and rings.list or NONE
+end
 
 function Rings.Get(id)
 	for _, ring in ipairs(Rings.List()) do
@@ -236,10 +243,10 @@ function Rings.Entries()
 	return out
 end
 
--- Every stored binding that holds a ring, on every character: routed cells cells[device][code][layer] and touch
--- buttons touch.bars[side][i][layer]. fn(holder, key, ringId) may set holder[key] (nil drops it); an emptied row or
--- button goes too.
-local function eachBinding(db, fn)
+-- Every stored binding of one character that holds a ring: routed cells cells[profile][code][layer] and touch buttons
+-- touchBars[profile][side][i][layer] (touch.bars before 1.5.2). fn(holder, key, ringId) may set holder[key] (nil drops
+-- it); an emptied row or button goes too.
+local function eachBinding(char, fn)
 	local function walk(parent, rows)
 		for rowKey, row in pairs(rows) do
 			if type(row) == "table" then
@@ -251,20 +258,24 @@ local function eachBinding(db, fn)
 			end
 		end
 	end
-	for _, char in pairs(type(db.chars) == "table" and db.chars or NONE) do
-		if type(char) == "table" then
-			for _, byCode in pairs(type(char.cells) == "table" and char.cells or NONE) do walk(byCode, byCode) end
-			local bars = type(char.touch) == "table" and type(char.touch.bars) == "table" and char.touch.bars or NONE
-			for _, list in pairs(bars) do
-				if type(list) == "table" then walk(list, list) end
-			end
+	if type(char) ~= "table" then return end
+	local function walkBars(bars)
+		for _, list in pairs(type(bars) == "table" and bars or NONE) do
+			if type(list) == "table" then walk(list, list) end
 		end
 	end
+	for _, byCode in pairs(type(char.cells) == "table" and char.cells or NONE) do
+		if type(byCode) == "table" then walk(byCode, byCode) end
+	end
+	for _, bars in pairs(type(char.touchBars) == "table" and char.touchBars or NONE) do walkBars(bars) end
+	walkBars(type(char.touch) == "table" and char.touch.bars)
 end
+Rings.EachBinding = eachBinding
 
--- Bindings keep a copy of the ring's name and icon for the panels and glyphs; they follow every change.
+-- Bindings keep a copy of the ring's name and icon for the panels and glyphs; they follow every change. This
+-- character's only: another one's ring:<id> is its own ring.
 local function syncBindings()
-	eachBinding(ns.db, function(row, key, id)
+	eachBinding(ns.Face.CharDB(), function(row, key, id)
 		local ring = Rings.Get(id)
 		if not ring then row[key] = nil return end
 		local entry = row[key]
@@ -301,7 +312,8 @@ end
 function Rings.New()
 	local ok, err = editable()
 	if not ok then return nil, err end
-	local rings = store()
+	local rings = store(true)
+	if not rings then return nil, "no character yet" end
 	if #rings.list >= MAX_RINGS then return nil, ("You have %d rings, the most there can be. Delete one first."):format(MAX_RINGS) end
 
 	local taken = {}
@@ -403,7 +415,7 @@ function Rings.SetSlot(id, i, entry)
 	return changed()
 end
 
--- Deletes the ring and every binding that opens it, on every character.
+-- Deletes this character's ring and every binding of its that opens it.
 function Rings.Delete(id)
 	local ring, err = editable(id)
 	if not ring then return nil, err end
@@ -412,16 +424,15 @@ function Rings.Delete(id)
 	for i = #list, 1, -1 do
 		if list[i] == ring then table.remove(list, i) end
 	end
-	for _, char in pairs(ns.db.chars or NONE) do
-		if type(char) == "table" and type(char.ringLast) == "table" then char.ringLast[id] = nil end
-	end
+	local char = ns.Face.CharDB()
+	if type(char.ringLast) == "table" then char.ringLast[id] = nil end
 	return changed()
 end
 
--- How many stored bindings open this ring, every character counted (the delete confirmation says so).
+-- How many of this character's bindings open this ring (the delete confirmation says so).
 function Rings.BindingCount(id)
 	local n = 0
-	eachBinding(ns.db, function(_, _, ringId) if ringId == id then n = n + 1 end end)
+	eachBinding(ns.Face.CharDB(), function(_, _, ringId) if ringId == id then n = n + 1 end end)
 	return n
 end
 
@@ -445,32 +456,23 @@ local function repairSlots(ring, path, fix)
 	end
 end
 
--- Repairs ns.db.rings into the shape above: bad rings and slots are dropped, missing fields get their defaults, ids
--- stay unique, at most MAX_RINGS, and bindings to rings that no longer exist are dropped. fix(path) per repair.
-function Rings.Repair(db, fix)
-	local rings = db.rings
-	if rings ~= nil and type(rings) ~= "table" then fix("rings") end
-	rings = type(rings) == "table" and rings or {}
-	db.rings = rings
+-- One ring list ({ nextId, list }) into the shape above: bad rings and slots are dropped, missing fields get their
+-- defaults, ids stay unique, at most MAX_RINGS. Returns the set of ring ids kept.
+local function repairList(rings, base, fix)
 	if type(rings.list) ~= "table" then
-		if rings.list ~= nil then fix("rings.list") end
+		if rings.list ~= nil then fix(base .. ".list") end
 		rings.list = {}
 	end
-	if rings.axisSaved ~= nil and type(rings.axisSaved) ~= "string" then
-		rings.axisSaved = nil
-		fix("rings.axisSaved")
-	end
-
 	-- In list order, so the first of two rings with one id is the one kept.
 	local kept, seen, top = {}, {}, 0
 	for key, ring in pairs(rings.list) do
 		local id = type(ring) == "table" and ring.id
-		if type(key) ~= "number" or type(id) ~= "number" or id < 1 or id % 1 ~= 0 then fix("rings.list." .. tostring(key)) else kept[#kept + 1] = { key, ring } end
+		if type(key) ~= "number" or type(id) ~= "number" or id < 1 or id % 1 ~= 0 then fix(base .. ".list." .. tostring(key)) else kept[#kept + 1] = { key, ring } end
 	end
 	table.sort(kept, function(a, b) return a[1] < b[1] end)
 	local list = {}
 	for _, pair in ipairs(kept) do
-		local ring, path = pair[2], "rings." .. pair[2].id
+		local ring, path = pair[2], base .. "." .. pair[2].id
 		if #list >= MAX_RINGS or seen[ring.id] then
 			fix(path)
 		else
@@ -508,45 +510,66 @@ function Rings.Repair(db, fix)
 	end
 	rings.list = list
 	if type(rings.nextId) ~= "number" or rings.nextId % 1 ~= 0 or rings.nextId <= top then
-		if rings.nextId ~= nil then fix("rings.nextId") end
+		if rings.nextId ~= nil then fix(base .. ".nextId") end
 		rings.nextId = top + 1
 	end
+	return seen
+end
 
-	eachBinding(db, function(row, key, id)
-		if seen[id] then return end
-		row[key] = nil
-		fix("binding to deleted ring " .. id)
-	end)
+-- Repairs every character's rings, and 1.5.1's account list if it is still there (Core.MoveRings had no record to
+-- give it to): a record without rings of its own is checked against that list. Bindings to rings the character
+-- doesn't have are dropped. fix(path) per repair.
+function Rings.Repair(db, fix)
+	if db.rings ~= nil and type(db.rings) ~= "table" then
+		db.rings = nil
+		fix("rings")
+	end
+	local legacy = type(db.rings) == "table" and repairList(db.rings, "rings", fix) or nil
+	if db.ringAxisSaved ~= nil and type(db.ringAxisSaved) ~= "string" then
+		db.ringAxisSaved = nil
+		fix("ringAxisSaved")
+	end
 	-- The ring marker setting: true, false or nil (on).
 	if db.ringMarker ~= nil and type(db.ringMarker) ~= "boolean" then
 		db.ringMarker = nil
 		fix("ringMarker")
 	end
-	-- Last target (healerLast) is true on a binding in Healer mode, or not there.
-	for _, char in pairs(type(db.chars) == "table" and db.chars or NONE) do
-		for _, byCode in pairs(type(char) == "table" and type(char.cells) == "table" and char.cells or NONE) do
-			for code, row in pairs(type(byCode) == "table" and byCode or NONE) do
-				for layer, entry in pairs(type(row) == "table" and row or NONE) do
-					if type(entry) == "table" and entry.healerLast ~= nil and not (entry.healerLast == true and entry.healer) then
-						entry.healerLast = nil
-						fix("healerLast " .. tostring(code) .. " " .. tostring(layer))
+	for name, char in pairs(type(db.chars) == "table" and db.chars or NONE) do
+		if type(char) == "table" then
+			local path = "chars." .. tostring(name)
+			if char.rings ~= nil and type(char.rings) ~= "table" then
+				char.rings = nil
+				fix(path .. ".rings")
+			end
+			local seen = char.rings and repairList(char.rings, path .. ".rings", fix) or legacy or NONE
+			eachBinding(char, function(row, key, id)
+				if seen[id] then return end
+				row[key] = nil
+				fix(path .. ": binding to deleted ring " .. id)
+			end)
+			-- Last target (healerLast) is true on a binding in Healer mode, or not there.
+			for _, byCode in pairs(type(char.cells) == "table" and char.cells or NONE) do
+				for code, row in pairs(type(byCode) == "table" and byCode or NONE) do
+					for layer, entry in pairs(type(row) == "table" and row or NONE) do
+						if type(entry) == "table" and entry.healerLast ~= nil and not (entry.healerLast == true and entry.healer) then
+							entry.healerLast = nil
+							fix("healerLast " .. tostring(code) .. " " .. tostring(layer))
+						end
 					end
 				end
 			end
-		end
-	end
-	-- A last pick: { slot index, slot id } of a ring that exists, or of a healer ring (its binding decides).
-	for name, char in pairs(type(db.chars) == "table" and db.chars or NONE) do
-		local last = type(char) == "table" and char.ringLast
-		if last ~= nil and type(last) ~= "table" then
-			char.ringLast = nil
-			fix("chars." .. tostring(name) .. ".ringLast")
-		end
-		for id, pick in pairs(type(last) == "table" and last or NONE) do
-			local good = type(pick) == "table" and type(pick[1]) == "number" and pick[1] % 1 == 0 and pick[1] >= 1 and pick[1] <= MAX_SLOTS and type(pick[2]) == "string"
-			if not (good and (seen[id] or type(id) == "string" and id:find("^h"))) then
-				last[id] = nil
-				fix("chars." .. tostring(name) .. ".ringLast." .. tostring(id))
+			-- A last pick: { slot index, slot id } of a ring that exists, or of a healer ring (its binding decides).
+			local last = char.ringLast
+			if last ~= nil and type(last) ~= "table" then
+				char.ringLast = nil
+				fix(path .. ".ringLast")
+			end
+			for id, pick in pairs(type(last) == "table" and last or NONE) do
+				local good = type(pick) == "table" and type(pick[1]) == "number" and pick[1] % 1 == 0 and pick[1] >= 1 and pick[1] <= MAX_SLOTS and type(pick[2]) == "string"
+				if not (good and (seen[id] or type(id) == "string" and id:find("^h"))) then
+					last[id] = nil
+					fix(path .. ".ringLast." .. tostring(id))
+				end
 			end
 		end
 	end
@@ -1149,7 +1172,7 @@ end
 -- does (ImprovedForever_Wheel/Ring.lua, MIT, markg). Driven by the ring frame's ps-mode, not its OnShow: a held ring
 -- can open over a touch ring already up, and a touch ring over a held one.
 -- First as a temp value (C_CVar.SetTempCVar, never saved, so a /reload or a crash mid-ring leaves nothing behind), read
--- back; a client that refuses it gets the saved write, the player's value kept in ns.db.rings.axisSaved and put back
+-- back; a client that refuses it gets the saved write, the player's value kept in ns.db.ringAxisSaved and put back
 -- at the next login if the ring never closed. A close in combat puts it back after the fight. Never written when it
 -- already holds the wanted value. A failed write leaves the button's release and A to fire.
 -- The write and its restore change the controller config, so a held ring holds Remap (Remap.Hold) from its open until
@@ -1200,15 +1223,15 @@ local function engage()
 	if moved then return ns.debug("rings: stick keys left off, %s (moved by the layout) is held", moved) end
 	temp = setTemp()
 	if temp then return end
-	if ns.db.rings.axisSaved == nil then ns.db.rings.axisSaved = current end
+	if ns.db.ringAxisSaved == nil then ns.db.ringAxisSaved = current end
 	writeAxis("1")
 end
 
 local function restoreAxis()
 	restoring = nil
 	if frame:GetAttribute("ps-mode") == "hold" then return end
-	local rings = ns.db and ns.db.rings
-	local saved = rings and rings.axisSaved
+	local db = ns.db
+	local saved = db and db.ringAxisSaved
 	-- Remap stays held while the keys are still on.
 	if (temp or saved ~= nil) and InCombatLockdown() then return end
 	-- Removing the temp value doesn't refresh the controller: the stick keeps sending keys (the game's own radial
@@ -1217,7 +1240,7 @@ local function restoreAxis()
 	temp = nil
 	if saved ~= nil then
 		ns.Remap.Hold(true, stillHeld)
-		if GetCVar(AXIS) == saved or writeAxis(saved) then rings.axisSaved = nil end
+		if GetCVar(AXIS) == saved or writeAxis(saved) then db.ringAxisSaved = nil end
 	end
 	engaged = nil
 	-- After the write: Remap's settle starts from it.

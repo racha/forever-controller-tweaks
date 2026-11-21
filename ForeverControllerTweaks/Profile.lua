@@ -1,7 +1,8 @@
 -- Forever Controller Tweaks profiles: a layout (modifier roles, face-action positions) and every character's bindings
 -- for it (ns.db.chars[char].cells[id]), shared by the controllers that use it. Hardware (raw sources, family,
 -- detection, label style) stays per controller in ns.db.devices.
--- ns.db.profiles[id] = { name, roles, face }, or { gone = true } once deleted, so sync carries the deletion.
+-- ns.db.profiles[id] = { name, roles, face }, or { gone = true } once deleted, so sync carries the deletion. Touch
+-- buttons are per profile too (ns.db.chars[char].touchBars[id]); the touch bars' layout stays per character.
 -- ns.db.deviceProfile[deviceKey] = { id, at }: at is the server time the player picked it, 0 for the addon's own pick
 -- (a migrated controller, the first Default), which a pick made on any computer beats.
 -- ns.db.lastProfile: the one last used on this computer; a new controller plays on it until the player answers.
@@ -154,7 +155,7 @@ function Profile.New(name)
 	return id
 end
 
--- A deep copy of from's layout and of every character's bindings for it. Returns its id.
+-- A deep copy of from's layout and of every character's bindings and touch buttons for it. Returns its id.
 function Profile.Copy(from, name)
 	local source = live(from)
 	if not source then return nil, "no such profile" end
@@ -163,6 +164,8 @@ function Profile.Copy(from, name)
 	for _, char in pairs(type(ns.db.chars) == "table" and ns.db.chars or NONE) do
 		local cells = type(char) == "table" and type(char.cells) == "table" and char.cells
 		if cells and type(cells[from]) == "table" then cells[id] = copy(cells[from]) end
+		local bars = type(char) == "table" and type(char.touchBars) == "table" and char.touchBars
+		if bars and type(bars[from]) == "table" then bars[id] = copy(bars[from]) end
 	end
 	changed()
 	return id
@@ -177,14 +180,16 @@ function Profile.Rename(id, name)
 	return profile.name
 end
 
--- A deleted profile (here, or on another computer by sync): a tombstone, every character's bindings for it gone, its
--- controllers on the first profile left (at: their pick's time). Returns true when this controller was on it.
+-- A deleted profile (here, or on another computer by sync): a tombstone, every character's bindings and touch buttons
+-- for it gone, its controllers on the first profile left (at: their pick's time). Returns true when this controller
+-- was on it.
 function Profile.Forget(id, at)
 	local db = ns.db
 	local hit = Profile.CurrentId() == id
 	db.profiles[id] = { gone = true }
 	for _, char in pairs(type(db.chars) == "table" and db.chars or NONE) do
 		if type(char) == "table" and type(char.cells) == "table" then char.cells[id] = nil end
+		if type(char) == "table" and type(char.touchBars) == "table" then char.touchBars[id] = nil end
 	end
 	local first = (Profile.List()[1] or NONE).id
 	for key, pick in pairs(db.deviceProfile) do

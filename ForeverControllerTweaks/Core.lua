@@ -59,7 +59,7 @@
 local addonName, ns = ...
 ForeverControllerTweaks = ns
 
-local VERSION, DEBUG_CAP = 3, 500
+local VERSION, DEBUG_CAP = 4, 500
 ns.DB_VERSION = VERSION
 local PREFIX = "|cff33ff99Controller Tweaks|r "
 
@@ -319,7 +319,103 @@ local MIGRATIONS = {
 	end,
 	-- 3 (1.5.1): every controller becomes its own profile (Profile.lua), under its device key.
 	[3] = function(db) if ns.Profile then ns.Profile.Migrate(db) end end,
+	-- 4 (1.5.2): rings go per record (ns.MoveRings), the saved stick value stays account-wide; touch buttons go per
+	-- profile (ns.MoveTouchBars). Records stay under their 1.5.1 Name-Realm keys until a character claims them (Face).
+	[4] = function(db)
+		local rings = type(db.rings) == "table" and db.rings or nil
+		if rings and db.ringAxisSaved == nil and type(rings.axisSaved) == "string" then db.ringAxisSaved = rings.axisSaved end
+		if rings then rings.axisSaved = nil end
+		for _, char in pairs(type(db.chars) == "table" and db.chars or NONE) do
+			if type(char) == "table" then ns.MoveTouchBars(db, char) end
+		end
+		ns.MoveRings(db)
+	end,
 }
+
+local function copy(value)
+	if type(value) ~= "table" then return value end
+	local out = {}
+	for key, item in pairs(value) do out[key] = copy(item) end
+	return out
+end
+
+-- Touch buttons before 1.5.2 (char.touch.bars, one set per character) become a copy in every live profile
+-- (char.touchBars[profile id]), so no profile changes; a profile with buttons of its own keeps them. Removed only once
+-- copied somewhere: without a profile yet they wait (Touch.Config runs this again). Idempotent.
+function ns.MoveTouchBars(db, char)
+	local touch = type(char.touch) == "table" and char.touch or nil
+	local bars = touch and touch.bars
+	if bars == nil then return end
+	if type(bars) ~= "table" then touch.bars = nil return end
+	local copied = false
+	for id, profile in pairs(type(db.profiles) == "table" and db.profiles or NONE) do
+		if type(profile) == "table" and not profile.gone then
+			char.touchBars = type(char.touchBars) == "table" and char.touchBars or {}
+			if char.touchBars[id] == nil then char.touchBars[id] = copy(bars) end
+			copied = true
+		end
+	end
+	if copied then touch.bars = nil end
+end
+
+-- The ring ids one character's bindings open: routed cells in every profile, touch buttons in every profile (and the
+-- touch.bars of before 1.5.2).
+local function ringRefs(char)
+	local refs = {}
+	local function grid(rows)
+		for _, row in pairs(type(rows) == "table" and rows or NONE) do
+			for _, entry in pairs(type(row) == "table" and row or NONE) do
+				local id = type(entry) == "table" and tonumber(tostring(entry.id):match("^ring:(%d+)$"))
+				if id then refs[id] = true end
+			end
+		end
+	end
+	local function bars(sides) for _, list in pairs(type(sides) == "table" and sides or NONE) do grid(list) end end
+	for _, rows in pairs(type(char.cells) == "table" and char.cells or NONE) do grid(rows) end
+	for _, sides in pairs(type(char.touchBars) == "table" and char.touchBars or NONE) do bars(sides) end
+	bars(type(char.touch) == "table" and char.touch.bars)
+	return refs
+end
+
+-- 1.5.1's account ring list, handed out at load to the records that were there (all from before 1.5.2): each gets a
+-- copy of the rings its own bindings open (ids kept, so the bindings still work), and a ring nobody's bindings open
+-- goes to every record. Nothing goes by who logs in: a record's rings reach its character with its claim (Face.lua),
+-- so a new character starts with none. Copies before it deletes; a record keeps rings of its own and gets only those
+-- it lacks. Without any record the list stays (nothing to copy it to).
+function ns.MoveRings(db)
+	local rings = type(db.rings) == "table" and db.rings or nil
+	local list = rings and type(rings.list) == "table" and rings.list or nil
+	local chars = type(db.chars) == "table" and db.chars or NONE
+	if not list then
+		if rings then db.rings = nil end
+		return
+	end
+	if not next(chars) then return end
+	local refsOf, anyRef = {}, {}
+	for name, char in pairs(chars) do
+		refsOf[name] = type(char) == "table" and ringRefs(char) or NONE
+		for id in pairs(refsOf[name]) do anyRef[id] = true end
+	end
+	for name, char in pairs(chars) do
+		if type(char) == "table" then
+			local mine = type(char.rings) == "table" and type(char.rings.list) == "table" and char.rings or nil
+			local have = {}
+			for _, ring in ipairs(mine and mine.list or NONE) do if type(ring) == "table" then have[ring.id] = true end end
+			for _, ring in ipairs(list) do
+				if type(ring) == "table" and not have[ring.id] and (refsOf[name][ring.id] or not anyRef[ring.id]) then
+					mine = mine or { nextId = rings.nextId, list = {} }
+					mine.list[#mine.list + 1] = copy(ring)
+					have[ring.id] = true
+				end
+			end
+			if mine then
+				char.rings = mine
+				if type(rings.nextId) == "number" and (type(mine.nextId) ~= "number" or mine.nextId < rings.nextId) then mine.nextId = rings.nextId end
+			end
+		end
+	end
+	db.rings = nil
+end
 
 local function asTable(value) return type(value) == "table" and value or {} end
 -- value - value is NaN for NaN and for an infinity.
@@ -345,7 +441,7 @@ local function tablesDown(map, depth, path, fix)
 	end
 end
 
--- Macro registries: { id = <catalog id> } (account ones also chars = { ["Name-Realm"] = true }).
+-- Macro registries: { id = <catalog id> } (account ones also chars = { [GUID] = true }).
 local function repairMacros(macros, path, fix)
 	for name, info in pairs(macros) do
 		if type(name) ~= "string" or type(info) ~= "table" or type(info.id) ~= "string" then
@@ -355,7 +451,7 @@ local function repairMacros(macros, path, fix)
 	end
 end
 
-local CHAR_TABLES = { highest = 1, shadow = 1, placed = 1, cells = 3, faceEntries = 2 }
+local CHAR_TABLES = { highest = 1, shadow = 1, placed = 1, cells = 3, faceEntries = 2, touchBars = 4 }
 -- The per-character migrations (ns.MigrateChar): legacyFaceDone (Face, PS:Back/Inspect macros to routed cells),
 -- routedUnderDone (Face, FCT: macros left under routed cells), macroPrefixDone (Actions, PS: macros renamed FCT:).
 local CHAR_FLAGS = { "legacyFaceDone", "routedUnderDone", "macroPrefixDone" }
@@ -396,6 +492,8 @@ local function repairStores(db, fix)
 			for _, flag in ipairs(CHAR_FLAGS) do
 				if char[flag] ~= nil and type(char[flag]) ~= "boolean" then char[flag] = nil fix(path .. "." .. flag) end
 			end
+			-- The display name Face keeps (records are keyed by GUID).
+			if char.name ~= nil and type(char.name) ~= "string" then char.name = nil fix(path .. ".name") end
 		end
 	end
 end

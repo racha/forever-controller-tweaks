@@ -39,7 +39,7 @@ ForeverControllerTweaksDB = {
 	version = 2,
 	rings = { nextId = 3, list = { { id = 2, name = "Heals", icon = 5, count = 8, stick = "right", slots = { { id = "face:jump", name = "Jump", icon = 7, kind = "face" } } } } },
 	keyboard = { enabled = true, open = "always", dictionary = { zugzug = 40, raid = 3 } },
-	chars = { ["Ann-Realm"] = { touch = { enabled = true, bars = { left = { { T = { id = "ring:2", name = "Open ring: Heals", icon = 5, kind = "ring" } } }, right = {} } } } },
+	chars = { ["Player-0-Ann"] = { touch = { enabled = true, bars = { left = { { T = { id = "ring:2", name = "Open ring: Heals", icon = 5, kind = "ring" } } }, right = {} } } } },
 }
 local saved = ForeverControllerTweaksDB
 
@@ -604,10 +604,14 @@ UI.CloseAll()
 W.fire("PLAYER_LOGOUT")
 local db = ForeverControllerTweaksDB
 check(db == saved and db == ns.db, "one SavedVariables table, the core's")
-check(db.rings.list[1] and db.rings.list[1].name == "Heals" and db.rings.list[1].slots[1].id == "face:jump", "the ring is kept")
+local rings = db.chars["Player-0-Ann"].rings
+check(rings and rings.list[1] and rings.list[1].name == "Heals" and rings.list[1].slots[1].id == "face:jump", "the ring is kept")
 check(db.keyboard.open == "always" and db.keyboard.dictionary.zugzug ~= nil, "keyboard settings and learned words are kept")
-local touch = db.chars["Ann-Realm"].touch
-check(touch.enabled and touch.bars.left[1].T.id == "ring:2", "the touch layout is kept")
+local touch, touchBars = db.chars["Player-0-Ann"].touch, db.chars["Player-0-Ann"].touchBars
+-- Moved to the profile once there is one (Core.MoveTouchBars), else still waiting in touch.bars.
+local _, buttons = next(touchBars or {})
+buttons = buttons or touch.bars
+check(touch.enabled and buttons and buttons.left[1].T.id == "ring:2", "the touch layout and the buttons are kept")
 
 check(errors() == "", "no errors after the checks: " .. errors())
 io.stdout:write(("modules_spec [%s]: %d checks passed\n"):format(set, checks))

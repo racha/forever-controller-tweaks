@@ -30,6 +30,7 @@ function InCombatLockdown() return W.combat end
 function GetCVar() return nil end
 function GetCVarBool() return false end
 function UnitName() return W.char end
+function UnitGUID(unit) if unit == "player" then return "Player-0-" .. W.char end end
 function GetNormalizedRealmName() return "Realm" end
 SlashCmdList = {}
 Enum = { SpellBookSpellBank = { Player = 0, Pet = 1 } }
@@ -248,15 +249,15 @@ check(toggled == 11, "neither API: the click does nothing")
 -- Registry: Ann makes FCT:Bags, Bob reuses it, it lives while either character uses it.
 check(Actions.Assign(FIRST, entry("game:bags")), "Ann assigns Bags")
 check(#account == 1 and account[1].name == "FCT:Bags" and account[1].icon == "INV_Misc_Bag_08", "macro made")
-check(registered("FCT:Bags").id == "game:bags" and registered("FCT:Bags").chars["Ann-Realm"], "registered for Ann")
+check(registered("FCT:Bags").id == "game:bags" and registered("FCT:Bags").chars["Player-0-Ann"], "registered for Ann")
 check(Actions.CurrentId(FIRST) == "game:bags", "CurrentId of a Controller Tweaks macro")
 W.char = "Bob"
 check(Actions.Assign(FIRST + 3, entry("game:bags")) and #account == 1, "Bob reuses it")
-check(registered("FCT:Bags").chars["Bob-Realm"], "registered for Bob")
+check(registered("FCT:Bags").chars["Player-0-Bob"], "registered for Bob")
 account[1].body = "/click MainMenuBarBackpackButton OldBody"
 check(Actions.Assign(FIRST + 4, entry("game:bags")) and account[1].body == "/click MainMenuBarBackpackButton" and #account == 1, "reuse brings an old body up to date")
 Actions.Clear(FIRST + 4)
-check(Actions.Clear(FIRST + 3) and #account == 1 and not registered("FCT:Bags").chars["Bob-Realm"], "Bob clears: kept for Ann")
+check(Actions.Clear(FIRST + 3) and #account == 1 and not registered("FCT:Bags").chars["Player-0-Bob"], "Bob clears: kept for Ann")
 W.char = "Ann"
 check(Actions.Clear(FIRST) and #account == 0 and registered("FCT:Bags") == nil, "Ann clears: deleted")
 
@@ -264,7 +265,7 @@ check(Actions.Clear(FIRST) and #account == 0 and registered("FCT:Bags") == nil, 
 check(Actions.Assign(FIRST, entry("game:bags")), "Ann again")
 W.char = "Bob"
 check(Actions.Assign(FIRST, entry("game:sit")), "Bob uses another macro")
-check(macroNamed("FCT:Bags") and registered("FCT:Bags").chars["Ann-Realm"], "Bob's cleanup keeps Ann's macro")
+check(macroNamed("FCT:Bags") and registered("FCT:Bags").chars["Player-0-Ann"], "Bob's cleanup keeps Ann's macro")
 W.char = "Ann"
 check(Actions.Clear(FIRST) and not macroNamed("FCT:Bags") and macroNamed("FCT:Sit"), "Ann's last use gone: FCT:Bags deleted, Bob's FCT:Sit kept")
 W.char = "Bob"
@@ -294,9 +295,9 @@ check(#account == 0, "both cleared")
 for i = 1, MAX_ACCOUNT do account[i] = { name = "user" .. i, body = "" } end
 check(Actions.Assign(FIRST, entry("game:sit")), "account full: assigned")
 local index = macroNamed("FCT:Sit", charList())
-check(index and ns.db.chars["Ann-Realm"].macros["FCT:Sit"].id == "game:sit", "character macro made and registered for Ann")
+check(index and ns.db.chars["Player-0-Ann"].macros["FCT:Sit"].id == "game:sit", "character macro made and registered for Ann")
 check(Actions.CurrentId(FIRST) == "game:sit", "CurrentId of a Controller Tweaks character macro")
-check(Actions.Clear(FIRST) and #charList() == 0 and ns.db.chars["Ann-Realm"].macros["FCT:Sit"] == nil, "character macro deleted when unused")
+check(Actions.Clear(FIRST) and #charList() == 0 and ns.db.chars["Player-0-Ann"].macros["FCT:Sit"] == nil, "character macro deleted when unused")
 for i = 1, 30 do charList()[i] = { name = "char" .. i, body = "" } end
 local ok, err = Actions.Assign(FIRST, entry("game:sit"))
 check(not ok and err:find("macro slots are full"), "both full: reason")
@@ -377,9 +378,9 @@ check(bars()[FIRST + 6].id == 10328, "after combat: new rank")
 bars()[FIRST + 6] = { kind = "spell", id = 133 }
 check(Actions.CurrentId(FIRST + 6) == "spell:133", "tracked slot holding another spell: not the group")
 ns.Fire("SPELLS_CHANGED")
-check(Actions.CurrentId(FIRST + 6) == "spell:133" and ns.db.chars["Ann-Realm"].highest[FIRST + 6] == nil, "player's own change: untracked")
-check(Actions.Assign(FIRST + 6, holy.ranks[1]) and Actions.Assign(FIRST + 6, entry("spell:133")) and ns.db.chars["Ann-Realm"].highest[FIRST + 6] == nil, "assigning over it untracks")
-check(Actions.Assign(FIRST + 6, holy.ranks[1]) and Actions.Clear(FIRST + 6) and ns.db.chars["Ann-Realm"].highest[FIRST + 6] == nil, "clearing untracks")
+check(Actions.CurrentId(FIRST + 6) == "spell:133" and ns.db.chars["Player-0-Ann"].highest[FIRST + 6] == nil, "player's own change: untracked")
+check(Actions.Assign(FIRST + 6, holy.ranks[1]) and Actions.Assign(FIRST + 6, entry("spell:133")) and ns.db.chars["Player-0-Ann"].highest[FIRST + 6] == nil, "assigning over it untracks")
+check(Actions.Assign(FIRST + 6, holy.ranks[1]) and Actions.Clear(FIRST + 6) and ns.db.chars["Player-0-Ann"].highest[FIRST + 6] == nil, "clearing untracks")
 
 -- Face actions can't go into a slot; the random favorite mount has routed text too.
 ok, err = Actions.Assign(FIRST + 8, entry("face:jump"))
@@ -392,12 +393,12 @@ function GetServerTime() return 1795200000 end
 bars()[180] = { kind = "spell", id = 116 }
 local shadow = A.Shadow("FT", "T", { id = "spell:133", name = "Fireball" })
 check(shadow == 179 and bars()[179].id == 133 and bars()[180].id == 116, "top-down, a used slot skipped")
-local placed = ns.db.chars["Ann-Realm"].placed
+local placed = ns.db.chars["Player-0-Ann"].placed
 check(placed[179] and placed[179].holds == "spell:133" and placed[179].at == 1795200000 and not placed[180], "the synced list: the placed slot, with what it holds and when")
 check(A.ShadowSlot("FT", "T", "spell:133") == 179 and A.ShadowSlot("FT", "T", "spell:116") == nil, "ShadowSlot by id")
 check(A.Shadow("FT", "T", { id = "spell:133", name = "Fireball" }) == 179 and cursor == nil, "same entry: same slot, nothing placed")
 check(A.Shadow("FB", "T", { id = "game:sit", name = "Sit" }) == 178 and macroNamed("FCT:Sit"), "next cell: next slot, a game macro")
-check(placed[178].holds == "macro:FCT:Sit" and placed[178].body == nil and ns.db.chars["Ann-Realm"].shadow[178].body, "the synced list: a macro slot without its body (the local record keeps it)")
+check(placed[178].holds == "macro:FCT:Sit" and placed[178].body == nil and ns.db.chars["Player-0-Ann"].shadow[178].body, "the synced list: a macro slot without its body (the local record keeps it)")
 check(Actions.Clear(FIRST) and macroNamed("FCT:Sit"), "a macro only in a shadow slot counts as used")
 check(A.Shadow("FT", "T", { id = "spellgroup:Holy Light", name = "Holy Light" }) == 179 and bars()[179].id == 10328, "changed entry: replaced in its own slot")
 check(A.CurrentId(179) == "spellgroup:Holy Light", "highest rank tracked in the shadow slot")
@@ -446,7 +447,7 @@ check(not A.Shadow("FR", "T", { id = "spell:999", name = "Gone" }), "unknown id:
 -- changes in a shared slot moves to its own slot (the other keeps its action), and one whose new entry another cell's
 -- slot already holds joins that slot.
 for slot = 145, 180 do bars()[slot] = nil end
-local own = ns.db.chars["Ann-Realm"].shadow
+local own = ns.db.chars["Player-0-Ann"].shadow
 local fire = { id = "spell:133", name = "Fireball" }
 local usedBefore = A.ShadowCapacity()
 check(A.Shadow("FB", "T", fire) == 180 and A.Shadow("FR", "L", fire) == 180 and #own[180].users == 2 and not bars()[179], "shared: the second cell with Fireball uses the first one's slot")
@@ -464,15 +465,15 @@ check(bars()[180] == nil and next(own) == nil, "shared: all given back")
 
 -- The list repaired once per table: bad entries go; slots held before the list existed join it.
 W.char = "Cid"
-ns.db.chars["Cid-Realm"] = { shadow = { [170] = { code = "FB", layer = "T", id = "spell:133", holds = "spell:133" } }, placed = { [160] = { holds = 5 }, [161] = "x", [162] = { holds = "spell:1", body = "/say a long macro body" }, [163] = { holds = "spell:116", at = 7 } } }
+ns.db.chars["Player-0-Cid"] = { shadow = { [170] = { code = "FB", layer = "T", id = "spell:133", holds = "spell:133" } }, placed = { [160] = { holds = 5 }, [161] = "x", [162] = { holds = "spell:1", body = "/say a long macro body" }, [163] = { holds = "spell:116", at = 7 } } }
 bars()[170] = { kind = "spell", id = 133 }
 check(A.ShadowSlot("FB", "T", "spell:133") == 170, "repair: an old record still reads")
-local migrated = ns.db.chars["Cid-Realm"].shadow[170]
+local migrated = ns.db.chars["Player-0-Cid"].shadow[170]
 check(migrated.code == nil and migrated.id == nil and #migrated.users == 1 and migrated.users[1].code == "FB" and migrated.users[1].layer == "T" and migrated.users[1].id == "spell:133" and migrated.holds == "spell:133", "repair: the one-cell record became one user")
-ns.db.chars["Cid-Realm"].shadow[171] = { users = { { code = 3 } } }
+ns.db.chars["Player-0-Cid"].shadow[171] = { users = { { code = 3 } } }
 A.ShadowState()
-check(ns.db.chars["Cid-Realm"].shadow[171] == nil, "repair: a record without a good user goes")
-local cid = ns.db.chars["Cid-Realm"].placed
+check(ns.db.chars["Player-0-Cid"].shadow[171] == nil, "repair: a record without a good user goes")
+local cid = ns.db.chars["Player-0-Cid"].placed
 check(cid[160] == nil and cid[161] == nil and cid[162].holds == "spell:1" and cid[162].body == nil and cid[163].at == 7 and cid[170] and cid[170].holds == "spell:133" and cid[170].at == 0, "repair: bad entries dropped, a held slot joins the list (oldest)")
 bars()[170] = nil
 W.char = "Ann"
@@ -482,7 +483,7 @@ W.char = "Ann"
 local rankSlot = A.Shadow("FR", "T", { id = "spell:635", name = "Holy Light (Rank 1)" })
 check(rankSlot == 180 and bars()[180].id == 635, "a fixed rank placed")
 bars()[180] = { kind = "spell", id = 639 }
-check(A.ShadowSlot("FR", "T", "spell:635") == 180 and ns.db.chars["Ann-Realm"].shadow[180].holds == "spell:639", "the game moved its rank: still ours, holds follows")
+check(A.ShadowSlot("FR", "T", "spell:635") == 180 and ns.db.chars["Player-0-Ann"].shadow[180].holds == "spell:639", "the game moved its rank: still ours, holds follows")
 check(A.Shadow("FR", "T", { id = "spell:635", name = "Holy Light (Rank 1)" }) == 180 and not bars()[179], "no new slot taken")
 bars()[180] = { kind = "spell", id = 635 }
 check(A.ShadowSlot("FR", "T", "spell:635") == nil, "a lower rank put back by the player: not ours")
@@ -491,7 +492,7 @@ check(A.ReleaseShadow("FR", "T") and bars()[180] == nil, "released: cleared as o
 local mine = account[#account]
 check(mine.name == "Mine" and A.Shadow("FB", "T", { id = "macro:Mine", name = "Mine" }) == 180, "the player's macro placed")
 mine.name = "Mine renamed"
-check(A.ShadowSlot("FB", "T", "macro:Mine") == 180 and ns.db.chars["Ann-Realm"].shadow[180].holds == "macro:Mine renamed", "renamed: still ours")
+check(A.ShadowSlot("FB", "T", "macro:Mine") == 180 and ns.db.chars["Player-0-Ann"].shadow[180].holds == "macro:Mine renamed", "renamed: still ours")
 bars()[180] = { kind = "spell", id = 116 }
 check(A.ShadowSlot("FB", "T", "macro:Mine") == nil and A.Shadow("FB", "T", { id = "spell:133", name = "Fireball" }) == 179 and bars()[180].id == 116, "something different: foreign, left as is")
 A.ReleaseShadow("FB", "T")
@@ -572,19 +573,19 @@ W.combat = false
 CreateMacro("PS:Bags", 1, "/click MainMenuBarBackpackButton", false)
 CreateMacro("PS:Mine", 1, "/say mine", false)
 CreateMacro("PS:Sit", 1, "/sit", true)
-ns.db.macros["PS:Bags"] = { id = "game:bags", chars = { ["Ann-Realm"] = true } }
-ns.db.chars["Ann-Realm"].macros["PS:Sit"] = { id = "game:sit" }
+ns.db.macros["PS:Bags"] = { id = "game:bags", chars = { ["Player-0-Ann"] = true } }
+ns.db.chars["Player-0-Ann"].macros["PS:Sit"] = { id = "game:sit" }
 bars()[FIRST + 6] = { kind = "macro", macro = account[macroNamed("PS:Bags")] }
-ns.db.chars["Ann-Realm"].macroPrefixDone = nil
+ns.db.chars["Player-0-Ann"].macroPrefixDone = nil
 W.combat = true
 ns.Fire("PLAYER_ENTERING_WORLD")
 check(macroNamed("PS:Bags") and ns.db.macros["PS:Bags"], "rename: not in combat")
 W.combat = false
 ns.Fire("PLAYER_REGEN_ENABLED")
 check(macroNamed("FCT:Bags") and not macroNamed("PS:Bags") and ns.db.macros["FCT:Bags"].id == "game:bags" and ns.db.macros["PS:Bags"] == nil, "rename: account macro and its registry key")
-check(macroNamed("FCT:Sit", charList()) and ns.db.chars["Ann-Realm"].macros["FCT:Sit"].id == "game:sit" and ns.db.chars["Ann-Realm"].macros["PS:Sit"] == nil, "rename: character macro too")
+check(macroNamed("FCT:Sit", charList()) and ns.db.chars["Player-0-Ann"].macros["FCT:Sit"].id == "game:sit" and ns.db.chars["Player-0-Ann"].macros["PS:Sit"] == nil, "rename: character macro too")
 check(macroNamed("PS:Mine") and not macroNamed("FCT:Mine"), "rename: an unregistered PS: macro is the player's, untouched")
-check(Actions.CurrentId(FIRST + 6) == "game:bags" and ns.db.chars["Ann-Realm"].macroPrefixDone, "rename: still on its bar, once per character")
+check(Actions.CurrentId(FIRST + 6) == "game:bags" and ns.db.chars["Player-0-Ann"].macroPrefixDone, "rename: still on its bar, once per character")
 ns.db.macros["PS:Again"] = { id = "game:sit", chars = {} }
 ns.Fire("PLAYER_ENTERING_WORLD")
 check(ns.db.macros["PS:Again"], "rename: runs once")
@@ -603,7 +604,7 @@ check(unique and macroNames["FCT:LeaveVehicle"], "every game macro name fits 16 
 bars()[FIRST + 6] = nil
 for _, name in ipairs({ "FCT:Bags", "PS:Mine" }) do table.remove(account, macroNamed(name)) end
 table.remove(charList(), macroNamed("FCT:Sit", charList()))
-ns.db.macros["FCT:Bags"], ns.db.chars["Ann-Realm"].macros["FCT:Sit"] = nil, nil
+ns.db.macros["FCT:Bags"], ns.db.chars["Player-0-Ann"].macros["FCT:Sit"] = nil, nil
 
 -- Every slot write holds off applies: UPDATE_MACROS (and the catalog message) fire inside it, synchronously.
 local busyInside
@@ -624,7 +625,7 @@ bars()[FIRST + 5] = nil
 -- gives one bars 6-8 slot back to the routed cell that wants Backpack and clears the rest. A player's macro of the
 -- same name pattern with another body, and two macros sharing one name, stay untouched.
 local BAGS = "/click MainMenuBarBackpackButton"
-local char = ns.db.chars["Ann-Realm"]
+local char = ns.db.chars["Player-0-Ann"]
 ns.db.macros, char.macros, char.shadow = {}, {}, {}
 for slot = 145, 180 do bars()[slot] = nil end
 local copies = {}
@@ -785,7 +786,7 @@ end
 SlashCmdList.FOREVERCONTROLLERTWEAKS("release")
 DeleteMacro = realDelete
 check(busyAtDelete and not Actions.Busy(), "release deletes its macros as a slot write (Busy while it runs)")
-check(not bars()[180] and next(ns.db.chars["Ann-Realm"].shadow) == nil and not macroNamed("FCT:Sit") and next(ns.db.macros) == nil, "release: slots cleared, FCT: macros deleted")
+check(not bars()[180] and next(ns.db.chars["Player-0-Ann"].shadow) == nil and not macroNamed("FCT:Sit") and next(ns.db.macros) == nil, "release: slots cleared, FCT: macros deleted")
 check(printed[#printed]:find("gave back 1 action slots and deleted 1 FCT: macros", 1, true), "release: one chat line")
 ok, err = A.Shadow("FB", "T", { id = "spell:133", name = "Fireball" })
 check(not ok and err:find("/reload") and not bars()[180], "released: no slot placed until /reload")

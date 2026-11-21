@@ -340,6 +340,42 @@ Two computers, A and B, both on 1.5.1, sync on.
 4. **Mixed versions.** With A on 1.5.1 and B still on 1.5.0, log in on B after A wrote: chat says sync is paused because another computer has a newer Controller Tweaks, and A's copy on the server is unchanged (log in on A: nothing of B's came back). Update B: it merges without a question.
 5. **Export and import.** Settings → **Export…**: the text names the profile, not the character. **Import…** it on the other computer: the preview lists "Profile layout" and "Bindings in this profile"; Import goes into that computer's current profile and keeps its name. An export made with 1.5.0 still imports.
 
+## P. 1.5.2
+
+### P1. A new character starts empty
+
+Back up `WTF/Account/<ACCOUNT>/SavedVariables/ForeverControllerTweaks.lua` first. `/console taintLog 2`.
+
+1. **Update.** Log in on the character whose bindings leaked to a new character. Within a few seconds (once its spellbook is loaded) its bindings, touch buttons and rings are the newest ones you had. After `/reload`, the SavedVariables file has its record under `["Player-…"]` with a `name`, and no `["<Name>-…"]` record of that first name any more.
+2. **A new character with the same first name** (best: log in with it first after the update, a different class): Bindings shows no actions of yours, the touch bars have no buttons, the Rings tab has no rings, and the crossbar is the game's own. The old records are still in the file, untouched.
+3. **Back on the first character:** everything is still there.
+4. **Many logins.** Log in and out 5 times, with `/reload` in between: no new `Name-…` record ever appears in the file. Say whether an old record of a character that shares its spells with another one (a low-level twin of the same class) was claimed by the wrong one.
+
+### P2. Rings per character
+
+1. On the character whose old settings opened them, the Rings tab lists those rings (and any ring no button opened). On another older character: the rings its buttons open are there, the others aren't.
+2. Make a ring on one character: the other doesn't have it. Delete a ring: only this character's buttons that opened it are cleared.
+3. **Arrow on ring buttons** off on one character: it's off on the others too.
+
+### P3. Touch buttons per profile
+
+1. After the update every profile has the touch buttons you had.
+2. Settings → **New profile**: the touch bars keep their size and place, with no buttons. Put a button there, switch back (**This controller** left / right): the first profile's buttons are back.
+3. **Copy profile:** the copy has the same buttons. Change one: the other profile keeps its own. **Delete profile:** its buttons are gone.
+4. Hidden slots: a touch button's spell in one profile keeps its slot while you play on the other profile ("Slots x / 36" counts it once).
+
+### P4. Camera zoom
+
+1. Picker → **Misc** → **Zoom in** on a D-pad cell, **Zoom out** on another. A press: one step. Hold: the camera keeps moving until you let go. Hold it while a fight starts: it stops. In combat: they still work. On a touch button: a tap is one step.
+2. `/console taintLog 2`, use both in and out of combat, `/reload`: `taint.log` has no ForeverControllerTweaks line, and no "blocked" line in chat. **Say whether** `CameraZoomIn` or `MoveViewInStart` was blocked in combat (both are expected to be free to call).
+3. Tweaks → **Camera → Camera zoom**: before you touch it, it shows where the camera is now. D-pad right: the camera moves out at once; it never goes past the game's limit (the slider stops there). `/reload` or log in again: the camera goes back to that distance once, a second after the world loads (after the fight if you're in one).
+
+### P5. Sync between 1.5.2 and 1.5.1
+
+1. Two computers on 1.5.2: rings (per character), touch buttons (per profile) and Camera zoom sync, every character under its `Player-…` ID. Old name-keyed records are never synced.
+2. One computer on 1.5.1, the other on 1.5.2: after the 1.5.2 one wrote, the 1.5.1 one says sync is paused because another computer has a newer Controller Tweaks, and writes nothing.
+3. Export on 1.5.1, import on 1.5.2: the rings go to this character, the touch buttons to this controller's profile.
+
 ## Reporting results
 
 In a pull request or issue, list the parts you ran and the controllers you used, and say whether `taint.log` was clean. Attach screenshots of anything that looks wrong, with character names and chat cropped out.

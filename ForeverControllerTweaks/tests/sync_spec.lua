@@ -116,7 +116,7 @@ local CATALOG = {
 	{ name = "AddOns", entries = { { id = "addon:CLICK X:LeftButton", name = "X: Y", icon = "icon-addon", kind = "game" } } },
 }
 
--- A machine: Core.lua and Sync.lua over its own SavedVariables, a DualSense, and the character "Ann-Realm".
+-- A machine: Core.lua and Sync.lua over its own SavedVariables, a DualSense, and the character "Player-0-Ann".
 local function machine(db, opts)
 	opts = opts or {}
 	local m = { frames = {}, ns = {}, db = db }
@@ -130,8 +130,8 @@ local function machine(db, opts)
 	ns.Face = { CharDB = function()
 		if not ns.db then return end
 		ns.db.chars = ns.db.chars or {}
-		ns.db.chars["Ann-Realm"] = ns.db.chars["Ann-Realm"] or {}
-		return ns.db.chars["Ann-Realm"], "Ann-Realm"
+		ns.db.chars["Player-0-Ann"] = ns.db.chars["Player-0-Ann"] or {}
+		return ns.db.chars["Player-0-Ann"], "Player-0-Ann"
 	end }
 	local writing = 0
 	ns.Actions = {
@@ -181,7 +181,7 @@ local function settingsA()
 		ringMarker = false,
 		keyboard = { enabled = true, layout = "ring", dictionary = { hello = 3 }, suggest = { learned = 1 }, blocked = { "box" }, phrases = { anywhere = { "hi all" } } },
 		devices = { ["054c/0ce6"] = { raw = { L1 = 10 }, roles = { L1 = "rightmod" }, face = { bottom = "jump" }, confirmed = true } },
-		chars = { ["Ann-Realm"] = {
+		chars = { ["Player-0-Ann"] = {
 			cells = { ["054c/0ce6"] = { FB = { R = { id = "spellgroup:Holy Light", name = "Holy Light (Highest Rank)", icon = "icon-holy", kind = "spellgroup", healer = true, healerLast = true } }, DR = { T = { id = "ring:1", name = "Open ring: Ring 1", icon = "icon-judgement", kind = "ring" } } } },
 			touch = { enabled = true, show = "gamepad", sides = { left = { count = 6 } }, bars = { left = { [1] = { T = { id = "addon:CLICK X:LeftButton", name = "X: Y", icon = "icon-addon", kind = "game" } } } } },
 			ringLast = { [1] = { 1, "spell:20271" } }, shadow = { [180] = { code = "FB", layer = "R", id = "x" } }, macros = { ["FCT:Bags"] = { id = "game:bags" } }, highest = { [5] = { name = "Holy Light", id = 1 } },
@@ -227,7 +227,7 @@ do
 	local longest, joined = 0, {}
 	for i, body in ipairs(bodies) do
 		longest = math.max(longest, #body)
-		local part, total, gen, data = body:match("^#FCT2 (%d+)/(%d+) (%w+) (%S*)$")
+		local part, total, gen, data = body:match("^#FCT3 (%d+)/(%d+) (%w+) (%S*)$")
 		check("body " .. i .. " parses", tonumber(part) == i and tonumber(total) == #bodies and tonumber(gen, 36) + 1735689600 == 1795212345)
 		joined[#joined + 1] = data
 	end
@@ -288,15 +288,15 @@ do
 	check("debug, the debug log and What's new don't sync", s.options.debug == nil and not text:find("a line") and not text:find("1%.4%.0"))
 	check("ringLast, shadow, registries and highest don't sync", not text:find("ringLast") and not text:find("shadow") and not text:find("macros") and not text:find("highest"))
 	check("learned words and blocked boxes don't sync", not text:find("dictionary") and not text:find("hello") and not text:find("suggest") and not text:find("blocked"))
-	check("Rings' saved stick CVar doesn't sync", s.rings.axisSaved == nil and s.rings.marker == false)
+	check("Rings' saved stick CVar doesn't sync, the marker goes with the options", s["r:Player-0-Ann"].axisSaved == nil and db.ringAxisSaved == "1" and s.options.ringMarker == false and s.rings == nil)
 	check("quick messages sync", s.keyboard.phrases.anywhere[1] == "hi all")
-	check("all section kinds", s.options and s.tweaks and s.rings and s.keyboard and s.setup and s["dev:054c/0ce6"] and s["prof:054c/0ce6"] and s.map and s["b:Ann-Realm:054c/0ce6"] and s["t:Ann-Realm"])
+	check("all section kinds", s.options and s.tweaks and s["r:Player-0-Ann"] and s.keyboard and s.setup and s["dev:054c/0ce6"] and s["prof:054c/0ce6"] and s.map and s["b:Player-0-Ann:054c/0ce6"] and s["t:Player-0-Ann"])
 	check("the layout is the profile's, the hardware the controller's", s["dev:054c/0ce6"].roles == nil and s["dev:054c/0ce6"].confirmed and s["prof:054c/0ce6"].roles.L1 == "rightmod" and s.map["054c/0ce6"].id == "054c/0ce6")
-	local cells = s["b:Ann-Realm:054c/0ce6"]
+	local cells = s["b:Player-0-Ann:054c/0ce6"]
 	check("slim entries keep the id and flags", cells.FB.R.id == "spellgroup:Holy Light" and cells.FB.R.healer and cells.FB.R.healerLast and cells.FB.R.name == nil and cells.FB.R.kind == nil)
-	check("a plain slim entry is its id", cells.DR.T == "ring:1" and s.rings.list[1].slots[1] == "spell:20271")
-	check("a kind the id doesn't say is kept", s["t:Ann-Realm"].bars.left[1].T.kind == "game")
-	check("no empty bindings section until it synced once", Sync.Sections({ chars = { X = { cells = { ["054c/0ce6"] = {} } } } }, {})["b:X:054c/0ce6"] == nil and Sync.Sections({ chars = { X = { cells = { ["054c/0ce6"] = {} } } } }, { ["b:X:054c/0ce6"] = "{}" })["b:X:054c/0ce6"] ~= nil)
+	check("a plain slim entry is its id", cells.DR.T == "ring:1" and s["r:Player-0-Ann"].list[1].slots[1] == "spell:20271")
+	check("a kind the id doesn't say is kept", s["tb:Player-0-Ann:054c/0ce6"].bars.left[1].T.kind == "game" and s["t:Player-0-Ann"].bars == nil)
+	check("no empty bindings section until it synced once", Sync.Sections({ chars = { ["Player-0-X"] = { cells = { ["054c/0ce6"] = {} } } } }, {})["b:Player-0-X:054c/0ce6"] == nil and Sync.Sections({ chars = { ["Player-0-X"] = { cells = { ["054c/0ce6"] = {} } } } }, { ["b:Player-0-X:054c/0ce6"] = "{}" })["b:Player-0-X:054c/0ce6"] ~= nil)
 end
 
 ---------------------------------------------------------------------------------------------------------------------
@@ -315,17 +315,17 @@ local partsA = ourMacros()
 
 local B = machine({})
 local settledBefore
-B.ns.On("FCT_SYNC_SETTLED", function() settledBefore = B.ns.db.chars and B.ns.db.chars["Ann-Realm"] and B.ns.db.chars["Ann-Realm"].cells end)
+B.ns.On("FCT_SYNC_SETTLED", function() settledBefore = B.ns.db.chars and B.ns.db.chars["Player-0-Ann"] and B.ns.db.chars["Player-0-Ann"].cells end)
 B.login()
 local bdb = B.ns.db
-local bcell = bdb.chars["Ann-Realm"].cells["054c/0ce6"].FB.R
+local bcell = bdb.chars["Player-0-Ann"].cells["054c/0ce6"].FB.R
 check("B took the bindings", bcell.id == "spellgroup:Holy Light" and bcell.healer and bcell.healerLast)
 check("the bindings are applied before FCT_SYNC_SETTLED", settledBefore ~= nil)
 check("B rebuilt names and icons from its catalog", bcell.name == "Holy Light" and bcell.icon == "icon-holy" and bcell.kind == "spellgroup", bcell.name)
-check("B took rings, touch, tweaks, keyboard, layout, setup", bdb.rings.list[1].slots[3].name == "Backpack" and bdb.chars["Ann-Realm"].touch.bars.left[1].T.kind == "game" and bdb.tweaks.lightBar == "class" and bdb.keyboard.phrases.anywhere[1] == "hi all" and bdb.profiles["054c/0ce6"].roles.L1 == "rightmod" and bdb.devices["054c/0ce6"].roles == nil and bdb.onboarded["054c/0ce6"])
+check("B took rings, touch, tweaks, keyboard, layout, setup", bdb.chars["Player-0-Ann"].rings.list[1].slots[3].name == "Backpack" and bdb.chars["Player-0-Ann"].touchBars["054c/0ce6"].left[1].T.kind == "game" and bdb.tweaks.lightBar == "class" and bdb.keyboard.phrases.anywhere[1] == "hi all" and bdb.profiles["054c/0ce6"].roles.L1 == "rightmod" and bdb.devices["054c/0ce6"].roles == nil and bdb.onboarded["054c/0ce6"])
 check("B uses A's profile for the same controller, no Default of its own", B.ns.Profile.CurrentId() == "054c/0ce6" and bdb.profiles.p1 == nil and not B.ns.Profile.Pending())
 check("B kept its own debug switch and learned words", bdb.options.debug == false and bdb.keyboard.dictionary == nil)
-check("B took nothing local from A", bdb.chars["Ann-Realm"].ringLast == nil and bdb.chars["Ann-Realm"].shadow == nil and bdb.macros == nil and bdb.news == nil)
+check("B took nothing local from A", bdb.chars["Player-0-Ann"].ringLast == nil and bdb.chars["Player-0-Ann"].shadow == nil and bdb.macros == nil and bdb.news == nil)
 check("B said what it synced", B.ns and (function() for _, line in ipairs(W.lines) do if line:find("Synced from Mac · DualSense Wireless Controller") then return true end end end)())
 check("B's layout changed once applied", B.layout > 0)
 local before = creates + edits
@@ -378,7 +378,7 @@ check("Undo put B's copy back", B2.ns.db.tweaks.lightBar == "off" and not B2.db.
 do
 	local own = settingsA()
 	own.tweaks.lightBar = "game"
-	own.chars["Ann-Realm"].cells["054c/0ce6"].FB.R = { id = "spell:20271", name = "Judgement", icon = "icon-judgement", kind = "spell" }
+	own.chars["Player-0-Ann"].cells["054c/0ce6"].FB.R = { id = "spell:20271", name = "Judgement", icon = "icon-judgement", kind = "spell" }
 	local writes = creates + edits + deletes
 	local C = machine(own)
 	local asked = 0
@@ -394,7 +394,7 @@ do
 	check("waiting for the choice: not in step", not C.ns.Sync.InStep())
 	C.ns.Sync.Choose(true)
 	run(1)
-	check("Use synced applied the other copy", C.ns.db.tweaks.lightBar ~= "game" and C.ns.db.chars["Ann-Realm"].cells["054c/0ce6"].FB.R.id == "spellgroup:Holy Light")
+	check("Use synced applied the other copy", C.ns.db.tweaks.lightBar ~= "game" and C.ns.db.chars["Player-0-Ann"].cells["054c/0ce6"].FB.R.id == "spellgroup:Holy Light")
 	check("Use synced kept this machine's copy for Undo", C.db.sync.backup and C.db.sync.backup.s.tweaks.d.lightBar == "game")
 	check("settled after the choice", C.ns.Sync.Settled() and C.settled == 1)
 
@@ -442,7 +442,7 @@ do
 	-- The player's own FCT:Sync 3 with another body: never touched, our parts skip 3.
 	account = { { name = "FCT:Sync 3", icon = "x", body = "/say mine" } }
 	local big = settingsA()
-	for i = 1, 40 do big.chars["Ann-Realm"].cells["054c/0ce6"]["K" .. i] = { T = { id = "spell:" .. (1000 + i), name = "S" .. i } } end
+	for i = 1, 40 do big.chars["Player-0-Ann"].cells["054c/0ce6"]["K" .. i] = { T = { id = "spell:" .. (1000 + i), name = "S" .. i } } end
 	local J = machine(big)
 	J.login()
 	run(6)
@@ -455,7 +455,7 @@ do
 	check("our parts skip 3", names["FCT:Sync 4"] and names["FCT:Sync 2"] and ourMacros() >= 3, ourMacros())
 	local K = machine({})
 	K.login()
-	check("parts are read by body, not by number", K.ns.db.chars["Ann-Realm"].cells["054c/0ce6"].K40.T.id == "spell:1040")
+	check("parts are read by body, not by number", K.ns.db.chars["Player-0-Ann"].cells["054c/0ce6"].K40.T.id == "spell:1040")
 
 	-- A full list: no partial write, the pause says how many to free.
 	account = {}
@@ -476,7 +476,7 @@ do
 	check("the player's macros are never deleted", players == 89)
 
 	-- A newer format on the server: no apply, no write.
-	account = { { name = "FCT:Sync 1", icon = "x", body = "#FCT3 1/1 abcdef XYZ" } }
+	account = { { name = "FCT:Sync 1", icon = "x", body = "#FCT4 1/1 abcdef XYZ" } }
 	local writes = creates + edits + deletes
 	local N = machine(settingsA())
 	N.login()
@@ -520,12 +520,12 @@ do
 	local X = machine(settingsA())
 	X.login()
 	local text, held = X.ns.Sync.Export()
-	check("an export starts FCT2:", text and text:find("^FCT2:"))
+	check("an export starts FCT3:", text and text:find("^FCT3:"))
 	local plain = C_EncodingUtil.DecodeBase64(text:sub(6))
 	check("no character or realm name in an export", not plain:find("Ann") and not plain:find("Realm"))
 	check("an export holds this profile's bindings and layout, and its name", held.bindings.FB.R.healer and held.layout.roles.L1 == "rightmod" and held.layout.raw == nil and held.layout.name == X.ns.db.profiles["054c/0ce6"].name)
 	check("a bad prefix is bad", select(2, X.ns.Sync.ReadExport("hello")) == "bad" and select(2, X.ns.Sync.ReadExport("FCT1:00ZZ")) == "bad")
-	check("a newer export is newer", select(2, X.ns.Sync.ReadExport("FCT3:ABCD")) == "newer")
+	check("a newer export is newer", select(2, X.ns.Sync.ReadExport("FCT4:ABCD")) == "newer")
 	local spaced = text:sub(1, 30) .. "\n  " .. text:sub(31, 300) .. "\t" .. text:sub(301)
 	local payload = X.ns.Sync.ReadExport(spaced)
 	check("whitespace anywhere is ignored", payload and payload.kind == "export")
@@ -534,7 +534,7 @@ do
 	for _, row in ipairs(rows) do allSame = allSame and row.same end
 	check("an export previews as no change on its own machine", #rows == 7 and allSame)
 
-	local Y = machine({ version = 2, chars = { ["Ann-Realm"] = { cells = { ["054c/0ce6"] = { FT = { T = { id = "spell:9", name = "Nine" } } } } } }, devices = { ["054c/0ce6"] = { raw = { L1 = 3 }, roles = {}, face = {} } }, sync = { pads = { ["054c/0ce6"] = "My pad" } } })
+	local Y = machine({ version = 2, chars = { ["Player-0-Ann"] = { cells = { ["054c/0ce6"] = { FT = { T = { id = "spell:9", name = "Nine" } } } } } }, devices = { ["054c/0ce6"] = { raw = { L1 = 3 }, roles = {}, face = {} } }, sync = { pads = { ["054c/0ce6"] = "My pad" } } })
 	Y.login()
 	rows = Y.ns.Sync.Preview(payload)
 	local byId = {}
@@ -545,14 +545,19 @@ do
 	Y.ns.Sync.Import(payload, { "bindings", "layout", "rings" })
 	run(1)
 	local ydb = Y.ns.db
-	check("import replaced the ticked parts", ydb.chars["Ann-Realm"].cells["054c/0ce6"].FB.R.id == "spellgroup:Holy Light" and ydb.chars["Ann-Realm"].cells["054c/0ce6"].FT == nil and ydb.rings.list[1].name == "Ring 1" and ydb.profiles["054c/0ce6"].roles.L1 == "rightmod")
+	check("import replaced the ticked parts", ydb.chars["Player-0-Ann"].cells["054c/0ce6"].FB.R.id == "spellgroup:Holy Light" and ydb.chars["Player-0-Ann"].cells["054c/0ce6"].FT == nil and ydb.chars["Player-0-Ann"].rings.list[1].name == "Ring 1" and ydb.profiles["054c/0ce6"].roles.L1 == "rightmod")
 	check("import goes into this controller's profile and keeps its name", ydb.profiles["054c/0ce6"].name == "My pad" and ydb.devices["054c/0ce6"].roles == nil)
 	check("import kept the raw learn data", ydb.devices["054c/0ce6"].raw.L1 == 3)
 	check("import left unticked parts alone", ydb.tweaks == nil)
-	check("import keeps the replaced parts for Undo", ydb.sync.backup and ydb.sync.backup.s["b:Ann-Realm:054c/0ce6"].d.FT.T == "spell:9")
+	check("import keeps the replaced parts for Undo", ydb.sync.backup and ydb.sync.backup.s["b:Player-0-Ann:054c/0ce6"].d.FT.T == "spell:9")
 	Y.ns.Sync.Undo()
 	run(1)
-	check("Undo after an import puts the old bindings back", ydb.chars["Ann-Realm"].cells["054c/0ce6"].FT.T.id == "spell:9" and ydb.chars["Ann-Realm"].cells["054c/0ce6"].FB == nil)
+	check("Undo after an import puts the old bindings back", ydb.chars["Player-0-Ann"].cells["054c/0ce6"].FT.T.id == "spell:9" and ydb.chars["Player-0-Ann"].cells["054c/0ce6"].FB == nil)
+	check("the export's touch row: the layout and this profile's buttons", payload.s.touch and payload.s.touch.enabled and payload.s.touch.bars.left[1].T.kind == "game")
+	Y.ns.Sync.Import(payload, { "touch" })
+	run(1)
+	local yann = ydb.chars["Player-0-Ann"]
+	check("an imported touch row: the buttons in this controller's profile", yann.touch.enabled and yann.touch.bars == nil and yann.touchBars["054c/0ce6"].left[1].T.name == "X: Y")
 end
 
 ---------------------------------------------------------------------------------------------------------------------
@@ -578,7 +583,7 @@ do
 	local H = machine({}, { pad = "045e/0b13", padName = "Xbox Wireless Controller" })
 	H.login()
 	local hdb = H.ns.db
-	check("profiles round-trip: names, layouts, the bindings of a copy", hdb.profiles[copyId].name == "Xbox Wireless Controller" and hdb.profiles[newId].name == "Sofa" and hdb.profiles[copyId].roles.L1 == "rightmod" and hdb.chars["Ann-Realm"].cells[copyId].FB.R.id == "spellgroup:Holy Light")
+	check("profiles round-trip: names, layouts, the bindings of a copy", hdb.profiles[copyId].name == "Xbox Wireless Controller" and hdb.profiles[newId].name == "Sofa" and hdb.profiles[copyId].roles.L1 == "rightmod" and hdb.chars["Player-0-Ann"].cells[copyId].FB.R.id == "spellgroup:Holy Light")
 	check("profiles round-trip: the pick, so the other computer doesn't ask", hdb.deviceProfile["045e/0b13"].id == "054c/0ce6" and H.ns.Profile.CurrentId() == "054c/0ce6" and not H.ns.Profile.Pending())
 	check("profiles round-trip: a fresh computer makes no Default", hdb.profiles.p1 == nil)
 	W.server = W.server + 100
@@ -590,7 +595,7 @@ do
 	W.server = W.server + 100
 	local G2 = machine(G.db, { pad = "045e/0b13", padName = "Xbox Wireless Controller" })
 	G2.login()
-	check("a deletion follows: tombstone, its bindings gone", G2.ns.db.profiles[copyId].gone and G2.ns.db.chars["Ann-Realm"].cells[copyId] == nil and not G2.ns.Profile.Get(copyId))
+	check("a deletion follows: tombstone, its bindings gone", G2.ns.db.profiles[copyId].gone and G2.ns.db.chars["Player-0-Ann"].cells[copyId] == nil and not G2.ns.Profile.Get(copyId))
 	check("a newer pick on the other computer wins", G2.ns.db.deviceProfile["045e/0b13"].id == newId and G2.ns.Profile.CurrentId() == newId)
 	check("the older pick of a controller only that computer has stays", G2.ns.db.deviceProfile["054c/0ce6"].id == "054c/0ce6")
 end
@@ -614,18 +619,18 @@ do
 	old.version = 2
 	local sections = {}
 	sections["dev:054c/0ce6"] = { t = 10, d = { raw = { L1 = 10 }, roles = { L1 = "rightmod" }, face = { bottom = "jump" }, confirmed = true } }
-	sections["b:Ann-Realm:054c/0ce6"] = { t = 10, d = { FB = { R = { id = "spellgroup:Holy Light", healer = true, healerLast = true } } } }
-	sections["b:Ann-Realm:28de/11ff"] = { t = 10, d = { FT = { T = "spell:9" } } }
+	sections["b:Player-0-Ann:054c/0ce6"] = { t = 10, d = { FB = { R = { id = "spellgroup:Holy Light", healer = true, healerLast = true } } } }
+	sections["b:Player-0-Ann:28de/11ff"] = { t = 10, d = { FT = { T = "spell:9" } } }
 	sections.tweaks = { t = 10, d = { sellJunk = true } }
 	local m = machine({})
 	local Sync = m.ns.Sync
 	local text = Sync.Pack({ v = 1, db = 2, at = W.server - 50, by = "old", host = "Old Mac", pads = { ["054c/0ce6"] = "DualSense Wireless Controller" }, s = sections })
-	for i, body in ipairs(Sync.Bodies(text, W.server - 50)) do account[#account + 1] = { name = "FCT:Sync " .. i, icon = "x", body = (body:gsub("^#FCT2", "#FCT1")) } end
+	for i, body in ipairs(Sync.Bodies(text, W.server - 50)) do account[#account + 1] = { name = "FCT:Sync " .. i, icon = "x", body = (body:gsub("^#FCT3", "#FCT1")) } end
 	local remote = Sync.ReadRemote()
 	local prof = remote and remote.s["prof:054c/0ce6"]
 	check("format 1: dev's roles and face become the pad's profile", prof and prof.t == 10 and prof.d.name == "DualSense Wireless Controller" and prof.d.roles.L1 == "rightmod" and remote.s["dev:054c/0ce6"].d.roles == nil)
 	check("format 1: a pad with bindings only gets a profile too, the map only real controllers", remote.s["prof:28de/11ff"] and remote.s["prof:28de/11ff"].d.name == "Profile 1" and remote.s.map.d["054c/0ce6"].id == "054c/0ce6" and remote.s.map.d["28de/11ff"] == nil)
-	check("format 1: bindings keep their key", remote.s["b:Ann-Realm:054c/0ce6"] ~= nil)
+	check("format 1: bindings keep their key", remote.s["b:Player-0-Ann:054c/0ce6"] ~= nil)
 	-- A 1.5.0 machine that agreed with that set, updated: its store and its base migrate alike.
 	old.sync = { pads = { ["054c/0ce6"] = "DualSense Wireless Controller" }, base = {}, stamps = {}, marks = {}, wrote = { at = W.server - 50 } }
 	local function agreed(key, d)
@@ -638,22 +643,22 @@ do
 	run(1)
 	local ubase = U.db.sync.base
 	check("the base splits: dev without the layout, the profile's own", ubase["prof:054c/0ce6"] and not ubase["dev:054c/0ce6"]:find("rightmod") and Sync.Decode(ubase["prof:054c/0ce6"]).roles.L1 == "rightmod")
-	check("an updated machine takes a 1.5.0 set without a question", not U.ns.Sync.Choice() and U.ns.db.profiles["054c/0ce6"].roles.L1 == "rightmod" and U.ns.db.chars["Ann-Realm"].cells["28de/11ff"].FT.T.id == "spell:9")
+	check("an updated machine takes a 1.5.0 set without a question", not U.ns.Sync.Choice() and U.ns.db.profiles["054c/0ce6"].roles.L1 == "rightmod" and U.ns.db.chars["Player-0-Ann"].cells["28de/11ff"].FT.T.id == "spell:9")
 	run(40)
 	local fmt = account[1] and account[1].body:match("^#FCT(%d+)")
-	check("it writes the set again in format 2", fmt == "2", fmt)
+	check("it writes the set again in format 3", fmt == "3", fmt)
 end
 
 -- A newer format (a 1.5.2 set seen by this version): paused, nothing written over it.
 do
-	account = { { name = "FCT:Sync 1", icon = "x", body = "#FCT3 1/1 abcdef XYZ" } }
+	account = { { name = "FCT:Sync 1", icon = "x", body = "#FCT4 1/1 abcdef XYZ" } }
 	local writes = creates + edits + deletes
 	local N = machine(settingsA())
 	N.login()
 	N.ns.db.tweaks.sellJunk = false
 	N.ns.Sync.Check(true)
 	run(40)
-	check("a newer format pauses and writes nothing", N.ns.Sync.Status().state == "newer" and creates + edits + deletes == writes and account[1].body == "#FCT3 1/1 abcdef XYZ" and #account == 1)
+	check("a newer format pauses and writes nothing", N.ns.Sync.Status().state == "newer" and creates + edits + deletes == writes and account[1].body == "#FCT4 1/1 abcdef XYZ" and #account == 1)
 	-- These machines' timers would keep running into the next blocks.
 	W.timers, W.tickers = {}, {}
 end
@@ -738,7 +743,7 @@ do
 	E.login()
 	run(6)
 	check("review 3: a stale newer pause clears", E.ns.Sync.Status().state == "ok" and ourMacros() >= 1, E.ns.Sync.Status().state)
-	account = { { name = "FCT:Sync 1", icon = "x", body = "#FCT3 1/1 abcdef XYZ" } }
+	account = { { name = "FCT:Sync 1", icon = "x", body = "#FCT4 1/1 abcdef XYZ" } }
 	local G = machine(settingsA())
 	G.login()
 	check("review 3: newer pauses", G.ns.Sync.Status().state == "newer")
@@ -817,14 +822,14 @@ do
 end
 
 ---------------------------------------------------------------------------------------------------------------------
--- Placed slots (p:<Name-Realm>, Actions.lua's list of the bars 6-8 slots the addon placed on any machine): the union per
+-- Placed slots (p:<GUID>, Actions.lua's list of the bars 6-8 slots the addon placed on any machine): the union per
 -- slot, the newer entry wins, no removals carried, never a first-sync question
 
 do
 	local m = machine({})
 	local Sync, E = m.ns.Sync, m.ns.Sync.Encode
 	local function R(d, t) return { d = d, t = t or 0 } end
-	local K = "p:Ann-Realm"
+	local K = "p:Player-0-Ann"
 	local mine = { [150] = { holds = "spell:1", at = 10 }, [151] = { holds = "spell:2", at = 5 } }
 	local theirs = { [150] = { holds = "spell:9", at = 20 }, [152] = { holds = "macro:FCT:Bags", at = 3 } }
 	local plan = Sync.Merge({ [K] = mine }, { [K] = R(theirs) }, {}, {}, false, false)
@@ -839,36 +844,132 @@ do
 	plan = Sync.Merge({ [K] = mine }, { [K] = R(theirs) }, {}, {}, true, true)
 	check("placed: a first sync with own settings never asks about it", not plan.conflicts[1] and plan.take[K])
 	check("placed: not own settings", not Sync.HasOwn({ [K] = mine }))
-	check("placed: a section once the list has entries", Sync.Sections({ chars = { ["Ann-Realm"] = { placed = mine } } }, {})[K] ~= nil and Sync.Sections({ chars = { ["Ann-Realm"] = { placed = {} } } }, {})[K] == nil)
+	check("placed: a section once the list has entries", Sync.Sections({ chars = { ["Player-0-Ann"] = { placed = mine } } }, {})[K] ~= nil and Sync.Sections({ chars = { ["Player-0-Ann"] = { placed = {} } } }, {})[K] == nil)
 end
 
 -- Two machines: each placed its own slot; both lists end up with both slots. Earlier machines' timers stop here.
 account, W.timers, W.tickers = {}, {}, {}
-local PA = machine({ version = 2, chars = { ["Ann-Realm"] = { placed = { [150] = { holds = "spell:1", at = W.server } } } } })
+local PA = machine({ version = 2, chars = { ["Player-0-Ann"] = { placed = { [150] = { holds = "spell:1", at = W.server } } } } })
 PA.login()
 run(6)
-local PB = machine({ version = 2, chars = { ["Ann-Realm"] = { placed = { [160] = { holds = "spell:2", at = W.server } } } } })
+local PB = machine({ version = 2, chars = { ["Player-0-Ann"] = { placed = { [160] = { holds = "spell:2", at = W.server } } } } })
 PB.login()
-local pb = PB.ns.db.chars["Ann-Realm"].placed
+local pb = PB.ns.db.chars["Player-0-Ann"].placed
 check("placed: B has A's slot and its own after the login", pb[150] and pb[150].holds == "spell:1" and pb[160] and pb[160].holds == "spell:2")
-check("placed: never in the backup (no Undo for it)", not (PB.ns.db.sync.backup and PB.ns.db.sync.backup.s["p:Ann-Realm"]))
+check("placed: never in the backup (no Undo for it)", not (PB.ns.db.sync.backup and PB.ns.db.sync.backup.s["p:Player-0-Ann"]))
 run(40)
 local PA2 = machine(PA.db)
 PA2.login()
-local pa = PA2.ns.db.chars["Ann-Realm"].placed
+local pa = PA2.ns.db.chars["Player-0-Ann"].placed
 check("placed: B wrote the union; A has both at its next login", pa[150] and pa[160] and pa[160].holds == "spell:2")
 -- A damaged list from the macros is left out; the rest still merges.
 do
-	local payload = { v = 1, db = 2, at = W.server + 500, by = "zzzzzz", host = "PC", s = { ["p:Ann-Realm"] = { t = 1, d = { [150] = { holds = 5 } } }, tweaks = { t = 1, d = { sellJunk = true } } } }
+	local payload = { v = 1, db = 2, at = W.server + 500, by = "zzzzzz", host = "PC", s = { ["p:Player-0-Ann"] = { t = 1, d = { [150] = { holds = 5 } } }, tweaks = { t = 1, d = { sellJunk = true } } } }
 	account = {}
 	for i, body in ipairs(PA2.ns.Sync.Bodies(PA2.ns.Sync.Pack(payload), payload.at)) do account[i] = { name = "FCT:Sync " .. i, icon = "INV_Misc_Note_01", body = body } end
 	local remote = PA2.ns.Sync.ReadRemote()
-	check("placed: a bad entry drops the section on read", remote and remote.s["p:Ann-Realm"] == nil and remote.s.tweaks ~= nil)
-	payload.s["p:Ann-Realm"].d = { [150] = { holds = "macro:Mine", body = "/say hi", at = 1 } }
+	check("placed: a bad entry drops the section on read", remote and remote.s["p:Player-0-Ann"] == nil and remote.s.tweaks ~= nil)
+	payload.s["p:Player-0-Ann"].d = { [150] = { holds = "macro:Mine", body = "/say hi", at = 1 } }
 	account = {}
 	for i, body in ipairs(PA2.ns.Sync.Bodies(PA2.ns.Sync.Pack(payload), payload.at)) do account[i] = { name = "FCT:Sync " .. i, icon = "INV_Misc_Note_01", body = body } end
 	remote = PA2.ns.Sync.ReadRemote()
-	check("placed: no macro bodies in the list", remote and remote.s["p:Ann-Realm"] == nil)
+	check("placed: no macro bodies in the list", remote and remote.s["p:Player-0-Ann"] == nil)
+end
+
+---------------------------------------------------------------------------------------------------------------------
+-- Touch buttons per profile (1.5.2): tb:<GUID>:<profile id>; a format 2 t: brings its buttons to this profile
+
+do
+	local T = machine(settingsA())
+	T.login()
+	local Sync, db = T.ns.Sync, T.ns.db
+	local ann = db.chars["Player-0-Ann"]
+	local pid = T.ns.Profile.CurrentId()
+	check("touch: the 1.5.1 buttons sit in this profile after the update", pid and ann.touchBars[pid].left[1].T.id == "addon:CLICK X:LeftButton" and ann.touch.bars == nil)
+	local s = Sync.Sections(db, {})
+	check("touch: t: is the layout, tb: the buttons", s["t:Player-0-Ann"].bars == nil and s["t:Player-0-Ann"].enabled and s["tb:Player-0-Ann:" .. pid].bars.left[1].T.kind == "game")
+	check("touch: no tb: section for an empty profile until it synced once", Sync.Sections({ chars = { ["Player-0-X"] = { touchBars = { p9 = { left = {} } } } } }, {})["tb:Player-0-X:p9"] == nil and Sync.Sections({ chars = { ["Player-0-X"] = { touchBars = { p9 = { left = {} } } } } }, { ["tb:Player-0-X:p9"] = "{}" })["tb:Player-0-X:p9"] ~= nil)
+	Sync.PutAll({ ["t:Player-0-Ann"] = { enabled = true, show = "always", bars = { left = { [2] = { T = "spell:20271" } } } } })
+	check("touch: a format 2 t: brings its buttons to this profile, the layout to the character", ann.touch.show == "always" and ann.touch.bars == nil and ann.touchBars[pid].left[2].T.name == "Judgement" and ann.touchBars[pid].left[1] == nil)
+	Sync.PutAll({ ["tb:Player-0-Ann:p77"] = { bars = { right = { [1] = { L = "game:bags" } } } } })
+	check("touch: tb: goes to its profile only", ann.touchBars.p77.right[1].L.name == "Backpack" and ann.touchBars[pid].left[2] ~= nil)
+	Sync.PutAll({ ["tb:Player-0-Ann:p77"] = false })
+	check("touch: a removed tb: drops that profile's buttons", ann.touchBars.p77 == nil)
+	check("touch: kinds read as touch bars", Sync.KindList({ "tb:Player-0-Ann:p1", "r:Player-0-Ann" }) == "touch bars, rings")
+	account = {}
+end
+
+---------------------------------------------------------------------------------------------------------------------
+-- Rings per character (1.5.2): r:<GUID>, the union the first time, a format 2 "rings" into this character
+
+do
+	local R = machine({})
+	R.login()
+	local Sync = R.ns.Sync
+	local mine = { nextId = 3, list = { { id = 1, name = "A" }, { id = 2, name = "B" } } }
+	local theirs = { nextId = 5, list = { { id = 1, name = "A elsewhere" }, { id = 4, name = "D" } } }
+	local plan = Sync.Merge({ ["r:Player-0-Ann"] = mine }, { ["r:Player-0-Ann"] = { t = 9, d = theirs } }, {}, {}, false, true)
+	local got = plan.take["r:Player-0-Ann"]
+	check("rings met first: the union by id, mine for a shared id", got and #got.list == 3 and got.list[1].name == "A" and got.list[3].id == 4 and got.nextId == 5 and plan.merged["r:Player-0-Ann"])
+	local later = Sync.Merge({ ["r:Player-0-Ann"] = mine }, { ["r:Player-0-Ann"] = { t = 9, d = theirs } }, { ["r:Player-0-Ann"] = Sync.Encode(mine) }, {}, false, true)
+	check("rings with a base: the usual merge (only the other side changed: theirs, no union)", later.take["r:Player-0-Ann"] == theirs and not later.merged["r:Player-0-Ann"])
+	local db = R.ns.db
+	Sync.PutAll({ rings = { nextId = 2, marker = false, list = { { id = 1, name = "Old", count = 6, slots = { [1] = "spell:20271" } } } } })
+	check("an account rings section (1.5.1) is never put into this character", ((db.chars or {})["Player-0-Ann"] or {}).rings == nil and db.rings == nil)
+	Sync.PutAll({ ["r:Player-0-Ann"] = { nextId = 2, list = { { id = 1, name = "Old", count = 6, slots = { [1] = "spell:20271" } } } } })
+	local ann = db.chars["Player-0-Ann"].rings
+	check("r: of this character is put, names from the catalog", ann and ann.list[1].name == "Old" and ann.list[1].slots[1].name == "Judgement")
+	Sync.PutAll({ ["r:Player-0-Bob"] = { nextId = 2, list = { { id = 1, name = "Bob's", count = 6, slots = {} } } } })
+	check("r: goes to its character only", db.chars["Player-0-Bob"].rings.list[1].name == "Bob's" and db.chars["Player-0-Ann"].rings.list[1].name == "Old")
+	local sections = Sync.Sections(db, {})
+	check("every character's rings go out as r:", sections["r:Player-0-Bob"] and sections["r:Player-0-Ann"] and sections.rings == nil)
+	account = {}
+end
+
+-- A 1.5.1 computer wrote last (format 2, the account rings with a newer stamp): a new character on 1.5.2 reading
+-- that set gets none of those rings; the rest of the set still applies.
+do
+	account = {}
+	local old = machine({})
+	local Sync = old.ns.Sync
+	local payload = { v = 2, db = 3, at = W.server + 500, by = "phone", host = "PC · Phone", s = {
+		rings = { t = W.server + 400, d = { nextId = 6, list = { { id = 5, name = "Buffs", count = 6, slots = { [1] = "spell:20271" } } } } },
+		tweaks = { t = W.server + 400, d = { sellJunk = true } },
+	} }
+	for i, body in ipairs(Sync.Bodies(Sync.Pack(payload), payload.at)) do account[i] = { name = "FCT:Sync " .. i, icon = "x", body = (body:gsub("^#FCT3", "#FCT2")) } end
+	local N = machine({ version = 4 })
+	N.login()
+	run(2)
+	local ndb = N.ns.db
+	check("format 2 rings: a new character gets none of the account rings", ((ndb.chars or {})["Player-0-Ann"] or {}).rings == nil and ndb.rings == nil)
+	check("format 2 rings: the rest of the set applies", ndb.tweaks and ndb.tweaks.sellJunk == true)
+	account = {}
+end
+
+---------------------------------------------------------------------------------------------------------------------
+-- 1.5.1's name-keyed records ("Name-Realm", "Name-"): never written, never read, never put (keys are GUIDs)
+
+do
+	local O = machine({})
+	local Sync = O.ns.Sync
+	local db = { chars = { ["House-"] = { cells = { ["054c/0ce6"] = { FB = { T = { id = "spell:1" } } } }, touch = { enabled = true }, placed = { [170] = { holds = "spell:1" } } }, ["Player-0-Ann"] = { cells = { ["054c/0ce6"] = { FB = { T = { id = "spell:2" } } } } } } }
+	local sections = Sync.Sections(db)
+	local leaked
+	for key in pairs(sections) do leaked = leaked or key:find("House-", 1, true) and key end
+	check("orphan: no section written for House-", not leaked and sections["b:Player-0-Ann:054c/0ce6"] ~= nil, leaked)
+	local payload = { v = 2, db = 3, at = W.server, by = "x", host = "PC", s = {
+		["b:House-:054c/0ce6"] = { t = 1, d = { FB = { T = "spell:1" } } }, ["t:House-"] = { t = 1, d = { enabled = true } }, ["p:House-"] = { t = 1, d = {} },
+		["b:Player-0-Ann:054c/0ce6"] = { t = 1, d = { FB = { T = "spell:2" } } },
+	} }
+	account = {}
+	for i, body in ipairs(Sync.Bodies(Sync.Pack(payload), payload.at)) do account[i] = { name = "FCT:Sync " .. i, icon = "INV_Misc_Note_01", body = body } end
+	local remote = Sync.ReadRemote()
+	check("orphan: House- sections dropped on read", remote and remote.s["b:House-:054c/0ce6"] == nil and remote.s["t:House-"] == nil and remote.s["p:House-"] == nil and remote.s["b:Player-0-Ann:054c/0ce6"] ~= nil)
+	local into = { chars = {}, options = {} }
+	O.ns.db = into
+	Sync.PutAll({ ["b:House-:054c/0ce6"] = { FB = { T = "spell:1" } } })
+	check("orphan: a House- section is never put", into.chars["House-"] == nil)
+	account = {}
 end
 
 ---------------------------------------------------------------------------------------------------------------------

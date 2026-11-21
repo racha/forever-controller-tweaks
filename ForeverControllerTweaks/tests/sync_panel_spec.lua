@@ -67,7 +67,7 @@ end
 local ns = boot({
 	version = 2,
 	tweaks = { sellJunk = true },
-	chars = { ["Ann-Realm"] = { cells = { ["054c/0ce6"] = { FB = { R = { id = "spell:133", name = "Fireball", icon = 1, kind = "spell" } } } } } },
+	chars = { ["Player-0-Ann"] = { cells = { ["054c/0ce6"] = { FB = { R = { id = "spell:133", name = "Fireball", icon = 1, kind = "spell" } } } } } },
 })
 local UI, L, Sync = ns.UI, ns.UI.L, ns.Sync
 UI.CloseAll()
@@ -103,13 +103,13 @@ check(indexOf(more, L.LEARN) and not indexOf(more, "Sync & backup"), "More: no S
 UI.ActionPicker.Close()
 UI.CloseAll()
 
--- Export: the text, selected, starts FCT2:.
+-- Export: the text, selected, starts FCT3:.
 UI.Sync.OpenExport()
 local export = UI.Current()
 check(export and export.NineSlice.Text.text == L.EXPORT_TITLE, "Export opens")
 local text
 for _, f in ipairs(W.frames) do
-	if f.parent and type(f.text) == "string" and f.text:find("^FCT2:") then text = f.text end
+	if f.parent and type(f.text) == "string" and f.text:find("^FCT3:") then text = f.text end
 end
 check(text and #text > 10, "the export text is in the box")
 check(not text:find("Ann"), "no character name in the export")
@@ -146,8 +146,8 @@ go.select()
 check(UI.DialogShown(), "Import asks first")
 UI.Dialog():OnPad("PAD1")
 W.advance(0.5)
-check(other.db.tweaks.sellJunk == true and other.db.chars["Ann-Realm"].cells["054c/0ce6"].FB.R.id == "spell:133", "the import applied")
-local name = other.db.chars["Ann-Realm"].cells["054c/0ce6"].FB.R.name
+check(other.db.tweaks.sellJunk == true and other.db.chars["Player-0-Ann"].cells["054c/0ce6"].FB.R.id == "spell:133", "the import applied")
+local name = other.db.chars["Player-0-Ann"].cells["054c/0ce6"].FB.R.name
 check(name and name ~= "spell:133", "names come back from the game: " .. tostring(name))
 local after = UI.Current()
 local undoShown = false
@@ -158,7 +158,7 @@ UI.CloseAll()
 W.advance(31)
 
 -- The first sync on a machine with its own settings: the dialog over the Settings tab; B asks again; a choice applies.
-local own = boot({ version = 2, tweaks = { sellJunk = false, lightBar = "game" }, chars = { ["Ann-Realm"] = { cells = { ["054c/0ce6"] = { FT = { T = { id = "spell:9", name = "Nine", icon = 2, kind = "spell" } } } } } } })
+local own = boot({ version = 2, tweaks = { sellJunk = false, lightBar = "game" }, chars = { ["Player-0-Ann"] = { cells = { ["054c/0ce6"] = { FT = { T = { id = "spell:9", name = "Nine", icon = 2, kind = "spell" } } } } } } })
 UI, L, Sync = own.UI, own.UI.L, own.Sync
 W.advance(3)
 check(Sync.Choice() ~= nil, "the first sync waits for a choice")
@@ -170,7 +170,7 @@ W.advance(0.1)
 check(UI.DialogShown() and Sync.Choice(), "B asks again")
 UI.Dialog():OnPad("PAD1")
 W.advance(0.5)
-check(not Sync.Choice() and own.db.chars["Ann-Realm"].cells["054c/0ce6"].FB and own.db.sync.backup, "Use synced applied, the old copy backed up")
+check(not Sync.Choice() and own.db.chars["Player-0-Ann"].cells["054c/0ce6"].FB and own.db.sync.backup, "Use synced applied, the old copy backed up")
 check(errors() == "", "no errors: " .. errors())
 
 io.stdout:write(("sync_panel_spec: %d checks passed\n"):format(checks))

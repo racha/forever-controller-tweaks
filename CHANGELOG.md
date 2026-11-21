@@ -1,5 +1,27 @@
 # Changelog
 
+## 1.5.2 — 2026-11-21
+
+### Fixed: a new character got another character's bindings
+- WoW: Forever characters have a first and a second name, and the game tells addons only the first. 1.5.1 saved settings under that first name, so every character with the same first name shared them: a new character could start with another one's bindings, touch buttons and rings.
+- Settings are now saved per character by its unique game ID. After the update, the old settings go back to the character they belong to: the one that knows every spell in them takes them, newest first. Settings no character can be sure of are kept as they are, untouched. A new character starts empty: no bindings, no touch buttons, no rings.
+
+### Changed: rings are per character
+- Each character has its own rings. After the update, each character's old settings keep the rings their buttons open, and rings no button opens go along with all of them. A new character starts without rings, even if it is the first you log in with after the update.
+- The Rings tab, the picker and `/fct rings` show this character's rings. Deleting a ring clears only this character's buttons that open it. **Arrow on ring buttons** stays one setting for all characters.
+
+### Changed: touch buttons are per profile
+- What each touch button does is now saved per profile, like bindings: a new profile starts with empty touch buttons, **Copy profile** copies them, and **Delete profile** deletes them. The touch bars' size, place, shape and On / Show stay one setting per character.
+- After the update every profile you have keeps the touch buttons you had.
+
+### New: zoom the camera
+- **Zoom in** and **Zoom out** in the picker's **Misc** category: a press moves the camera one step, holding keeps it moving until you let go. They work in combat too. On a touch button or ring slot a tap is one step.
+- **Tweaks → Camera → Camera zoom:** where the camera sits, in yards, up to the game's own limit. Moving it zooms at once, and the camera goes back there when you log in. Untouched, the addon never moves your camera.
+
+### Sync
+- Sync is written in a new format. A computer still on 1.5.1 pauses sync and says to update; it never writes over the newer copy. Update the addon on every computer you sync.
+- Rings sync per character and touch buttons per profile. The first time two computers meet after the update, a character keeps every ring either computer gave it. An export from 1.5.1 still imports: its rings go to this character, its touch buttons to this controller's profile.
+
 ## 1.5.1 — 2026-11-21
 
 ### New: profiles, share bindings between controllers
