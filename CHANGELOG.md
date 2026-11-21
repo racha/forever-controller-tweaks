@@ -1,5 +1,61 @@
 # Changelog
 
+## 1.5.0 — 2026-11-21
+
+### New: What's new
+- After an update, a window shows once with what changed since the version you last saw: this list, newest first. It never opens in a fight or over another window, and a new install doesn't show it.
+- **Never show again** at its top right turns it off for good (it's never ticked for you). Type `/fct whatsnew` to see this version's notes and turn it back on.
+
+### New: a ring remembers your last pick
+- **Middle**, a new setting per ring in the Rings tab: **Cancel** (the default, as before) or **Use last**. With Use last, letting go of a Hold ring in the middle, or pressing **Cross** with nothing aimed, uses the slot you used last. Handy for totem and buff rings.
+- The buttons that open the ring (crossbar, Bindings, touch buttons) show that slot's icon, and so does the ring's middle while nothing is aimed.
+- Each character remembers its own last pick, across reloads. Change or empty that slot and it's forgotten.
+- Switch it from any button that opens the ring too: **Triangle** on the cell in Bindings (or on a touch button) shows **Middle: Cancel** / **Middle: Use last**. It's the ring's own setting, shared by every button that opens it.
+- A Toggle ring still opens on its button and closes on it again; **Circle** still cancels.
+
+### New: an arrow on ring buttons
+- Every button that opens a ring has the game's small flyout arrow at its top edge, on the crossbar, in Bindings and on touch buttons, so you can tell them apart. Healer mode buttons keep their green cross instead.
+- The arrow hides while that ring is open, as the game's own flyout arrows do.
+- On by default. Turn it off with **Arrow on ring buttons** at the foot of the ring list in the Rings tab.
+
+### New: Healer mode remembers your last target
+- In **Bindings**, on a button in Healer mode, **Triangle** shows **Middle: Cancel** under the Healer mode row. Pick it for **Middle: Last target**: letting go in the middle then casts on the place you last healed with that button, like Party 2.
+- While you hold the ring with the stick in the middle, that place lights up and shows its tooltip. If that unit can't be helped now (gone, hostile), nothing is cast.
+- It remembers the place, not the person, per button and per character. Off by default.
+
+### New: L3 and R3 in Bindings
+- **L3** and **R3** (pressing a stick) have their own rows in Bindings, with a cell per bar, like a back paddle: put anything from the picker on L3 alone, on **L2 + R3** and so on. Rings opened from a stick press aim with the other stick when set to Dynamic.
+- A stick press is taken over only while one of its bars holds an action. Clear every bar and it's the game's again: **L3** auto-runs, **R3** pings. While one bar is used, the empty bars of that stick do nothing.
+- Until then its cells show what the game does with it, **Auto-run** or **Ping**, with the game's own icon, like the face buttons' Jump and Interact.
+
+### New: sort your bags with a stick press
+- While your bags are open, **L3** sorts them. With the bags closed it works as usual (Auto-run). Not with a shoulder or trigger held.
+- The bags' controller footer shows it: an **L3 Sort** prompt joined to the end of Select · Collapse · Manage Bag · Close.
+- **Tweaks → Bags & vendors → Sort bags key:** L3 (the default), R3 or Off. This is the one tweak that starts on, so the Tweaks tab now says most are off until you turn them on.
+
+### New: your settings on every computer
+- Play on a Mac and a handheld? Your bindings, rings, touch bars, controller setup, tweaks and keyboard settings (quick messages included) now follow you. The addon keeps a copy in a few account macros, **FCT:Sync 1**, **FCT:Sync 2**…, which the game stores for your account, and every computer you log in on uses the newest copy. On by default.
+- Each part goes on its own: change your rings on one computer and your tweaks on the other, and both arrive. When the same part changed on both, the newer one wins, chat says so, and **Undo last sync** brings yours back.
+- The first time on a computer that already has its own setup, it asks once: **Use synced** or **Keep mine**. Either way the other copy is kept for **Undo last sync**. A computer that hasn't read the synced copy yet never writes over it.
+- What stays on each computer: the keyboard's learned words, which slot a ring used last, Healer mode's last target, and the addon's own bookkeeping.
+- Bindings are kept per controller. A controller with no bindings yet offers **Copy bindings from** your other controller.
+- **Triangle → More → Sync & backup** on any tab shows when it last synced and from where, how many macros it uses and how many are free, and turns it off for this computer (the macros stay for the others). The same switch is in **Tweaks → Controller → Sync between machines**. `/fct sync` shows the same in chat; `/fct sync now`, `on`, `off` and `undo` do what they say.
+- The sync macros do nothing if pressed. Don't edit them in the Macros window; if one is changed or deleted, the addon writes them again. It never deletes a macro of yours, even one named FCT:Sync, and it never writes half a copy: when your account macros are full it says how many to free. `/fct release` deletes them too.
+
+### New: export and import
+- **Sync & backup → Export…** (or `/fct export`) shows your settings as text, already selected: Ctrl+C (Cmd+C on a Mac) copies it. It holds this character's bindings for this controller, touch bars, rings, tweaks, keyboard settings, options and the controller layout, and no character names, so you can share it.
+- **Import…** (or `/fct import`): paste with Ctrl+V (Cmd+V). It lists what would change, part by part; untick what you want to keep. Import asks once, and **Undo last sync** puts your old settings back. Pasting needs a keyboard.
+
+### Fixes
+- **No more piles of FCT: macros:** the addon could lose track of one of its own macros (playing on a second computer, its settings reset, or a check at login that ran before the macro list had loaded) and then made "FCT:Bags 2", "FCT:Bags 3"… beside it, for game actions and other addons' buttons alike, filling the hidden action slots until touch buttons couldn't be added. It now recognises its own macros by name and text and reuses them, and a hidden slot that already holds the action a button wants (placed from your other computer) is reused instead of taking another. Once per login it also tidies what earlier versions left: one copy of each is kept, your buttons point at it, the extra copies are deleted and the hidden slots they held are freed. **/fct cleanup** does it on demand and says what it did. Your own macros are never touched, even one named FCT:.
+- **Hidden action slots are shared between your computers and freed when no binding uses them.** The addon now keeps a list of the hidden slots (keyboard bars 6-8) it placed on any of your computers, in the sync macros. A computer reuses a slot the other one placed for the same action, and frees one that no binding or touch button of that character uses any more, on any controller. Slots holding your own actions are never touched. Two buttons with the same action now share one hidden slot.
+- **Touch buttons when every hidden slot is taken:** adding an action no longer fails. It works right away as a macro, without a live cooldown or charges until a hidden slot frees up (its tooltip says so), then it gets one by itself.
+- **Free up slots** in the Touch tab: when your own actions sit on keyboard bars 6-8 (the hidden slots touch buttons and moved actions use), a button next to the slot counter lists them and, after you confirm, clears them from those bars. The spells, items and macros themselves stay.
+- **Sort bags button:** it could disappear behind the combined bags' title bar in the Gamepad UI. It now sits at the right end of the title bar and stays there.
+- **Crossbar stuck after a held ring:** with a modifier moved to another button (for example the right bar on L1), the crossbar could stay on that bar after a held ring or a heal, until you pressed the modifier again. It now always goes back.
+- **Ring buttons showed an item count:** a ring on a crossbar slot that held food or another stack showed that item's count on the ring's icon. The count is hidden now.
+- **Aiming a heal with the left stick:** after a held ring closes, the stick that aimed it stays held back while you cast or channel, so a heal aimed with the left stick isn't broken by walking. It's let go as soon as the stick is back in the middle, and a second after the cast ends at the latest.
+
 ## 1.4.0 — 2026-11-17
 
 ### New: Healer mode

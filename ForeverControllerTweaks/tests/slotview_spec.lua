@@ -194,5 +194,39 @@ local count = #lines
 fire("ACTION_USABLE_CHANGED")
 check(#lines == count, "error: stays stopped, no repeat line")
 
+-- The ring marker: the game's flyout arrow, 18 x 7, 4 over the frame's top, under the Healer badge; made on first use.
+local holder = mock()
+function holder:CreateTexture(_, layer, _, sub)
+	local t = mock({ layer = layer, sub = sub })
+	function t:SetAtlas(a) self.atlas = a end
+	function t:SetPoint(p, _, rp, x, y) self.points[p] = { rp, x, y } end
+	return t
+end
+ns.SlotView.RingMarker(holder, false)
+check(holder.ringMarker == nil, "marker: nothing made while not shown")
+ns.SlotView.RingMarker(holder, true)
+local m = holder.ringMarker
+check(m and m.atlas == "UI-HUD-ActionBar-Flyout" and m.w == 18 and m.h == 7 and m.layer == "OVERLAY" and m.sub == 6 and m.points.TOP[3] == 4 and m:IsShown(), "marker: the native flyout arrow over the top edge")
+ns.SlotView.RingMarker(holder, false)
+check(not m:IsShown(), "marker: hidden again")
+-- Who wears it: a ring entry, on by default (nil), off with the setting false, hidden while that ring is open.
+local ringEntry, open = { id = "ring:4", kind = "ring" }, nil
+ns.Rings = { IsOpen = function(id) return id == open end, LiveIcon = function() end }
+ns.db = {}
+check(ns.SlotView.MarksRing(ringEntry) and not ns.SlotView.MarksRing({ id = "spell:1", kind = "spell", healer = true }) and not ns.SlotView.MarksRing(nil), "marker: rings only, on by default")
+open = 4
+check(not ns.SlotView.MarksRing(ringEntry), "marker: hidden while the ring is open")
+open = nil
+ns.db.ringMarker = false
+check(not ns.SlotView.MarksRing(ringEntry), "marker: the setting turns it off")
+ns.db, ns.Rings = nil, nil
+
+-- A binding's icon: a ring's live icon (Rings.LiveIcon) while the Rings module is loaded, else the entry's own.
+check(ns.SlotView.EntryIcon({ id = "spell:133", icon = 7 }) == 7 and ns.SlotView.EntryIcon(nil) == nil, "entry icon: an action's own")
+check(ns.SlotView.EntryIcon({ id = "ring:3", kind = "ring", icon = 8 }) == 8, "entry icon: a ring without the Rings module, the stored copy")
+ns.Rings = { LiveIcon = function(id) return "live" .. id end }
+check(ns.SlotView.EntryIcon({ id = "ring:3", kind = "ring", icon = 8 }) == "live3", "entry icon: a ring's live icon")
+ns.Rings = nil
+
 print(fails == 0 and "slotview_spec: all checks passed" or ("slotview_spec: " .. fails .. " FAILED"))
 os.exit(fails == 0 and 0 or 1)

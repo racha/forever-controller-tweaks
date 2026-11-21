@@ -25,6 +25,10 @@ local STRINGS = {
 	RINGS_SHOW_TIP = "Toggle: a press opens the ring until you use a slot, press the button again or B. Hold: the ring shows while you hold the button; let go to use the slot you aim at.",
 	RINGS_STYLE = "Style", RINGS_STYLE_NAMES = { full = "Full", compact = "Compact" },
 	RINGS_STYLE_TIP = "Full: the radial wheel, with names. Compact: like the game's radial flyout, the aura and stance picker.",
+	RINGS_MIDDLE = "Middle", RINGS_MIDDLE_NAMES = { cancel = "Cancel", last = "Use last" },
+	RINGS_MIDDLE_TIP = "Letting go in the middle of the ring. Cancel: nothing happens. Use last: the slot you used last fires, and the button shows its icon.",
+	RINGS_MARKER = "Arrow on ring buttons",
+	RINGS_MARKER_TIP = "A small arrow on every button that opens a ring: on the crossbar, in Bindings and on touch buttons.",
 	RINGS_SLOT = "Slot %d", RINGS_EMPTY = "Empty slot", RINGS_UNUSABLE = "This character can't use it now.",
 	RINGS_ROW_TIP = "%d slots, on %d button(s).", RINGS_COMBAT = "Controller Tweaks changes rings out of combat only.",
 }
@@ -36,16 +40,17 @@ local GEO = Rings.GEO
 local LEFT_X, TOP_Y, LEFT_W, RIGHT_X, RIGHT_W, BOX_H, PILL_W = 24, 84, 300, 344, 832, 526, 197
 local ROW_W, ROW_H, ROW_PITCH, LIST_Y = 268, 28, 30, TOP_Y + 58
 -- The preview area: the in-game wheel scaled to fit it.
-local PREVIEW_Y, PREVIEW = TOP_Y + 58, 288
--- Four setting rows and the buttons under the preview, inside the box (it ends at TOP_Y + BOX_H = 610).
+local PREVIEW_Y, PREVIEW = TOP_Y + 58, 256
+-- Five setting rows and the buttons under the preview, inside the box (it ends at TOP_Y + BOX_H = 610).
 local STEP_Y = PREVIEW_Y + PREVIEW + 14
 -- A setting row's control starts CONTROL_X in: the Slots slider SLIDER_W wide, the other rows' dropdown values STICK_W.
 local STICK_Y, SETTING_W, CONTROL_X, SLIDER_W, STICK_W = STEP_Y + 32, 360, 120, 180, 140
 local SHOW_Y = STICK_Y + 32
-local STYLE_Y = SHOW_Y + 32
+local MIDDLE_Y = SHOW_Y + 32
+local STYLE_Y = MIDDLE_Y + 32
 local BUTTONS_Y, BUTTON_W = STYLE_Y + 36, 140
 
-local window, countText, rows, newRow, ringPill, preview, wheel, slotButtons, emptyText, stepRow, stickRow, showRow, styleRow, buttons, renameBox
+local window, markerRow, countText, rows, newRow, ringPill, preview, wheel, slotButtons, emptyText, stepRow, stickRow, showRow, middleRow, styleRow, buttons, renameBox
 local selected, focusedSlot
 
 local function report(ok, err)
@@ -73,7 +78,8 @@ local function stepCount(step)
 	report(Rings.SetCount(ring.id, count))
 end
 
--- One step through a ring setting's values (Stick: Right, Left, Dynamic; Show: Toggle, Hold; Style: Full, Compact); past either end false
+-- One step through a ring setting's values (Stick: Right, Left, Dynamic; Show: Toggle, Hold; Middle: Cancel, Use last;
+-- Style: Full, Compact); past either end false
 -- (left/right moves the focus on), or round with wrap (A).
 local function stepper(values, field, set)
 	return function(step, wrap)
@@ -87,7 +93,14 @@ local function stepper(values, field, set)
 	end
 end
 local stepStick, stepShow = stepper(Rings.STICKS, "stick", Rings.SetStick), stepper(Rings.SHOWS, "show", Rings.SetShow)
-local stepStyle = stepper(Rings.STYLES, "style", Rings.SetStyle)
+local stepStyle, stepMiddle = stepper(Rings.STYLES, "style", Rings.SetStyle), stepper(Rings.MIDDLES, "middle", Rings.SetMiddle)
+
+-- The ring marker (ns.db.ringMarker: nil or true on, false off), account-wide; textures only, so in combat too.
+local function toggleMarker()
+	ns.db.ringMarker = ns.db.ringMarker == false
+	markerRow.control:Set(ns.db.ringMarker)
+	ns.Fire("FCT_RING_MARKS")
+end
 
 local function pick(i)
 	if not (Rings.Get(selected) and editable()) then return end
@@ -418,11 +431,13 @@ local function newListRow(y)
 	return row
 end
 
--- The native highlight on the slot the pad or the mouse is on.
+-- The native highlight on the slot the pad or the mouse is on; with none, Full's hub shows the Use last slot.
 local function light()
 	local ring = Rings.Get(selected)
 	local i = ring and focusedSlot and focusedSlot <= ring.count and focusedSlot or nil
 	Rings.View.Highlight(wheel, ring and ring.count, i, i and slotButtons[i].view.cant or false)
+	local last = ring and not i and ring.style == "full" and ring.middle == "last" and Rings.LastIndex(ring)
+	Rings.View.DrawHub(wheel, last and ring.slots[last] or nil)
 end
 
 -- The selected ring in the middle, as it shows in game (icons only: states are live in game).
@@ -433,6 +448,7 @@ local function drawRing()
 	stepRow:SetShown(ring ~= nil)
 	stickRow:SetShown(ring ~= nil)
 	showRow:SetShown(ring ~= nil)
+	middleRow:SetShown(ring ~= nil)
 	styleRow:SetShown(ring ~= nil)
 	for _, button in pairs(buttons) do button:SetEnabled(ring ~= nil) end
 	for _, row in ipairs(rows) do
@@ -449,13 +465,15 @@ local function drawRing()
 	for i, stick in ipairs(sticks) do if stick == ring.stick then stickRow.control:Set(L.RINGS_STICK_NAMES[stick], i == 1, i == #sticks) end end
 	local shows = Rings.SHOWS
 	for i, show in ipairs(shows) do if show == ring.show then showRow.control:Set(L.RINGS_SHOW_NAMES[show], i == 1, i == #shows) end end
+	local middles = Rings.MIDDLES
+	for i, middle in ipairs(middles) do if middle == ring.middle then middleRow.control:Set(L.RINGS_MIDDLE_NAMES[middle], i == 1, i == #middles) end end
 	local styles = Rings.STYLES
 	for i, style in ipairs(styles) do if style == ring.style then styleRow.control:Set(L.RINGS_STYLE_NAMES[style], i == 1, i == #styles) end end
 	local n, compact = ring.count, ring.style == "compact"
 	-- Full is scaled to fit the box; the compact flyout fits it at its in-game size.
 	wheel:SetScale(compact and 1 or PREVIEW / wheel:GetHeight())
 	Rings.View.DrawWheel(wheel, n, ring.style)
-	Rings.View.DrawCentre(wheel, compact and Rings.Icon(ring), "circle")
+	Rings.View.DrawCentre(wheel, compact and Rings.LiveIcon(ring.id), "circle")
 	-- Slots past the count are drawn empty too: their disabled segment is on the wheel, not the hidden button.
 	for i, button in ipairs(slotButtons) do
 		local stored = i <= n and ring.slots[i] or nil
@@ -520,6 +538,8 @@ local function refresh()
 	newRow:ClearAllPoints()
 	UI.At(newRow, window, LEFT_X + (LEFT_W - ROW_W) / 2, LIST_Y + #list * ROW_PITCH)
 	nodes[#nodes + 1] = UI.Node(window, newRow, newRing, { cursorX = 0, onFocus = function(on) newRow.wash:SetShown(on) end, tip = { title = L.RINGS_NEW, lines = { L.RINGS_NEW_TIP }, side = "right" } })
+	markerRow.control:Set(ns.db.ringMarker ~= false)
+	nodes[#nodes + 1] = UI.Node(window, markerRow, toggleMarker, { cursorX = 0, onFocus = function(on) markerRow.wash:SetShown(on) end, tip = { title = L.RINGS_MARKER, lines = { L.RINGS_MARKER_TIP }, side = "right" } })
 	drawRing()
 
 	window.slotNodes = {}
@@ -545,6 +565,10 @@ local function refresh()
 	nodes[#nodes + 1] = UI.Node(window, showRow, function() stepShow(1, true) end, {
 		cursorX = 0, noSide = true, onDir = stepShow, onFocus = function(on) showRow.wash:SetShown(on) showRow.control:SetFocused(on) end,
 		tip = { title = L.RINGS_SHOW, lines = { L.RINGS_SHOW_TIP }, side = "right" },
+	})
+	nodes[#nodes + 1] = UI.Node(window, middleRow, function() stepMiddle(1, true) end, {
+		cursorX = 0, noSide = true, onDir = stepMiddle, onFocus = function(on) middleRow.wash:SetShown(on) middleRow.control:SetFocused(on) end,
+		tip = { title = L.RINGS_MIDDLE, lines = { L.RINGS_MIDDLE_TIP }, side = "right" },
 	})
 	nodes[#nodes + 1] = UI.Node(window, styleRow, function() stepStyle(1, true) end, {
 		cursorX = 0, noSide = true, onDir = stepStyle, onFocus = function(on) styleRow.wash:SetShown(on) styleRow.control:SetFocused(on) end,
@@ -605,6 +629,17 @@ local function build()
 	newRow.name:SetFontObject("GameFontNormal")
 	newRow.lit:Hide()
 	newRow:SetScript("OnClick", newRing)
+	-- At the foot of "Your rings".
+	markerRow = newListRow(TOP_Y + BOX_H - 34)
+	markerRow.icon:Hide()
+	markerRow.lit:Hide()
+	markerRow.name:SetFontObject("GameFontNormal")
+	markerRow.name:ClearAllPoints()
+	markerRow.name:SetPoint("LEFT", 8, 0)
+	markerRow.name:SetText(L.RINGS_MARKER)
+	markerRow.control = UI.Checkbox(markerRow, toggleMarker)
+	markerRow.control:SetPoint("RIGHT", markerRow, "RIGHT", -8, 0)
+	markerRow:SetScript("OnClick", toggleMarker)
 
 	preview = CreateFrame("Frame", nil, window)
 	preview:SetSize(PREVIEW, PREVIEW)
@@ -638,6 +673,9 @@ local function build()
 	showRow = settingRow(SHOW_Y, L.RINGS_SHOW)
 	showRow.control = UI.Dropdown(showRow, STICK_W, stepShow)
 	showRow.control:SetPoint("LEFT", showRow, "LEFT", CONTROL_X, 0)
+	middleRow = settingRow(MIDDLE_Y, L.RINGS_MIDDLE)
+	middleRow.control = UI.Dropdown(middleRow, STICK_W, stepMiddle)
+	middleRow.control:SetPoint("LEFT", middleRow, "LEFT", CONTROL_X, 0)
 	styleRow = settingRow(STYLE_Y, L.RINGS_STYLE)
 	styleRow.control = UI.Dropdown(styleRow, STICK_W, stepStyle)
 	styleRow.control:SetPoint("LEFT", styleRow, "LEFT", CONTROL_X, 0)

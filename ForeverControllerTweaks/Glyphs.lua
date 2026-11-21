@@ -163,8 +163,8 @@ local function showTexture(texture)
 	texture:SetAlpha(kept)
 end
 
--- A mirrored slot's own art: every texture region of the button but the animated FX. Child frames (prompt,
--- cooldowns, proc glow) are not regions and stay untouched.
+-- A mirrored slot's own art: every texture region of the button but the animated FX, and its stack count. Child frames
+-- (prompt, cooldowns, proc glow) are not regions and stay untouched; the cooldowns draw at the button's level, under us.
 local function regionsOf(button)
 	local list = slotRegions[button]
 	if list then return list end
@@ -177,6 +177,9 @@ local function regionsOf(button)
 	for _, region in ipairs({ button:GetRegions() }) do
 		if region:GetObjectType() == "Texture" and not skip[region] then list[#list + 1] = region end
 	end
+	-- Count lives on TextOverlayContainer (frameLevel 500, ActionButtonTemplate.xml), above the mirror: the slot's
+	-- own item (food left on a page under a routed ring) would show its stack count on our icon.
+	if button.Count then list[#list + 1] = button.Count end
 	slotRegions[button] = list
 	return list
 end
@@ -705,7 +708,7 @@ local function showMirror(mirror, mirrorFace)
 	mirror:SetShape(square and "square" or "circle")
 	-- A catalog entry draws its shadow slot (not filled yet, or Face.lua without shadow slots: the entry's own icon, no
 	-- states); a face action has no slot and is drawn from its Blizzard button below.
-	if catalog then mirror:SetSlot(mirrorFace.slot, catalog.icon) else mirror:SetSlot(nil, nil) end
+	if catalog then mirror:SetSlot(mirrorFace.slot, ns.SlotView.EntryIcon(catalog)) else mirror:SetSlot(nil, nil) end
 	-- At the slot's rest size; the Blizzard slot under us may itself be moved (its face action pressed through another
 	-- key, ApplyPressedStyle), which is undone. This cell presses from its own key (pad) or its catcher (mouse).
 	local pad, mouse = pressedOf(mirrorFace)
@@ -722,6 +725,7 @@ local function showMirror(mirror, mirrorFace)
 	copyTexture(shadow, mirror.shadow, nil, gen)
 	mirror.text:SetFrameLevel(mirror:GetFrameLevel() + 2)
 	ns.SlotView.HealerBadge(mirror.text, not not (catalog and catalog.healer))
+	ns.SlotView.RingMarker(mirror.text, ns.SlotView.MarksRing(catalog))
 	if catalog then
 		mirror.clear:Hide()
 		return true

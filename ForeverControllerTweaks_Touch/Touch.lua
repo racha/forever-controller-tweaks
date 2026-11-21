@@ -91,8 +91,11 @@ local function migrate(config, char)
 		for i, entry in pairs(list) do
 			if entry.id then list[i] = { T = entry } end
 		end
+		-- Either record shape: one cell's, or a shared slot's users (Actions.lua).
 		for _, info in pairs(char.shadow or NONE) do
-			if info.code == sideCode then info.code = sideCode .. "T" end
+			for _, user in ipairs(type(info.users) == "table" and info.users or { info }) do
+				if user.code == sideCode then user.code = sideCode .. "T" end
+			end
 		end
 	end
 	for key in pairs(SIDE_DEFAULTS) do config[key] = nil end
@@ -205,11 +208,33 @@ end
 -- Our secure button, or nil before it is made (out of combat, once the bar shows that many).
 function Touch.Button(side, i) return buttons[side] and buttons[side][i] end
 
+-- The touch button layers whose entry fires from a shadow slot: { code, layer, id } each, as Actions.Shadow keys them
+-- (Healer mode layers fire none). Actions.lua gives them back their slots after lost settings.
+function Touch.ShadowNeeds()
+	local config, out = Touch.Config(), {}
+	for side, list in pairs(config and config.bars or NONE) do
+		for i, layers in pairs(type(list) == "table" and list or NONE) do
+			for layer, entry in pairs(type(layers) == "table" and layers or NONE) do
+				if type(entry) == "table" and not entry.healer and ns.Actions.SLOT_KINDS[ns.Actions.KindOf(entry)] then out[#out + 1] = { code = slotCode(side, layer), layer = i, id = entry.id } end
+			end
+		end
+	end
+	return out
+end
+
+-- True while a button's layer holds an action a slot could hold but runs as macro text: no slot was free for it.
+function Touch.WithoutSlot(side, i, layer)
+	local entry, button = Touch.Entry(side, i, layer), Touch.Button(side, i)
+	if not (entry and button and ns.Actions.SLOT_KINDS[ns.Actions.KindOf(entry)]) or entry.healer then return false end
+	return button.slots[layer] == nil
+end
+
 -- Slots on keyboard bars 6-8: used (routed cells and touch buttons), still free, and the total.
 function Touch.SlotsUsed() return ns.Actions.ShadowCapacity() end
 
--- entry: a catalog entry, or nil to empty that layer (its slot is given back); layer defaults to T. Refused with the
--- allocator's reason when no slot is free. Fires FCT_LAYOUT_CHANGED("touch").
+-- entry: a catalog entry, or nil to empty that layer (its slot is given back); layer defaults to T. With no slot free on
+-- bars 6-8 it is stored anyway and runs as macro text (no live cooldown) until one frees up, as a routed cell does.
+-- Fires FCT_LAYOUT_CHANGED("touch").
 function Touch.SetEntry(side, i, entry, layer)
 	layer = layer or "T"
 	if InCombatLockdown() then return nil, COMBAT end
@@ -226,9 +251,9 @@ function Touch.SetEntry(side, i, entry, layer)
 	-- Slots are written only with the Gamepad UI on (bars 6-8 are the player's otherwise); the next apply while it is
 	-- on places them.
 	if ns.Active() then
-		local ok, err
-		if new and Actions.SLOT_KINDS[kind] then ok, err = Actions.Shadow(slotCode(side, layer), i, new) else ok, err = Actions.ReleaseShadow(slotCode(side, layer), i) end
-		if not ok then return nil, err end
+		local ok, err, why
+		if new and Actions.SLOT_KINDS[kind] then ok, err, why = Actions.Shadow(slotCode(side, layer), i, new) else ok, err = Actions.ReleaseShadow(slotCode(side, layer), i) end
+		if not ok and why ~= "full" then return nil, err end
 	end
 	local list = config.bars[side]
 	local layers = list[i] or {}
@@ -364,9 +389,10 @@ local shownLayer = "T"
 local function draw(button)
 	local entry, slot = button.layers[shownLayer], button.slots[shownLayer]
 	button.slot = slot
-	button.view:SetSlot(slot, entry and entry.icon)
+	button.view:SetSlot(slot, ns.SlotView.EntryIcon(entry))
 	button.view:SetShown(entry ~= nil)
 	ns.SlotView.HealerBadge(button.view.text, not not (entry and entry.healer))
+	ns.SlotView.RingMarker(button.view.text, ns.SlotView.MarksRing(entry))
 	button.empty:SetShown(not entry and button.preview)
 end
 
@@ -496,3 +522,7 @@ end)
 -- A release gives the slots back; a remap or another controller may move the crossbar modifiers.
 ns.On("FCT_LAYOUT_CHANGED", function(reason) if reason == "release" or reason == "layout" or reason == "device" then apply() end end)
 ns.On("PLAYER_REGEN_ENABLED", function() if pending then apply() end end)
+-- A ring with Use last shows its last used slot: insecure, in combat too.
+ns.On("FCT_RING_LAST", drawAll)
+-- A ring opening or closing, or the marker setting: the markers follow.
+ns.On("FCT_RING_MARKS", drawAll)

@@ -66,10 +66,21 @@ local HEADER_H, HEADER_GAP = 50, 4
 local DRAWING_SCALE = 1.1
 local DRAWING_PLACE = { (WIDTH - 400 * DRAWING_SCALE) / 2, (AREA_TOP + AREA_BOTTOM) / 2 - 150 * DRAWING_SCALE, DRAWING_SCALE }
 -- Which column each control's row is in, and the tie order; rows run top to bottom by where the control sits on
--- the drawing. Only controls the addon can set are listed: the D-pad and face buttons (cells) and the modifiers (their
--- roles, which the layer headers follow); the game keeps L3, R3 and the centre buttons to itself.
-local LEFT_ORDER = { "L1", "L2", "DU", "DR", "DD", "DL", "P2", "P4" }
-local RIGHT_ORDER = { "R1", "R2", "FT", "FR", "FB", "FL", "P1", "P3" }
+-- the drawing. Only controls the addon can set are listed: the D-pad and face buttons and the stick presses (cells)
+-- and the modifiers (their roles, which the layer headers follow); the game keeps the centre buttons to itself.
+local LEFT_ORDER = { "L1", "L2", "DU", "DR", "DD", "DL", "L3", "P2", "P4" }
+local RIGHT_ORDER = { "R1", "R2", "FT", "FR", "FB", "FL", "R3", "P1", "P3" }
+-- The stick presses: cells without a crossbar slot, the same on every page, like a free paddle's.
+local STICKS = { L3 = true, R3 = true }
+-- A stick press nothing of ours takes over runs the game's own binding (the core context; the bar modifiers are
+-- bindings of their own, so it is the same on every bar): its cells show it, like the reserved face cells. Known
+-- actions by the game's own prompt name and gold action-bar art; another one by its binding name and the stick glyph.
+local NATIVE_STICK = {
+	TOGGLEAUTORUN = { prompt = "PROMPT_AUTO_RUN", fallback = "STICK_AUTORUN", atlas = "gamepad-actionbar-autorun-up" },
+	TOGGLEPINGLISTENER = { prompt = "PROMPT_PING", fallback = "STICK_PING", atlas = "gamepad-actionbar-ping-up" },
+	TOGGLEPINGSYSTEM = { prompt = "PROMPT_PING", fallback = "STICK_PING", atlas = "gamepad-actionbar-ping-up" },
+}
+local NATIVE_INSET = 3
 local DRAWN = { "L2", "R2", "L1", "R1", "FT", "FL", "FR", "FB", "L3", "R3", "SEL", "START", "SOCIAL", "SYSTEM" }
 -- The focused row: its rule and curve in native gold; every other rule in the drawing's line tone, faint.
 local GOLD, RULE_TONE = { 1, 210 / 255, 0 }, { 160 / 255, 124 / 255, 69 / 255 }
@@ -94,10 +105,11 @@ local function slotInBar(key)
 	return tonumber((ok and action or ""):match("^GAMEPADACTIONBUTTON(%d)$")) or ASSUMED_SLOT[key]
 end
 
--- Storage slot of a layer cell, nil for the reserved top-bar face slots, a paddle or without the gamepad action bars.
+-- Storage slot of a layer cell, nil for the reserved top-bar face slots, a paddle, a stick press or without the
+-- gamepad action bars.
 local function storageSlot(code, layer)
 	local util = GamepadActionBarBindingUtil
-	if not util or UI.MOD_CODES[code] then return end
+	if not util or UI.MOD_CODES[code] or STICKS[code] then return end
 
 	local constants = Constants.GamepadActionBarConstants
 	local perBar = constants and constants.NUM_SLOTS_PER_GAMEPAD_ACTION_BAR or 8
@@ -157,18 +169,44 @@ end
 local function boundName(cell)
 	if cell.entry then return cell.entry.name end
 	if cell.reserved then return FACE_ACTION_NAME[cell.action] end
+	if cell.native then return cell.native.name end
 	return actionName(cell.slot)
 end
 
+local function atlasExists(atlas) return atlas and C_Texture and C_Texture.GetAtlasInfo and C_Texture.GetAtlasInfo(atlas) ~= nil end
+
+-- What a stick press does while none of its bars holds an action: { name, atlas } of the game's own binding, or nil
+-- (taken over, or nothing bound).
+local function nativeStick(code)
+	if not STICKS[code] then return end
+	for _, layer in ipairs(LAYERS) do
+		if ns.Face.CellEntry(code, layer) then return end
+	end
+	local ok, action = pcall(GetBindingAction, UI.KEY[code], nil, CORE_CTX)
+	if not (ok and type(action) == "string" and action ~= "") then return end
+	local known = NATIVE_STICK[action]
+	local name = known and (_G[known.prompt] or L[known.fallback]) or _G["BINDING_NAME_" .. action] or action
+	local atlas = known and atlasExists(known.atlas) and known.atlas or UI.GlyphAtlas(UI.KEY[code], "Normal")
+	return { name = name, atlas = atlas }
+end
+B.NativeStick = nativeStick
+
 local function cellTip(cell)
-	local paddle = UI.MOD_CODES[cell.code]
-	local kind = cell.reserved and L.FACE_SLOT or paddle and L.PADDLE_SLOT or L.CROSSBAR_SLOT
+	local paddle, stick = UI.MOD_CODES[cell.code], STICKS[cell.code]
+	local kind = cell.reserved and L.FACE_SLOT or paddle and L.PADDLE_SLOT or stick and L.STICK_SLOT or L.CROSSBAR_SLOT
 	local choose = cell.slot and GetCursorInfo() and L.PLACE_HELD or L.CHOOSE_ACTION
 	local actions = { { "PAD1", choose }, { "PAD3", L.CLEAR_SLOT } }
 	if paddle then actions[3] = { "PAD4", L.PADDLE_ROLE } end
 	local lines = { layerLine(cell.code, cell.layer), kind }
 	lines[3] = UI.EntryOff(cell.entry)
 	if cell.entry and cell.entry.healer then lines[#lines + 1] = L.HEALER_ON end
+	-- A stick press is bound while any of its bars holds an action; then the empty ones do nothing.
+	if stick and cell.native then
+		lines[#lines + 1] = string.format(L.STICK_NATIVE_CELL, UI.Name(cell.code), UI.Name(cell.code))
+	elseif stick then
+		lines[#lines + 1] = string.format(L.STICK_EMPTY, UI.Name(cell.code))
+		lines[#lines + 1] = string.format(L.STICK_NATIVE[cell.code], UI.Name(cell.code))
+	end
 	return { title = boundName(cell) or L.EMPTY, lines = lines, actions = actions, side = cell.row.left and "left" or "right" }
 end
 
@@ -258,15 +296,22 @@ local function fillCell(cell, faceAction)
 	cell.pos = cell.reserved and UI.CODE_POS[cell.code] or nil
 	cell.slot = not cell.reserved and storageSlot(cell.code, cell.layer) or nil
 	cell.entry = UI.ActionPicker.CellEntry(cell)
+	cell.native = not cell.entry and nativeStick(cell.code) or nil
 	ns.SlotView.HealerBadge(cell, not not (cell.entry and cell.entry.healer))
+	ns.SlotView.RingMarker(cell, ns.SlotView.MarksRing(cell.entry))
 	cell.icon:SetDesaturated(UI.EntryOff(cell.entry) ~= nil)
 	cell.icon:ClearAllPoints()
 	cell.icon:SetTexCoord(0, 1, 0, 1)
 	if cell.entry then
 		cell.icon:SetPoint("TOPLEFT", 3, -3)
 		cell.icon:SetPoint("BOTTOMRIGHT", -3, 3)
-		cell.icon:SetTexture(cell.entry.icon)
+		cell.icon:SetTexture(ns.SlotView.EntryIcon(cell.entry))
 		cell.icon:Show()
+	elseif cell.native then
+		cell.icon:SetPoint("TOPLEFT", NATIVE_INSET, -NATIVE_INSET)
+		cell.icon:SetPoint("BOTTOMRIGHT", -NATIVE_INSET, NATIVE_INSET)
+		cell.icon:SetAtlas(cell.native.atlas)
+		cell.icon:SetShown(cell.native.atlas ~= nil)
 	elseif cell.reserved then
 		local inset = SPECIAL_INSET[faceAction] or 0
 		cell.icon:SetPoint("TOPLEFT", inset, -inset)
@@ -389,6 +434,23 @@ end
 local function toggleHealer(cell)
 	local entry = cell.entry
 	report(ns.Face.SetHealer(cell.code, cell.layer, not (entry and entry.healer), page))
+end
+
+-- More's middle row for a cell in Healer mode, under the Healer mode row: Cancel or Last target.
+local function healerLastMore(cell)
+	local on = cell.entry.healerLast
+	return { id = "healerlast", name = on and L.HEALER_LAST_ON or L.HEALER_LAST_OFF, detail = on and L.HEALER_LAST_ON_TIP or L.HEALER_LAST_OFF_TIP, run = function() report(ns.Face.SetHealerLast(cell.code, cell.layer, not on)) end }
+end
+
+-- More's middle row for a cell or touch button that opens a ring (not Healer mode), under the Healer mode row: the
+-- ring's own Middle (Rings.SetMiddle, the Rings tab's setting), shared by every button that opens that ring. nil
+-- for anything else, or without the Rings module.
+function B.RingMiddleMore(entry)
+	local id = ns.Rings and entry and entry.kind == "ring" and tonumber(tostring(entry.id):match("^ring:(%d+)$"))
+	local ring = id and ns.Rings.Get(id)
+	if not ring then return end
+	local on = ring.middle == "last"
+	return { id = "ringmiddle", name = on and L.RING_MIDDLE_ON or L.RING_MIDDLE_OFF, detail = on and L.RING_MIDDLE_ON_TIP or L.RING_MIDDLE_OFF_TIP, run = function() report(ns.Rings.SetMiddle(id, on and "cancel" or "last")) end }
 end
 
 local function hasActions(phys)
@@ -519,7 +581,7 @@ local function rowText(row, layer)
 	if row.kind == "mod" then return modText(row) end
 	local cell = row.cells[LAYER_INDEX[layer]]
 	local word = UI.ROLE[LAYER_ROLE[layer]].word
-	if UI.MOD_CODES[row.code] then return boundName(cell), string.format(L.PADDLE_SUB, UI.Name(row.code), word) end
+	if UI.MOD_CODES[row.code] or STICKS[row.code] then return boundName(cell), string.format(L.PADDLE_SUB, UI.Name(row.code), word) end
 	return boundName(cell), string.format(cell.reserved and L.FACE_SUB or L.BAR_SUB, word)
 end
 
@@ -988,10 +1050,11 @@ function UI.OpenMore(owner, entries, current)
 		{ id = "detectreset", name = L.DETECT_RESET, detail = L.DETECT_RESET_TEXT, run = function() UI.Detect.Reset(owner) end },
 		{ id = "guide", name = L.SETUP_GUIDE, detail = BUTTON_TIPS[1], run = function() UI.Onboarding.Start() end },
 		{ id = "learn", name = L.LEARN, detail = BUTTON_TIPS[2], run = here(function() B.Learn() end) },
+		{ id = "sync", name = L.SYNC_MORE, detail = L.SYNC_MORE_TIP, run = function() UI.Sync.Open() end },
 		{ id = "minimap", name = ns.db.options.minimapIcon == false and L.MINIMAP_SHOW or L.MINIMAP_HIDE, detail = L.MINIMAP_TIP, run = function() UI.ToggleMinimapButton() end },
 		{ id = "reset", name = L.RESET, detail = BUTTON_TIPS[3], run = here(function() B.Reset() end) },
 	}
-	if ns.Keyboard then table.insert(common, 6, { id = "keyboard", name = L.KEYBOARD, detail = L.KEYBOARD_TIP, run = function() ns.Keyboard.SettingsTab.Open() end }) end
+	if ns.Keyboard then table.insert(common, 7, { id = "keyboard", name = L.KEYBOARD, detail = L.KEYBOARD_TIP, run = function() ns.Keyboard.SettingsTab.Open() end }) end
 	for _, entry in ipairs(common) do list[#list + 1] = entry end
 	local focus = owner.focus and owner.focus.region or owner
 	Picker.Open({ window = owner, cell = focus, point = { "BOTTOM", owner, "BOTTOM", 0, 24 }, list = { title = L.MORE, entries = list, current = current, onPick = function(entry) entry.run() end } })
@@ -1033,6 +1096,8 @@ local function setup()
 		local row = region and region.layer and region.row
 		local paddleRow = row and UI.MOD_CODES[row.code] and row
 		if row then entries[1] = B.HealerMore(cellAction(region), function() toggleHealer(region) end) end
+		if row and region.entry and region.entry.healer and ns.Rings then entries[2] = healerLastMore(region) end
+		if row then entries[#entries + 1] = B.RingMiddleMore(region.entry) end
 		if paddleRow then entries[#entries + 1] = { id = "paddlerole", name = string.format(L.ROLES_TITLE, UI.Name(paddleRow.code)), detail = L.PADDLE_ROLE_TIP, run = function() openRoles(paddleRow, region) end } end
 		for _, name in ipairs({ "native", "split" }) do
 			entries[#entries + 1] = { id = name, name = UI.PresetLabel(name), detail = L.PRESET_TIP, live = true, run = function() report(Layout.SetPreset(name)) end }

@@ -25,7 +25,10 @@
 -- crossbar button that opened it: the ring's icon in that button's native slot art (SlotView: an expanded circle, a
 -- square on a D-pad cell) and, under it, the glyphs of the layer's modifiers joined by a plus, as the bars'
 -- InputPromptTwoIcon prompt (24 icons, an 8 plus 4 from each, 35 under the centre). The base layer shows none.
--- View.Wheel / DrawWheel / Highlight / NewSlot / DrawSlot are shared with the Rings tab's preview, which scales the wheel
+-- Middle "last" (design/1.5.0.md 1.2-1.3): Full's empty hub shows what a middle release fires, the last used slot's
+-- icon (38, square, unmasked, as a segment's) and its name under it, while nothing is aimed; Compact's centre shows
+-- that icon instead of the ring's. Healer rings keep their spell in the centre.
+-- View.Wheel / DrawWheel / DrawHub / Highlight / NewSlot / DrawSlot are shared with the Rings tab's preview, which scales the wheel
 -- to fit its box.
 -- Healer rings (Rings.HealerRing, design/healer-mode.md 2-3): the Compact look with a unit in each of the 7 places
 -- instead of an action: round portrait, a radial health ring in the class colour, incoming heals, shield, heal
@@ -258,6 +261,28 @@ end
 
 -- The action name only: rank text is the label's to drop.
 local function labelText(name) return (tostring(name or ""):gsub("%s*%(Highest Rank%)$", ""):gsub("%s*%(?Rank %d+%)?$", "")) end
+
+-- Full's hub: the stored slot a middle release fires (its icon and name), or nothing without one.
+local HUB_ICON_Y, HUB_NAME_Y, HUB_NAME_W = 8, -20, 100
+function View.DrawHub(wheel, slot)
+	local hub = wheel.hub
+	if not hub and not slot then return end
+	if not hub then
+		hub = { icon = wheel:CreateTexture(nil, "OVERLAY", nil, 1), name = wheel:CreateFontString(nil, "OVERLAY", "GameFontNormal") }
+		hub.icon:SetSize(GEO.ICON, GEO.ICON)
+		hub.icon:SetPoint("CENTER", wheel, "CENTER", 0, HUB_ICON_Y)
+		hub.name:SetWidth(HUB_NAME_W)
+		hub.name:SetWordWrap(false)
+		hub.name:SetPoint("CENTER", wheel, "CENTER", 0, HUB_NAME_Y)
+		hub.name:SetTextColor(NORMAL_FONT_COLOR:GetRGB())
+		wheel.hub = hub
+	end
+	hub.icon:SetShown(slot ~= nil)
+	hub.name:SetShown(slot ~= nil)
+	if not slot then return end
+	hub.icon:SetTexture(slot.icon or QUESTION_ICON)
+	hub.name:SetText(labelText(slot.name))
+end
 
 ---------------------------------------------------------------------------------------------------------------------
 -- A slot (GamepadRadialSegmentTemplate's parts) on its secure slot button: the icon square and unmasked, its
@@ -713,6 +738,7 @@ end
 local tipUnit
 local function healerTip(i)
 	local unit = i and Rings.HealerUnits[i]
+	if unit and unit == tipUnit and GameTooltip:IsOwned(display) then return end
 	if unit and plain(UnitExists(unit)) then
 		GameTooltip_SetDefaultAnchor(GameTooltip, display)
 		GameTooltip:SetUnit(unit)
@@ -723,13 +749,25 @@ local function healerTip(i)
 	end
 end
 
+-- Last target with nothing aimed (design/1.5.0.md 6.2): the remembered place lights with the aimed border and gets the
+-- tooltip while its unit can be helped, as a middle release casts there; no indicator, arrow or sound.
+local function lightLast()
+	local i = drawn.last
+	local place = i and views[i] and views[i].pickable and i or nil
+	if place then views[place].heal.over:Show() end
+	healerTip(place)
+end
+
 local function drawHealers()
 	local ring = drawn.ring
 	for i = 1, ring.count do
 		local view = views[i]
 		if view then view.pickable = drawHealer(view.heal, Rings.HealerUnits[i], display.backdrops[i]) end
 	end
-	if focused and focused > 0 then View.Highlight(display, ring.count, focused, false) end
+	if focused and focused > 0 then return View.Highlight(display, ring.count, focused, false) end
+	if focused then return end
+	View.Highlight(display, ring.count, nil, false)
+	lightLast()
 end
 -- How the ring shown now was opened ("hold" | "touch"): the close clears the frame's ps-mode before the hide.
 local openMode
@@ -742,8 +780,10 @@ local function focus(i)
 	local ring = drawn.ring
 	local view = i and views[i]
 	View.Highlight(display, ring and ring.count, ring and i, view and view.cant or false)
+	View.DrawHub(display, not i and drawn.hub or nil)
 	if i and drawn.mode == "hold" then sound(SOUNDKIT.GAMEPAD_RADIAL_MENU_HIGHLIGHT) end
-	if ring and ring.healer then healerTip(i) end
+	if not (ring and ring.healer) then return end
+	if i then healerTip(i) else lightLast() end
 end
 
 local function draw(id, mode, side, layer, kind)
@@ -760,7 +800,11 @@ local function draw(id, mode, side, layer, kind)
 	if not ring then return end
 	local n = ring.count
 	View.DrawWheel(display, n, ring.style)
-	View.DrawCentre(display, ring.style == "compact" and Rings.Icon(ring), kind == "dpad" and "square" or "circle", layer)
+	local compact = ring.style == "compact"
+	View.DrawCentre(display, compact and (healer and Rings.Icon(ring) or Rings.LiveIcon(id)), kind == "dpad" and "square" or "circle", layer)
+	local last = not (healer or compact) and ring.middle == "last" and Rings.LastIndex(ring)
+	drawn.hub = last and ring.slots[last] or nil
+	drawn.last = healer and ring.middle == "last" and Rings.LastIndex(ring) or nil
 	for i = 1, Rings.MAX_SLOTS do
 		local view = views[i]
 		-- A healer place shows its unit, not the action every place fires.
@@ -789,6 +833,7 @@ end)
 display:SetScript("OnHide", function()
 	if openMode == "hold" then Rings.HoldStick(frame:GetAttribute("ps-aimside") or "right", frame:GetAttribute("ps-aim")) end
 	healerTip(nil)
+	View.DrawHub(display, nil)
 	display.healer = nil
 	listenHealer(false)
 	drawn, focused, openMode = {}, nil, nil

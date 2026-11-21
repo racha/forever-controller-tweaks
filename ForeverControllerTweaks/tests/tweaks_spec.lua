@@ -5,6 +5,8 @@
 local here = (arg and arg[0] or ""):match("^(.*)[/\\]") or "."
 local dir = here .. "/.."
 local W = dofile(here .. "/panel_stub.lua")
+-- Sync & backup's state line colours (Blizzard globals), read when Panel/Sync.lua loads.
+for _, name in ipairs({ "GRAY_FONT_COLOR", "GREEN_FONT_COLOR", "RED_FONT_COLOR", "NORMAL_FONT_COLOR" }) do _G[name] = _G[name] or { GetRGB = function() return 1, 1, 1 end } end
 -- A secure header's wrap keeps its snippet, so the spec can run it.
 getmetatable(W.new("Frame")).WrapScript = function(_, target, _, pre) target.wrap = pre end
 -- A colour texture keeps its colour, so the battery's bars can be read.
@@ -50,7 +52,7 @@ local function blizz(spec)
 			-- Anchoring our frames reads the anchor's position in the stub.
 			Abs = function() return 0, 0 end,
 			selectedTab = spec.selectedTab, CloseButton = spec.CloseButton,
-			OpenAllMail = spec.OpenAllMail,
+			OpenAllMail = spec.OpenAllMail, gamepadFooter = spec.gamepadFooter,
 		},
 		__newindex = function(_, k) error("Tweaks wrote " .. tostring(k) .. " on a Blizzard frame", 2) end,
 	})
@@ -119,7 +121,10 @@ for i = 1, 10 do
 	_G["MerchantItem" .. i .. "ItemButton"] = blizz(rowSpecs[i])
 end
 local bagClose = blizz({ visible = true })
-local bagSpec = { visible = false, CloseButton = bagClose }
+-- The combined bags' gamepad footer (PromptedBindingFooter): read only, its legend frame shown with the bags' focus.
+local legendSpec = { visible = true }
+local bagLegend = blizz(legendSpec)
+local bagSpec = { visible = false, CloseButton = bagClose, gamepadFooter = setmetatable({ inputLegend = bagLegend }, { __newindex = function(_, k) error("Tweaks wrote " .. tostring(k) .. " on the bag footer", 2) end }) }
 ContainerFrameCombinedBags = blizz(bagSpec)
 local backpackSpec = { visible = false }
 ContainerFrame1 = blizz(backpackSpec)
@@ -260,7 +265,7 @@ UI.TweaksTab.Open()
 local w = UI.Current()
 local ST = UI.TweaksTab.T
 check(w and w.tabs.index == #UI.TABS, "the tab opens as its own side tab")
-check(#w.nodes == 32, "thirty-two rows: " .. #w.nodes)
+check(#w.nodes == 34, "thirty-four rows: " .. #w.nodes)
 local headers = {}
 for _, f in ipairs(W.frames) do if f.parent == w and f.text and type(f.text) == "table" and f.text.text then headers[f.text.text] = true end end
 check(headers[ST.BAGS] and headers[ST.NPCS] and headers[ST.RUMBLE] and headers[ST.CONTROLLER] and headers[ST.GEAR] and headers[ST.SOCIAL], "six section headers")
@@ -281,7 +286,7 @@ local function walk(n)
 	for _ = 1, n do order[#order + 1] = focused() press("PADDDOWN") end
 	return table.concat(order, ",")
 end
-check(walk(8) == "sortBags,sellJunk,repair,repairGuild,buyStack,skipGossip,learnAll,openMail", "first column order")
+check(walk(9) == "sortBags,sortKey,sellJunk,repair,repairGuild,buyStack,skipGossip,learnAll,openMail", "first column order")
 local function focusKey(key) for _, node in ipairs(w.nodes) do if node.region.key == key then w:Focus(node) end end end
 focusKey("sortBags")
 press("PADDRIGHT")
@@ -290,7 +295,7 @@ check(walk(10) == "rumble,rumbleStrength,rumble:group,rumble:whisper,rumble:trad
 focusKey("rumble")
 press("PADDRIGHT")
 check(focused() == "battery", "right goes to the Controller column: " .. focused())
-check(walk(6) == "battery,batteryIcon,rareAlert,lightBar,lightColor,combatFlash", "Controller column order")
+check(walk(7) == "battery,batteryIcon,rareAlert,lightBar,lightColor,combatFlash,syncOn", "Controller column order, Sync between machines last")
 focusKey("battery")
 press("PADDRIGHT")
 check(focused() == "fastLoot", "right again goes to the last column: " .. focused())
@@ -309,7 +314,7 @@ press("PADDLEFT")
 check(gs.whisper == "off" and w.focus.region.control.text.text == "Off" and focused() == "rumble:whisper", "Off is a pattern: the group switches off right there")
 press("PADDLEFT")
 local leftOf = focused()
-local FIRST_COLUMN = { sortBags = 1, sellJunk = 1, repair = 1, repairGuild = 1, buyStack = 1, skipGossip = 1, learnAll = 1, openMail = 1 }
+local FIRST_COLUMN = { sortBags = 1, sortKey = 1, sellJunk = 1, repair = 1, repairGuild = 1, buyStack = 1, skipGossip = 1, learnAll = 1, openMail = 1 }
 check(gs.whisper == "off" and FIRST_COLUMN[leftOf], "left past Off leaves for the first column, changing nothing: " .. leftOf)
 
 press("PADDRIGHT")
@@ -339,6 +344,27 @@ check(ns.db.tweaks.repair == false and not rowOf("repair").control.check.shown, 
 rowOf("declineDuels").control:Click()
 check(ns.db.tweaks.declineDuels == true, "a click on the checkbox toggles too")
 Tweaks.Set("declineDuels", false)
+-- Sync between machines: Sync & backup's switch (db.sync.on, this machine only), not a tweak, not in the tweaks section.
+local syncRow = rowOf("syncOn")
+check(syncRow.label.text == L.SYNC_ON and syncRow.control.check.shown and ns.db.sync.on == nil, "Sync between machines: its row, on")
+for _, node in ipairs(w.nodes) do if node.region.key == "syncOn" then w:Focus(node) end end
+check(w.focus.tip.title == L.SYNC_ON and w.focus.tip.lines[1] == L.SYNC_ON_TIP, "Sync between machines: Sync & backup's tooltip")
+w:Select()
+check(ns.db.sync.on == false and not syncRow.control.check.shown and ns.Sync.Status().state == "off", "A turns sync off on this computer")
+local tweaksSection = ns.Sync.Sections(ns.db).tweaks
+check(ns.db.tweaks.syncOn == nil and tweaksSection.syncOn == nil and not ns.Sync.Encode(tweaksSection):find("sync"), "not a tweak: not in the tweaks section")
+ns.Sync.SetOn(true)
+W.advance(0.5)
+check(ns.db.sync.on == nil and syncRow.control.check.shown, "turned on elsewhere: the row redraws")
+UI.Sync.Open()
+local syncMain = UI.Current()
+syncMain:Focus(syncMain.nodes[1])
+syncMain:Select()
+check(ns.db.sync.on == false, "Sync & backup's switch turns it off")
+UI.TweaksTab.Open()
+w = UI.Current()
+check(not rowOf("syncOn").control.check.shown, "the Tweaks row follows Sync & backup's switch")
+ns.Sync.SetOn(true)
 -- Tooltips: beside the focused row, never over it (right of its column, left from the last column), text wrapped
 -- at a native width.
 local function tooltipFrame() for _, f in ipairs(W.frames) do if f.title and type(f.lines) == "table" and type(f.actions) == "table" then return f end end end
@@ -379,10 +405,17 @@ local sort = sortButton()
 check(sort and sort.parent == UIParent and not sort.shown, "Sort: our own frame on UIParent, hidden while the bags are closed")
 bagSpec.visible = true
 W.advance(0.3)
-check(sort.shown and sort.rel == bagClose and sort.point == "RIGHT" and sort.w == 22, "combined bags (their search box spans the top): Sort on the title bar, left of the close button")
+check(sort.shown and sort.rel == ContainerFrameCombinedBags and sort.point == "TOPRIGHT" and sort.x == -3 and sort.w == 22, "combined bags (their search box spans the top): Sort on the title bar, where the hidden close X sits")
+-- The bags are a toplevel window that raises itself over its whole strata on a click or show: Sort sits one strata
+-- up at a fixed level, so a raised bag never buries it and the levels never climb.
+check(sort.strata == "HIGH" and sort.level == 10, "combined bags: Sort one strata above the bags, a fixed level")
+bagSpec.level = 9000
+W.advance(0.3)
+check(sort.shown and sort.strata == "HIGH" and sort.level == 10, "a raised bag window doesn't move Sort's level")
+bagSpec.level = nil
 bagSpec.visible, backpackSpec.visible = false, true
 W.advance(0.3)
-check(sort.shown and sort.rel == ContainerFrame1 and sort.point == "TOPRIGHT" and sort.x == -9 and sort.w == 28, "separate bags: Blizzard's own sort button's place")
+check(sort.shown and sort.rel == ContainerFrame1 and sort.point == "TOPRIGHT" and sort.x == -9 and sort.w == 28 and sort.strata == "HIGH", "separate bags: Blizzard's own sort button's place, above the bags too")
 backpackSpec.visible, bagSpec.visible = false, true
 W.advance(0.3)
 sort.scripts.OnEnter(sort)
@@ -404,6 +437,89 @@ check(ns.Actions.TextFor("game:sortbags") == "/click ForeverControllerTweaksSort
 ForeverControllerTweaksSortBags:Click()
 check(count("SortBags") == 2, "and that button sorts")
 Tweaks.Set("sortBags", false)
+
+-- 1b. Sort bags key (design/1.5.0.md 3.2): on by default (L3), its own choice, not in the all-off keys. While a bag
+-- frame shows, a priority override binding on our own button; closed, none. Out of combat only; a shoulder or trigger
+-- held: nothing.
+check(Tweaks.Repair(nil).sortKey == "L3" and Tweaks.Repair({ sortKey = "R3" }).sortKey == "R3" and Tweaks.Repair({ sortKey = "PAD1" }).sortKey == "L3" and Tweaks.Get("sortKey") == "L3", "sort key: L3 by default, R3 or off kept, anything else L3")
+W.override = nil
+W.advance(0.3)
+check(W.override == nil and Tweaks.SortKeyWanted() == nil, "sort key: bags closed, nothing bound (the stick works as usual)")
+backpackSpec.visible = true
+W.advance(0.3)
+check(W.override == "PADLSTICK->CLICK ForeverControllerTweaksSortKey (priority)", "sort key: bags open, L3 clicks our button, a priority binding: " .. tostring(W.override))
+reset()
+ForeverControllerTweaksSortKey:Click()
+check(count("SortBags") == 1, "sort key: the press sorts")
+W.held = { PADLTRIGGER = true }
+ForeverControllerTweaksSortKey:Click()
+W.held = {}
+check(count("SortBags") == 1, "sort key: with a trigger held, nothing")
+Tweaks.Set("sortKey", "R3")
+W.advance(0.3)
+check(W.override == "PADRSTICK->CLICK ForeverControllerTweaksSortKey (priority)", "sort key: R3")
+W.fire("PLAYER_REGEN_DISABLED")
+check(W.override == nil, "sort key: cleared as a fight starts")
+W.combat = true
+W.advance(0.3)
+check(W.override == nil, "sort key: not set again in combat")
+W.combat = false
+W.fire("PLAYER_REGEN_ENABLED")
+check(W.override == "PADRSTICK->CLICK ForeverControllerTweaksSortKey (priority)", "sort key: back after the fight")
+backpackSpec.visible = false
+W.advance(0.3)
+check(W.override == nil, "sort key: cleared when the bags close")
+Tweaks.Set("sortKey", "off")
+backpackSpec.visible = true
+W.advance(0.3)
+check(W.override == nil, "sort key: Off binds nothing")
+backpackSpec.visible = false
+Tweaks.Set("sortKey", "L3")
+W.advance(0.3)
+
+-- The footer prompt: "<stick> Sort" in our own footer segment while the key is bound. Combined bags: joined to the
+-- right end of their gamepad footer as one box: over its 8-wide right cap, our art's own left cap clipped off; hidden
+-- while that footer hides (the search box has the pad).
+-- Separate bags: alone under the backpack. One strata above the bags. Never shown unbound: closed, Off, in combat.
+local function sortPrompt()
+	for _, f in ipairs(W.frames) do if f.glyph and f.label and f.label.text == Tweaks.T.SORT then return f end end
+end
+check(sortPrompt() == nil or not sortPrompt():IsShown(), "prompt: none while the bags are closed")
+bagSpec.visible = true
+W.advance(0.3)
+local prompt = sortPrompt()
+check(prompt and prompt:IsShown() and prompt.rel == bagLegend and prompt.point == "TOPLEFT" and prompt.x == -8 and prompt.h == 44, "prompt: joined to the combined bags' footer over its 8-wide right cap, 44 tall")
+check(prompt.art.x == -8 and prompt.art.parent == prompt, "prompt: joined, the art starts a cap further left (its left cap clipped off: no line between Close and Sort)")
+check(prompt.glyph.x == 13 and prompt.glyph.rel == prompt and prompt.glyph.parent == prompt.art, "prompt: the glyph 15 after Close's end (the native gap), clear of the covered cap")
+check(prompt.glyph.code == "PADLSTICK" and prompt.label.text == "Sort" and prompt.strata == "HIGH" and prompt.w == 13 + 24 + 4 + #"Sort" * 6 + 10, "prompt: the L3 glyph, Sort, one strata above the bags, 10 to our right cap")
+legendSpec.visible = false
+W.advance(0.05)
+check(not prompt:IsShown(), "prompt: hidden the frame the footer hides (search box focused)")
+legendSpec.visible = true
+W.advance(0.05)
+check(prompt:IsShown(), "prompt: back with the footer")
+Tweaks.Set("sortKey", "R3")
+W.advance(0.3)
+check(prompt:IsShown() and prompt.glyph.code == "PADRSTICK", "prompt: follows the key, R3")
+Tweaks.Set("sortKey", "off")
+W.advance(0.3)
+check(not prompt:IsShown(), "prompt: Off, none")
+Tweaks.Set("sortKey", "L3")
+W.advance(0.3)
+W.fire("PLAYER_REGEN_DISABLED")
+W.combat = true
+W.advance(0.3)
+check(not prompt:IsShown(), "prompt: none in combat (the key isn't bound)")
+W.combat = false
+W.fire("PLAYER_REGEN_ENABLED")
+check(prompt:IsShown(), "prompt: back after the fight")
+bagSpec.visible, backpackSpec.visible = false, true
+W.advance(0.3)
+check(prompt:IsShown() and prompt.rel == ContainerFrame1 and prompt.x == 0, "prompt: separate bags, alone under the backpack")
+check(prompt.art.x == 0 and prompt.glyph.x == 10 and prompt.w == 10 + 24 + 4 + #"Sort" * 6 + 10, "prompt: separate bags, the whole frame (all four sides), the native padding")
+backpackSpec.visible = false
+W.advance(0.3)
+check(not prompt:IsShown() and Tweaks.SortKeyBound() == nil, "prompt: gone with the bags")
 
 -- 2. Sell junk: SellAllJunkItems when the client has it, with one line counting the greys that have a price.
 turn("sellJunk")

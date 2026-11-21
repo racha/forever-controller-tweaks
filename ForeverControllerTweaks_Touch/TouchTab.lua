@@ -35,7 +35,7 @@ local ON_TOP, SIDE_TOP = 290, 352
 local STEPPER_W, STEPPER_H, STEPPER_TOP, STEPPER_PITCH, CONTROL_X, SLIDER_W, CHOICE_W, SIDE_W = 280, 26, 380, 28, 140, 120, 70, 90
 local CELL = 34
 
-local window, preview, curve, outline, onRow, showRow, sideRow, counter, headers
+local window, preview, curve, outline, onRow, showRow, sideRow, counter, freeButton, headers
 local rows, steppers = {}, {}
 -- The preview's buttons per side and shape (a cell's mask is fixed when it is made).
 local buttons = { left = { circle = {}, square = {} }, right = { circle = {}, square = {} } }
@@ -141,10 +141,11 @@ local function fillRow(row)
 		cell.icon:ClearAllPoints()
 		cell.icon:SetPoint("TOPLEFT", 3, -3)
 		cell.icon:SetPoint("BOTTOMRIGHT", -3, 3)
-		cell.icon:SetTexture(cellEntry and cellEntry.icon or nil)
+		cell.icon:SetTexture(ns.SlotView.EntryIcon(cellEntry))
 		cell.icon:SetDesaturated(UI.EntryOff(cellEntry) ~= nil)
 		cell.icon:SetShown(cellEntry ~= nil)
 		ns.SlotView.HealerBadge(cell, not not (cellEntry and cellEntry.healer))
+		ns.SlotView.RingMarker(cell, ns.SlotView.MarksRing(cellEntry))
 	end
 end
 
@@ -154,6 +155,7 @@ local function cellTip(cell)
 	local lines = { subText(row, cell.layer) }
 	local _, total, full = slots()
 	if full and not entry then lines[#lines + 1] = string.format(L.TOUCH_FULL, total) end
+	if ns.Touch.WithoutSlot(row.side, row.index, cell.layer) then lines[#lines + 1] = L.TOUCH_NO_SLOT end
 	lines[#lines + 1] = UI.EntryOff(entry)
 	if entry and entry.healer then lines[#lines + 1] = L.HEALER_ON end
 	return { title = entry and entry.name or L.TOUCH_EMPTY, lines = lines, actions = { { "PAD1", L.CHOOSE_ACTION }, { "PAD3", L.CLEAR_SLOT } }, side = row.side }
@@ -304,6 +306,38 @@ local function showList(drop, list, current, labels)
 	for i, id in ipairs(list) do if id == current then drop:Set(labels[id], i == 1, i == #list) end end
 end
 
+-- "Free up slots": the player's own actions on keyboard bars 6-8 (Actions.ForeignShadowSlots) hold slots touch buttons
+-- and moved actions need. Our confirm box lists each (icon and name, the first FREE_LIST) and clears exactly those.
+local FREE_LIST, FREE_ICON = 10, 14
+
+function T.FreeText(list)
+	local lines = { L.TOUCH_FREE_SUB }
+	for k, item in ipairs(list) do
+		if k > FREE_LIST then
+			lines[#lines + 1] = string.format(L.TOUCH_FREE_MORE, #list - FREE_LIST)
+			break
+		end
+		lines[#lines + 1] = (item.icon and ("|T%s:%d|t "):format(item.icon, FREE_ICON) or "") .. item.name
+	end
+	return table.concat(lines, "\n")
+end
+
+local function freeSlots()
+	if InCombatLockdown() then return ns.log(L.COMBAT) end
+	local list = ns.Actions.ForeignShadowSlots()
+	if not list[1] then return end
+	UI.Dialog():Open(window, {
+		text = string.format(L.TOUCH_FREE_TEXT, #list), sub = T.FreeText(list), buttons = { L.TOUCH_FREE_CLEAR, L.CANCEL }, back = 2,
+		on1 = function()
+			local count, err = ns.Actions.ClearForeign(list)
+			if not count then return ns.log(err) end
+			ns.log(string.format(L.TOUCH_FREE_DONE, count))
+			-- Buttons waiting for a slot take one now.
+			ns.Fire("FCT_LAYOUT_CHANGED", "layout")
+		end,
+	})
+end
+
 local function refresh()
 	local c = config()
 	if not c then return end
@@ -314,6 +348,8 @@ local function refresh()
 	local used, total, full = slots()
 	counter:SetText(used and string.format(L.TOUCH_SLOTS, used, total) or "")
 	counter:SetFontObject(full and "GameFontRedSmall" or "GameFontHighlightSmall")
+	local foreign = #ns.Actions.ForeignShadowSlots()
+	freeButton:SetShown(foreign > 0)
 	B.FillLayerHeaders(headers, ns.Layout.Roles())
 	drawPreview(c)
 
@@ -342,6 +378,7 @@ local function refresh()
 			end
 		end
 	end
+	if foreign > 0 then nodes[#nodes + 1] = UI.Node(window, freeButton, freeSlots, { cursorX = 0, tip = { title = L.TOUCH_FREE, lines = { string.format(L.TOUCH_FREE_TIP, foreign) }, side = "right" } }) end
 	nodes[#nodes + 1] = UI.Node(window, onRow, function() set("enabled", not c.enabled) end, {
 		cursorX = 0, onFocus = function(on) onRow.wash:SetShown(on) end, tip = { title = L.TOUCH_ON, lines = { L.TOUCH_ONOFF_TIP }, side = "right" },
 	})
@@ -420,6 +457,12 @@ local function build()
 	counter = UI.Text(window, "GameFontHighlightSmall", 24, 32)
 	UI.Text(window, "GameFontDisableSmall", 24, 58, L.TOUCH_HINT)
 	window.counter = counter
+	freeButton = CreateFrame("Button", nil, window, "SharedButtonSmallTemplate")
+	freeButton:SetText(L.TOUCH_FREE)
+	freeButton:SetSize(freeButton:GetFontString() and freeButton:GetFontString():GetStringWidth() + 24 or 120, 22)
+	freeButton:SetPoint("LEFT", counter, "RIGHT", 12, 0)
+	freeButton:SetScript("OnClick", freeSlots)
+	freeButton:Hide()
 	headers = UI.Bindings.NewLayerHeaders(window)
 
 	preview = Mixin(CreateFrame("Frame", nil, window), UI.DrawingMixin)
@@ -456,7 +499,11 @@ local function build()
 		end
 		if key == "PAD4" then
 			local entries = { { id = "touchreset", name = L.TOUCH_RESET, detail = L.TOUCH_RESET_TIP, run = resetTouch } }
-			if region and region.layer then table.insert(entries, 1, healerMore(region)) end
+			if region and region.layer then
+				table.insert(entries, 1, healerMore(region))
+				local middle = UI.Bindings.RingMiddleMore(entryOf(region.row.side, region.row.index, region.layer))
+				if middle then table.insert(entries, 2, middle) end
+			end
 			UI.OpenMore(window, entries)
 			return true
 		end

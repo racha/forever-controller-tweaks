@@ -1,14 +1,18 @@
 -- Forever Controller Tweaks action rings (design/rings.md): radial menus of catalog actions, account-wide, opened from
 -- any routed face or D-pad cell (Face.lua) or touch button (Touch.lua) that holds the entry "ring:<id>".
 --
--- Storage: ns.db.rings = { nextId, list = { { id, name, icon, count, stick, show, style, slots = { [i] = { id, name, icon, kind } } } } }.
+-- Storage: ns.db.rings = { nextId, list = { { id, name, icon, count, stick, show, style, middle, slots = { [i] = { id, name, icon, kind } } } } }.
+-- Per character, the slot each ring fired last: ns.db.chars[char].ringLast[ring id] = { i, slot id } (healer rings by
+-- their "h<entry id>"); kept only while that slot still holds that action.
 -- axisSaved: the player's GamePadStickAxisButtons value while a held ring has it switched on by a saved write (a client
 -- that refuses the temp value), until put back.
 -- stick: which stick aims a held ring, "right", "left" or "dynamic" (opened from a D-pad cell: right; from a face
--- button cell: left, the hand that isn't on the button). Touch rings are tapped.
+-- button cell: left, the hand that isn't on the button; from a stick press: the other stick). Touch rings are tapped.
 -- show: how a held ring stays up. "toggle": a press opens it and it stays until a slot is used, the button is pressed
 -- again or B; "hold": up only while the button is held, its release uses the slot aimed at or just closes.
 -- style: "full" (the game-menu radial wheel) or "compact" (the radial flyout, the aura and stance picker).
+-- middle: what letting go in the middle of a held ring does (and A with nothing aimed). "cancel": nothing; "last":
+-- the slot this character used last fires, and the ring's buttons show its icon (Rings.LiveIcon).
 -- A slot keeps the catalog id, so a spell group resolves to each character's own highest rank. icon nil: the first
 -- filled slot's icon.
 --
@@ -32,6 +36,9 @@
 --                         ring and fires it, as the native radial menu does; A fires the slot aimed at (or the kept
 --                         pick), nothing aimed keeps it open; B and the stick's press close;
 --   _held()               how many of the aiming stick's direction keys are down, and their names;
+--   _last(id)             the slot a middle release fires with middle "last": the last one used, if it still fires
+--                         (a healer place only while its unit can be helped); nil otherwise;
+--   _used(i)              a tapped slot of the open ring becomes its last (r<id>l, as every fire sets it);
 --   _toggle(id)           a touch tap: opens the ring, or closes it when it is the one open;
 --   _close()              hides it; _arm(ref, which, id, i) writes one slot's action on a button.
 -- No action slot is used: the actions fire through direct secure attributes (spell, item, toy, macrotext).
@@ -54,10 +61,13 @@ local SHOWS = { toggle = true, hold = true }
 Rings.SHOWS = { "toggle", "hold" }
 local STYLES = { full = true, compact = true }
 Rings.STYLES = { "full", "compact" }
+local MIDDLES = { cancel = true, last = true }
+Rings.MIDDLES = { "cancel", "last" }
 -- The names OnGamePadStick reports one physical stick by.
 Rings.AIM_NAMES = { right = { Right = true, Camera = true, Look = true }, left = { Left = true, Movement = true } }
 -- After a held ring closes its aiming stick is still pushed: kept from the game until it is back within RECENTRE of
--- the middle, at most HOLD_MAX seconds, so a reading that never settles can't block movement or the camera.
+-- the middle, at most HOLD_MAX seconds outside a cast, so a reading that never settles can't block movement or the
+-- camera.
 local RECENTRE, HOLD_MAX = 0.2, 1
 -- The native radial menu's selection threshold is 0.5; a ring cancels a little closer to the centre, so a thumb
 -- easing off as the button lets go still counts.
@@ -186,6 +196,37 @@ function Rings.Icon(ring)
 	return QUESTION
 end
 
+-- This character's last pick per ring id, made on first write; nil before the character is known.
+local function lastPicks(create)
+	local char = ns.db and ns.Face and ns.Face.CharDB()
+	if not char then return end
+	if create and type(char.ringLast) ~= "table" then char.ringLast = {} end
+	return type(char.ringLast) == "table" and char.ringLast or nil
+end
+
+-- The slot a ring fired last on this character, while that slot still holds the same action; else nil, and true when
+-- a stored pick no longer fits (the slot was edited or emptied, or the count shrank).
+local function lastIndex(ring)
+	local picks = lastPicks()
+	local pick = picks and picks[ring.id]
+	if not pick then return end
+	local i, slotId = pick[1], pick[2]
+	local slot = i <= ring.count and ring.slots[i]
+	if slot and slot.id == slotId then return i end
+	return nil, true
+end
+Rings.LastIndex = lastIndex
+
+-- The icon a ring's buttons show: with middle "last" and a last pick, that slot's (what a middle release fires);
+-- otherwise Rings.Icon.
+function Rings.LiveIcon(id)
+	local ring = Rings.Get(id)
+	if not ring then return QUESTION end
+	local i = ring.middle == "last" and lastIndex(ring)
+	local slot = i and ring.slots[i]
+	return slot and slot.icon or Rings.Icon(ring)
+end
+
 -- The catalog entries of the Rings category (Actions.lua): "Open ring: <name>".
 function Rings.Entries()
 	local out = {}
@@ -267,7 +308,7 @@ function Rings.New()
 	for _, ring in ipairs(rings.list) do taken[ring.name] = true end
 	local n = 1
 	while taken["Ring " .. n] do n = n + 1 end
-	local ring = { id = rings.nextId, name = "Ring " .. n, count = DEFAULT_SLOTS, stick = "right", show = "toggle", style = "full", slots = {} }
+	local ring = { id = rings.nextId, name = "Ring " .. n, count = DEFAULT_SLOTS, stick = "right", show = "toggle", style = "full", middle = "cancel", slots = {} }
 	rings.nextId = rings.nextId + 1
 	rings.list[#rings.list + 1] = ring
 	changed()
@@ -334,6 +375,16 @@ function Rings.SetStyle(id, style)
 	return changed()
 end
 
+-- middle: "cancel" or "last".
+function Rings.SetMiddle(id, middle)
+	local ring, err = editable(id)
+	if not ring then return nil, err end
+	if not MIDDLES[middle] then return nil, "unknown middle " .. tostring(middle) end
+
+	ring.middle = middle
+	return changed()
+end
+
 function Rings.SlotEntry(id, i)
 	local ring = Rings.Get(id)
 	return ring and ring.slots[i]
@@ -360,6 +411,9 @@ function Rings.Delete(id)
 	local list = store().list
 	for i = #list, 1, -1 do
 		if list[i] == ring then table.remove(list, i) end
+	end
+	for _, char in pairs(ns.db.chars or NONE) do
+		if type(char) == "table" and type(char.ringLast) == "table" then char.ringLast[id] = nil end
 	end
 	return changed()
 end
@@ -443,6 +497,9 @@ function Rings.Repair(db, fix)
 			-- Rings made before the setting have none: full, as they looked.
 			if ring.style ~= nil and not STYLES[ring.style] then fix(path .. ".style") end
 			if not STYLES[ring.style] then ring.style = "full" end
+			-- Rings made before the setting have none: cancel, as they worked.
+			if ring.middle ~= nil and not MIDDLES[ring.middle] then fix(path .. ".middle") end
+			if not MIDDLES[ring.middle] then ring.middle = "cancel" end
 			repairSlots(ring, path, fix)
 			seen[ring.id] = true
 			list[#list + 1] = ring
@@ -460,6 +517,39 @@ function Rings.Repair(db, fix)
 		row[key] = nil
 		fix("binding to deleted ring " .. id)
 	end)
+	-- The ring marker setting: true, false or nil (on).
+	if db.ringMarker ~= nil and type(db.ringMarker) ~= "boolean" then
+		db.ringMarker = nil
+		fix("ringMarker")
+	end
+	-- Last target (healerLast) is true on a binding in Healer mode, or not there.
+	for _, char in pairs(type(db.chars) == "table" and db.chars or NONE) do
+		for _, byCode in pairs(type(char) == "table" and type(char.cells) == "table" and char.cells or NONE) do
+			for code, row in pairs(type(byCode) == "table" and byCode or NONE) do
+				for layer, entry in pairs(type(row) == "table" and row or NONE) do
+					if type(entry) == "table" and entry.healerLast ~= nil and not (entry.healerLast == true and entry.healer) then
+						entry.healerLast = nil
+						fix("healerLast " .. tostring(code) .. " " .. tostring(layer))
+					end
+				end
+			end
+		end
+	end
+	-- A last pick: { slot index, slot id } of a ring that exists, or of a healer ring (its binding decides).
+	for name, char in pairs(type(db.chars) == "table" and db.chars or NONE) do
+		local last = type(char) == "table" and char.ringLast
+		if last ~= nil and type(last) ~= "table" then
+			char.ringLast = nil
+			fix("chars." .. tostring(name) .. ".ringLast")
+		end
+		for id, pick in pairs(type(last) == "table" and last or NONE) do
+			local good = type(pick) == "table" and type(pick[1]) == "number" and pick[1] % 1 == 0 and pick[1] >= 1 and pick[1] <= MAX_SLOTS and type(pick[2]) == "string"
+			if not (good and (seen[id] or type(id) == "string" and id:find("^h"))) then
+				last[id] = nil
+				fix("chars." .. tostring(name) .. ".ringLast." .. tostring(id))
+			end
+		end
+	end
 end
 
 ---------------------------------------------------------------------------------------------------------------------
@@ -548,7 +638,7 @@ local OPEN = ([[
 	if not n then return end
 	if mode == "hold" and self:IsShown() and self:GetAttribute("ps-ring") == id and self:GetAttribute("ps-mode") == "hold" then return self:RunAttribute("_close") end
 	local stick = self:GetAttribute("r" .. id .. "s")
-	if stick == "dynamic" then stick = kind == "face" and "left" or "right" end
+	if stick == "dynamic" then stick = (kind == "face" or kind == "rstick") and "left" or "right" end
 	local side = stick == "left" and "left" or "right"
 	self:SetAttribute("ps-aimside", side)
 	self:SetAttribute("ps-aim", stick == "left" and self:GetAttribute("ps-lstick") or self:GetAttribute("ps-rstick"))
@@ -678,11 +768,31 @@ local RELEASE = [[
 	local _, held = self:RunAttribute("_held")
 	local show = self:GetAttribute("r" .. id .. "h")
 	self:SetAttribute("ps-trace", format("release %s len=%.2f now=%s kept=%s down=%s show=%s", ref, len or -1, tostring(now), tostring(self:GetAttribute("ps-pick")), held, tostring(show)))
+	-- A Hold ring let go in the middle fires its last pick with middle "last"; a Toggle ring's release only opened it.
+	if pick == nil and show == "hold" then pick = self:RunAttribute("_last", id) end
 	if not pick and show ~= "hold" then return end
 	self:RunAttribute("_close")
 	if not pick then return end
 	self:RunAttribute("_arm", ref, "typerelease", id, pick)
+	if self:GetAttribute("r" .. id .. "t" .. pick) then self:SetAttribute("r" .. id .. "l", pick) end
 	self:SetAttribute("ps-trace", "fire " .. ref .. " slot " .. pick)
+]]
+
+-- With middle "last": the last pick, while it still fires (a healer place only while its unit can be helped).
+local LAST = [[
+	local id = ...
+	local i = self:GetAttribute("r" .. id .. "m") == "last" and self:GetAttribute("r" .. id .. "l")
+	if not (i and self:GetAttribute("r" .. id .. "t" .. i)) then return nil end
+	local unit = self:GetAttribute("r" .. id .. "u" .. i)
+	if unit and not (UnitExists(unit) and PlayerCanAssist(unit)) then return nil end
+	return i
+]]
+
+-- A tapped slot (index i) of the open ring is its last pick. Only a slot that fires is remembered, here and above.
+local USED = [[
+	local i = ...
+	local id = self:GetAttribute("ps-ring")
+	if id and i and self:GetAttribute("r" .. id .. "t" .. i) then self:SetAttribute("r" .. id .. "l", i) end
 ]]
 
 -- Each direction key is kept by name (ps-dn-<key>), not counted: a repeated press or a release the ring never saw the
@@ -707,6 +817,7 @@ local KEY = ([[
 		if down then return end
 		pick = self:RunAttribute("_pick")
 		if pick == nil then pick = self:GetAttribute("ps-pick") end
+		if pick == nil then pick = self:RunAttribute("_last", id) end
 	else
 		local now, len = self:RunAttribute("_pick", down and not self:GetAttribute("ps-pick") and key or nil)
 		if now ~= nil then self:SetAttribute("ps-pick", now or nil) end
@@ -720,6 +831,7 @@ local KEY = ([[
 	if not pick then return end
 	self:RunAttribute("_close")
 	self:RunAttribute("_arm", "key", "typerelease", id, pick)
+	if self:GetAttribute("r" .. id .. "t" .. pick) then self:SetAttribute("r" .. id .. "l", pick) end
 	self:SetAttribute("ps-trace", "fire key slot " .. pick)
 ]]):format(LET_GO * LET_GO, RIM * RIM)
 
@@ -741,7 +853,11 @@ local KEY_PRE = [[
 	self:SetAttribute("typerelease", nil)
 	self:GetFrameRef("ring"):RunAttribute("_key", button, down)
 ]]
-local SLOT_POST = [[self:GetFrameRef("ring"):RunAttribute("_close")]]
+local SLOT_POST = [[
+	local ring = self:GetFrameRef("ring")
+	ring:RunAttribute("_used", self:GetAttribute("ps-index"))
+	ring:RunAttribute("_close")
+]]
 local CATCH = [[self:GetFrameRef("ring"):RunAttribute("_close")]]
 -- Vehicles, override and possess bars and pet battles take the routed keys away (Face.lua), so a release could be
 -- lost: the ring closes there.
@@ -778,6 +894,9 @@ end
 
 -- The protected ring frame: Face and Touch set it as the "rings" frame ref of their buttons.
 function Rings.Frame() return frame end
+-- Whether ring id is open now (its buttons' markers hide meanwhile). ps-ring is set before the open shows the frame and
+-- cleared by every close.
+function Rings.IsOpen(id) return frame:GetAttribute("ps-ring") == id end
 function Rings.Slot(i) return slots[i] end
 
 -- Snippets, frame refs and the state driver are protected calls: written once, out of combat.
@@ -792,6 +911,8 @@ local function setup()
 	frame:SetAttribute("_pick", PICK)
 	frame:SetAttribute("_key", KEY)
 	frame:SetAttribute("_held", HELD)
+	frame:SetAttribute("_last", LAST)
+	frame:SetAttribute("_used", USED)
 	frame:SetAttribute("ps-keyn", #KEYS.right)
 	frame:SetAttribute("_toggle", TOGGLE)
 	for m, prefix in ipairs(MODS) do frame:SetAttribute("ps-mod" .. m, prefix) end
@@ -817,6 +938,7 @@ local function setup()
 	for i, slot in ipairs(slots) do
 		SecureHandlerSetFrameRef(frame, "slot" .. i, slot)
 		SecureHandlerSetFrameRef(slot, "ring", frame)
+		slot:SetAttribute("ps-index", i)
 		frame:WrapScript(slot, "OnClick", SLOT_PRE, SLOT_POST)
 	end
 	for n = MIN_SLOTS, MAX_SLOTS do
@@ -854,6 +976,11 @@ local function write(ring, index)
 	frame:SetAttribute(prefix .. "s", ring.stick)
 	frame:SetAttribute(prefix .. "h", ring.show)
 	frame:SetAttribute(prefix .. "y", ring.style)
+	frame:SetAttribute(prefix .. "m", ring.middle == "last" and "last" or nil)
+	-- The snippets keep the last pick from here on; one that no longer fits is dropped.
+	local last, stale = lastIndex(ring)
+	if stale then lastPicks()[ring.id] = nil end
+	frame:SetAttribute(prefix .. "l", last)
 	for i = 1, ring.count do
 		local slot = ring.slots[i]
 		local actionType, key, value = Rings.Attributes(slot and index[slot.id])
@@ -869,11 +996,13 @@ end
 -- mode, or in combat for a ring not written yet.
 function Rings.HealerRing(entry)
 	if not (entry and Rings.HealerAllowed(entry)) then return end
-	local id = "h" .. tostring(entry.id):gsub("%W", "")
+	-- A binding with Last target (healerLast) gets its own ring: the middle is the ring's, and %W keeps "_" unique.
+	local id = "h" .. tostring(entry.id):gsub("%W", "") .. (entry.healerLast and "_last" or "")
 	if InCombatLockdown() then return written[id] and id or nil end
 	local slots = {}
 	for i = 1, #HEALER_UNITS do slots[i] = entry end
-	local ring = { id = id, name = entry.name, icon = entry.icon, count = #HEALER_UNITS, stick = "dynamic", show = "hold", style = "compact", healer = true, entry = entry, units = HEALER_UNITS, slots = slots }
+	local middle = entry.healerLast and "last" or "cancel"
+	local ring = { id = id, name = entry.name, icon = entry.icon, count = #HEALER_UNITS, stick = "dynamic", show = "hold", style = "compact", middle = middle, healer = true, entry = entry, units = HEALER_UNITS, slots = slots }
 	healers[id] = ring
 	setup()
 	write(ring, { [entry.id] = ns.Actions.Find(entry.id) })
@@ -897,6 +1026,8 @@ local function applyNow()
 		frame:SetAttribute("r" .. id .. "s", nil)
 		frame:SetAttribute("r" .. id .. "h", nil)
 		frame:SetAttribute("r" .. id .. "y", nil)
+		frame:SetAttribute("r" .. id .. "m", nil)
+		frame:SetAttribute("r" .. id .. "l", nil)
 		for i = 1, MAX_SLOTS do
 			for _, part in ipairs({ "t", "k", "v", "u" }) do frame:SetAttribute("r" .. id .. part .. i, nil) end
 		end
@@ -967,9 +1098,32 @@ local function stickOffset(index)
 	return stick and stick.x * stick.x + stick.y * stick.y or 0
 end
 
+-- A heal aimed with the left stick is still casting when its ring closes: moving would break it, so HOLD_MAX doesn't
+-- run while the player casts or channels. Plain flags from the player's own spellcast events (registered for "player",
+-- so no unit is compared); their payloads and UnitCastingInfo may be secret and are never read. FAILED and SUCCEEDED
+-- are left out: a spell pressed mid-cast fails, and an off-GCD instant (a trinket) succeeds, without ending the cast in
+-- progress; STOP always follows a cast.
+-- ponytail: a STOP lost to a loading screen would keep the flag up; the flags reset on entering the world, and the stick
+-- coming back to the middle still frees it.
+local CAST_EVENTS = {
+	UNIT_SPELLCAST_START = { "casting", true }, UNIT_SPELLCAST_STOP = { "casting" }, UNIT_SPELLCAST_INTERRUPTED = { "casting" },
+	UNIT_SPELLCAST_CHANNEL_START = { "channelling", true }, UNIT_SPELLCAST_CHANNEL_STOP = { "channelling" },
+	UNIT_SPELLCAST_EMPOWER_START = { "channelling", true }, UNIT_SPELLCAST_EMPOWER_STOP = { "channelling" },
+}
+local busy = {}
+local validEvent = C_EventUtils and C_EventUtils.IsEventValid
+for event in pairs(CAST_EVENTS) do
+	if not validEvent or validEvent(event) then hold:RegisterUnitEvent(event, "player") end
+end
+hold:SetScript("OnEvent", function(_, event)
+	local flag = CAST_EVENTS[event]
+	if flag then busy[flag[1]] = flag[2] end
+end)
+ns.On("PLAYER_ENTERING_WORLD", function() busy = {} end)
+
 hold:SetScript("OnGamePadStick", function(self, stick) return not Rings.AIM_NAMES[self.side][stick] end)
 hold:SetScript("OnUpdate", function(self, elapsed)
-	self.left = self.left - elapsed
+	if not (busy.casting or busy.channelling) then self.left = self.left - elapsed end
 	if self.left <= 0 or stickOffset(self.index) <= RECENTRE * RECENTRE then self:Hide() end
 end)
 
@@ -1024,12 +1178,26 @@ end
 -- Remap's failsafe asks this: held while the ring aims, until its restore has run (in combat Remap can't apply anyway).
 local function stillHeld() return frame:GetAttribute("ps-mode") == "hold" or restoring or InCombatLockdown() end
 
+-- A held button our controller config moves off its native key (L1 as the right modifier), by its physical name.
+local function movedHeld()
+	for phys, key in pairs(ns.Remap.Outputs and ns.Remap.Outputs() or NONE) do
+		local ok, down = pcall(IsKeyDown, key)
+		if key ~= ns.Layout.NATIVE_KEY[phys] and ok and down then return phys end
+	end
+end
+
 local function engage()
 	if engaged or not ns.db then return end
 	engaged = true
 	ns.Remap.Hold(true, stillHeld)
 	local current = GetCVar(AXIS)
 	if current == "1" then return end
+	-- Every change of the CVar drops our controller config until Remap writes it again (GetConfig reads nil after each
+	-- one), so the pad runs native meanwhile. A moved button held across that went down as its role's key and comes up
+	-- as its native one: the role's binding never sees the release, and with a crossbar modifier the Gamepad UI keeps
+	-- that bar. With one held the keys stay off; the button's release and A still fire.
+	local moved = movedHeld()
+	if moved then return ns.debug("rings: stick keys left off, %s (moved by the layout) is held", moved) end
 	temp = setTemp()
 	if temp then return end
 	if ns.db.rings.axisSaved == nil then ns.db.rings.axisSaved = current end
@@ -1057,6 +1225,7 @@ local function restoreAxis()
 end
 
 frame:HookScript("OnAttributeChanged", function(_, name, value)
+	if name == "ps-ring" then return ns.Fire("FCT_RING_MARKS") end
 	if name ~= "ps-mode" then return end
 	if value == "hold" then return engage() end
 	if not engaged or restoring then return end
@@ -1065,6 +1234,22 @@ frame:HookScript("OnAttributeChanged", function(_, name, value)
 	C_Timer.After(0, restoreAxis)
 end)
 ns.On("PLAYER_REGEN_ENABLED", restoreAxis)
+
+-- Every pick the snippets record (r<id>l, in combat too) is saved for this character with its slot's action, and the
+-- buttons showing the ring's live icon redraw. A cleared attribute (applyNow rewriting) changes nothing.
+frame:HookScript("OnAttributeChanged", function(_, name, value)
+	local key = type(value) == "number" and name:match("^r(.+)l$")
+	if not key then return end
+	local id = tonumber(key) or key
+	local ring = Rings.Get(id) or healers[id]
+	local slot = ring and ring.slots[value]
+	local picks = slot and lastPicks(true)
+	if not picks then return end
+	local old = picks[id]
+	if old and old[1] == value and old[2] == slot.id then return end
+	picks[id] = { value, slot.id }
+	ns.Fire("FCT_RING_LAST", id)
+end)
 -- After the repair above (FCT_READY handlers run in order).
 ns.On("FCT_READY", restoreAxis)
 

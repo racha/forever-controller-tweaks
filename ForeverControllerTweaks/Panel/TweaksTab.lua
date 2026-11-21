@@ -3,7 +3,9 @@
 -- value per row: a checkbox (A toggles; left/right move between the columns), a dropdown (left/right step it, A rounds
 -- it) or a slider (left/right step it). A dropdown or slider at its end hands left/right back, so the next press moves
 -- to the next column: the Rumble column is never a dead end. Y opens More (Undo, Learn, the minimap button...).
--- Everything goes through ns.Tweaks (Tweaks.lua): Get / Set, saved in ForeverControllerTweaksDB.tweaks.
+-- Everything goes through ns.Tweaks (Tweaks.lua): Get / Set, saved in ForeverControllerTweaksDB.tweaks. The one
+-- exception, Sync between machines at the end of Controller, is Sync & backup's own switch (db.sync.on, this machine
+-- only, never synced).
 local _, ns = ...
 local UI = ns.UI
 local L = UI.L
@@ -12,11 +14,13 @@ local S = {}
 UI.TweaksTab = S
 
 local T = {
-	TAB = "Tweaks", TITLE = "Controller Tweaks · Tweaks", HINT = "Small conveniences for every character. Each one is off until you turn it on.",
+	TAB = "Tweaks", TITLE = "Controller Tweaks · Tweaks", HINT = "Small conveniences for every character. Most are off until you turn them on.",
 	TEST = "Test", BAGS = "Bags & vendors", NPCS = "Quests & NPCs", SOCIAL = "Group & social", CONTROLLER = "Controller", GEAR = "Loot & gear",
 	RUMBLE = "Rumble",
 	CHOICES = {
 		lightBar = { default = "Game default", class = "Class colour", custom = "Custom" },
+		-- The stick presses by this pad's own glyph names (L3 / LS).
+		sortKey = setmetatable({ off = "Off" }, { __index = function(_, code) return UI.Name(code) end }),
 		pattern = {
 			off = "Off", tap = "Tap", double = "Double tap", triple = "Triple tap", long = "Long buzz", heartbeat = "Heartbeat",
 			ramp = "Ramp up", fade = "Fade out",
@@ -28,6 +32,7 @@ local T = {
 	},
 	ROWS = {
 		sortBags = { "Sort bags button", "A Sort button on your bags. With the controller: Clean Up in the bag menu, or the picker\'s Sort bags action." },
+		sortKey = { "Sort bags key", "While your bags are open, this stick press sorts them. Bags closed: it works as usual. L3 (default), R3 or Off." },
 		sellJunk = { "Sell junk", "Sells your grey items when you talk to a merchant." },
 		repair = { "Repair", "Repairs your gear when you talk to a merchant who repairs." },
 		repairGuild = { "Use guild funds first", "Pays from the guild bank when the guild allows it, else from your own money." },
@@ -71,9 +76,9 @@ local ROW_W, ROW_H, ROW_PITCH, SUB_INDENT, CONTROL_END, CHOICE_W, SLIDER_W, SLID
 local RUMBLE_ROWS = { "rumble", "rumbleStrength" }
 for _, group in ipairs(ns.Tweaks.RUMBLE_GROUPS) do RUMBLE_ROWS[#RUMBLE_ROWS + 1] = "rumble:" .. group end
 local COLUMNS = {
-	{ side = "right", sections = { { T.BAGS, { "sortBags", "sellJunk", "repair", "repairGuild", "buyStack" } }, { T.NPCS, { "skipGossip", "learnAll", "openMail" } } } },
+	{ side = "right", sections = { { T.BAGS, { "sortBags", "sortKey", "sellJunk", "repair", "repairGuild", "buyStack" } }, { T.NPCS, { "skipGossip", "learnAll", "openMail" } } } },
 	{ side = "right", sections = { { T.RUMBLE, RUMBLE_ROWS } } },
-	{ side = "left", sections = { { T.CONTROLLER, { "battery", "batteryIcon", "rareAlert", "lightBar", "lightColor", "combatFlash" } } } },
+	{ side = "left", sections = { { T.CONTROLLER, { "battery", "batteryIcon", "rareAlert", "lightBar", "lightColor", "combatFlash", "syncOn" } } } },
 	{ side = "left", sections = { { T.GEAR, { "fastLoot", "passUnusable", "upgradeArrows", "wearRewards" } }, { T.SOCIAL, { "acceptInvites", "declineDuels", "acceptRes", "whisperAlert" } } } },
 }
 -- A sub-row: its label is indented. A row in IDLE greys while the row above doesn't use it.
@@ -102,6 +107,14 @@ for _, group in ipairs(ns.Tweaks.RUMBLE_GROUPS) do
 	T.CHOICES[key] = T.CHOICES.pattern
 end
 TEST.rumbleStrength = function() ns.Tweaks.PlayPattern("double", nil, "test strength") end
+-- The same state and chat line as the switch in Sync & backup (Panel/Sync.lua); FCT_SYNC_CHANGED redraws both.
+CUSTOM.syncOn = {
+	get = function() return ns.Sync.Status().on end,
+	set = function(on)
+		ns.Sync.SetOn(on)
+		ns.log(on and L.SYNC_LINE_ON or L.SYNC_LINE_OFF)
+	end,
+}
 
 local function get(key)
 	local custom = CUSTOM[key]
@@ -116,7 +129,7 @@ local function set(key, value)
 	window:Refresh()
 end
 
-local function toggle(key) set(key, not ns.Tweaks.Get(key)) end
+local function toggle(key) set(key, not get(key)) end
 
 -- One step through a choice's options; false past an end (nothing changes), round with wrap (A).
 local function step(key, by, wrap)
@@ -208,6 +221,8 @@ local function build()
 	window = UI.NewWindow(geo.WIDTH, geo.HEIGHT)
 	window.tabs = UI.SideTabs(window, UI.TABS, index)
 	window:SetTitle(T.TITLE)
+	-- Panel/Sync.lua loads after this file; its strings are in L by now.
+	T.ROWS.syncOn = { L.SYNC_ON, L.SYNC_ON_TIP }
 	UI.Text(window, "GameFontDisableSmall", 24, 33, T.HINT)
 	for i, column in ipairs(COLUMNS) do
 		local x = X[i]
@@ -240,6 +255,8 @@ function S.Open()
 	if not window then build() end
 	UI.Show(window)
 end
+
+ns.On("FCT_SYNC_CHANGED", function() if window and window:IsShown() then UI.RefreshSoon(window) end end)
 
 -- The last side tab (Bindings, Touch, Keyboard, Rings, Tweaks, of those loaded).
 UI.AddTab({ "Interface\\Icons\\INV_Misc_Wrench_01", T.TAB, function() S.Open() end, tweaks = true, order = 5, prompt = T.TAB })

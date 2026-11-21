@@ -175,6 +175,8 @@ local function cell(name, key, parent, square)
 	b.SquareMask, b.CircleMask = mock({ parent = b, atlas = "SquareMask", shown = square }), mock({ parent = b, atlas = "CircleMask", shown = not square })
 	b.icon, b.SquareShadow = mock({ parent = b, file = 133000 }), mock({ parent = b, atlas = "squareslot-dropshadow", shown = square })
 	b.regions = { b.icon, b.normal, b.SquareShadow }
+	-- On TextOverlayContainer in the game, not one of the button's regions.
+	b.Count = mock({ parent = b })
 	return b
 end
 leftBar.Left = mock({ name = "leftBar.Left", parent = leftBar })
@@ -555,11 +557,13 @@ run()
 check(slotHidden(right.ActionButton4) and leftBar.Left.ActionButton1.ButtonIcon.NormalTexture.alpha == 0, "Jump on DU/L: Cross slot (base-layer mirror) and the cell's prompt hidden under ours")
 local cellArt = leftBar.Left.ActionButton1
 check(cellArt.icon.alpha == 0 and cellArt.normal.alpha == 0 and cellArt.SquareShadow.alpha == 0 and dpad.shadow.atlas == "squareslot-dropshadow", "Jump on DU/L: the cell's own art hidden, square drop shadow drawn by the mirror")
+check(cellArt.Count.alpha == 0, "Jump on DU/L: the slot's own stack count hidden under the mirror (food left under a routed entry)")
 for i = 1, 4 do right["ActionButton" .. i].w = nil end
 cells["DU/L"], cells["FT/R"] = nil, nil
 header.attrs["ps-key4"], header.attrs["ps-key5"] = nil, nil
 out = run()
 check(out["leftBar.Left.ActionButton1"] == nil and glyphAlpha(leftBar.Left.ActionButton1.ButtonIcon) == 3 and leftBar.Left.ActionButton1.icon:GetAlpha() == 1, "cell entry removed: mirror gone, prompt and cell art restored")
+check(leftBar.Left.ActionButton1.Count:GetAlpha() == 1, "cell entry removed: the slot's stack count back")
 
 -- A face action on a D-pad cell of the both-modifiers layer (reported: Inspect on L2+R2 + D-pad stopped the overlay):
 -- each direction mirrors that action's top-bar button on the bottom bar's D-pad slot, without an error.

@@ -52,7 +52,15 @@ UI.L = {
 	TOUCH_SHOW_TIP = "When the bars are on screen.",
 	TOUCH_SHOW_LABEL = "Show",
 	TOUCH_SLOTS = "Slots %d / %d",
-	TOUCH_FULL = "All %d touch slots are in use: clear a button first.",
+	TOUCH_FULL = "All %d hidden action slots are in use: a new action here runs without a live cooldown until one frees up.",
+	TOUCH_FREE = "Free up slots",
+	TOUCH_FREE_TIP = "Keyboard bars 6-8 hold %d action(s) of yours. Their slots are the hidden ones touch buttons and moved actions use.",
+	TOUCH_FREE_TEXT = "Clear %d action(s) from keyboard bars 6-8?",
+	TOUCH_FREE_SUB = "They are removed from those bars for good (the spells, items and macros themselves stay):",
+	TOUCH_FREE_MORE = "and %d more",
+	TOUCH_FREE_CLEAR = "Clear them",
+	TOUCH_FREE_DONE = "cleared %d action(s) from keyboard bars 6-8.",
+	TOUCH_NO_SLOT = "No hidden action slot was free for it: it works, but shows no live cooldown or charges until a slot frees up.",
 	TOUCH_SUB_LAYER = "%s · button %d · %s bar",
 	TOUCH_SIDE_TIP = "Which bar the settings below change.",
 	TOUCH_SIDE_LABEL = "Settings for",
@@ -110,6 +118,16 @@ UI.L = {
 	ROLE_SWAPPED = "%s is now %s; %s is now %s.",
 	PADDLE_SLOT = "Back paddle · the same on every page",
 	PADDLE_SUB = "%s · %s bar",
+	STICK_SLOT = "Stick press · the same on every page",
+	STICK_EMPTY = "Bars left empty do nothing while %s has an action.",
+	STICK_NATIVE = { L3 = "Clear every bar and %s auto-runs again.", R3 = "Clear every bar and %s pings again." },
+	STICK_NATIVE_CELL = "The game's own action for %s, the same on every bar. Put an action on any bar and %s is yours: bars left empty then do nothing.",
+	STICK_AUTORUN = "Auto-run",
+	CLEANUP_DONE = "cleanup: %d macro(s) of ours registered again, %d duplicate(s) deleted, %d slot(s) pointed at the kept copy, %d hidden slot(s) given back to a button, %d freed.",
+	CLEANUP_CANT = "cleanup can't run now: %s.",
+	CLEANUP_WHY = { combat = "you're in combat", cursor = "put down what the cursor is holding first", character = "your character isn't loaded yet", bars = "the action bars can't be read yet", macros = "the macro list isn't loaded yet" },
+	LEFTOVERS_CLEANED = "tidied up after lost settings: deleted %d duplicate FCT: macros and freed %d hidden action slots.",
+	STICK_PING = "Ping",
 	PADDLE_ROLE = "Role (in More)",
 	PADDLE_ROLE_TIP = "Give this paddle a role, or keep None to run actions with it.",
 	PADDLE_FOR_ACTIONS = "use it for actions",
@@ -124,6 +142,14 @@ UI.L = {
 	HEALER_KINDS = "Spells and items",
 	HEALER_GREY_TIP = "Only spells, spell groups and items can use it.",
 	HEALER_NO_RINGS = "Healer mode needs the Rings module. Turn it on in the AddOns list.",
+	HEALER_LAST_OFF = "Middle: Cancel",
+	HEALER_LAST_ON = "Middle: Last target",
+	HEALER_LAST_OFF_TIP = "Letting go in the middle casts nothing.\nLast target: it casts on the place you last healed with this button, like Party 2.\nIt remembers the place, not the person.\nIf that unit can't be helped now, nothing is cast.",
+	RING_MIDDLE_OFF = "Middle: Cancel",
+	RING_MIDDLE_ON = "Middle: Use last",
+	RING_MIDDLE_OFF_TIP = "Letting go in the middle of this ring does nothing.\nUse last: the slot you used last fires, and the button shows its icon.\nEvery button that opens this ring shares it, as the Rings tab's Middle row.",
+	RING_MIDDLE_ON_TIP = "Letting go in the middle of this ring uses the slot you used last, and the button shows its icon.\nCancel: letting go in the middle does nothing.\nEvery button that opens this ring shares it, as the Rings tab's Middle row.",
+	HEALER_LAST_ON_TIP = "Letting go in the middle casts on the place you last healed with this button, like Party 2.\nIt remembers the place, not the person.\nIf that unit can't be helped now, nothing is cast.\nCancel: letting go in the middle casts nothing.",
 	GUIDE_CONFIRM = "Detected · press again to confirm",
 	PRESET_TIP = "Sets every role at once.",
 	BUTTON_TIPS = { "Runs the first-start guide again.", "Teaches Controller Tweaks which raw input each shoulder, trigger and paddle sends.", "Puts back the game's default roles and face actions." },
@@ -1194,6 +1220,7 @@ local function dialogButton(parent)
 	button:SetDisabledFontObject("GameFontDisable")
 	return button
 end
+UI.DialogButton = dialogButton
 
 -- A confirm box in StaticPopup's art (UI-DialogBox-Background-Dark under the GameDialogBackgroundTop border, the
 -- dialog focus glow), built by the addon: StaticPopup_Show pushes Blizzard's popup binding set and the popup
@@ -1394,10 +1421,12 @@ function UI.Tooltip(owner, spec)
 	local side, left, right = spec.side, owner:GetLeft(), owner:GetRight()
 	local screen = UIParent:GetRight() and UIParent:GetRight() * UIParent:GetEffectiveScale() / owner:GetEffectiveScale()
 	local need = tip:GetWidth() + 8
-	if side ~= "left" and side ~= "below" and right and screen and right + need > screen and left and left - need >= 0 then side = "left"
+	if side ~= "left" and side ~= "below" and side ~= "under" and right and screen and right + need > screen and left and left - need >= 0 then side = "left"
 	elseif side == "left" and left and left - need < 0 and right and screen and right + need <= screen then side = "right" end
 	if side == "left" then tip:SetPoint("TOPRIGHT", owner, "TOPLEFT", -8, 0)
 	elseif spec.side == "below" then tip:SetPoint("TOPRIGHT", owner, "BOTTOMLEFT", -6, -8)
+	-- Under the owner, right edges aligned (What's new's checkbox row at the window's top right).
+	elseif spec.side == "under" then tip:SetPoint("TOPRIGHT", owner, "BOTTOMRIGHT", 0, -4)
 	else tip:SetPoint("TOPLEFT", owner, "TOPRIGHT", 8, 0) end
 	tip:SetScale(owner:GetEffectiveScale() / UIParent:GetEffectiveScale())
 	-- Every tooltip of ours belongs to the open window; others (the minimap AddOns menu) stay in TOOLTIP.

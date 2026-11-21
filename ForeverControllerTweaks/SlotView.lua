@@ -45,6 +45,38 @@ function SlotView.HealerBadge(frame, shown)
 	end
 	badge:SetShown(shown)
 end
+-- The ring marker (design/1.5.0.md 2): the game's crossbar flyout arrow (Blizzard_Flyout FlyoutButtonTemplate, the
+-- action button template's Arrow) on a button that opens a ring, pointing up 4 over its top edge, under the Healer
+-- badge. Made on first use.
+local MARKER_ATLAS, MARKER_W, MARKER_H, MARKER_OUT = "UI-HUD-ActionBar-Flyout", 18, 7, 4
+function SlotView.RingMarker(frame, shown)
+	local marker = frame.ringMarker
+	if not marker and not shown then return end
+	if not marker then
+		marker = frame:CreateTexture(nil, "OVERLAY", nil, 6)
+		marker:SetAtlas(MARKER_ATLAS)
+		marker:SetSize(MARKER_W, MARKER_H)
+		marker:SetPoint("TOP", frame, "TOP", 0, MARKER_OUT)
+		frame.ringMarker = marker
+	end
+	marker:SetShown(shown)
+end
+
+-- Whether a binding's entry wears the marker: it opens a ring, the setting is on (ns.db.ringMarker nil or true) and
+-- that ring isn't open now (the game hides a flyout's arrow while it is out).
+function SlotView.MarksRing(entry)
+	local id = entry and entry.kind == "ring" and tonumber(tostring(entry.id):match("^ring:(%d+)$"))
+	if not id or ns.db and ns.db.ringMarker == false then return false end
+	return not (ns.Rings and ns.Rings.IsOpen(id))
+end
+
+-- The icon a binding's entry shows: a ring's live icon (Rings.LiveIcon, the last used slot with Use last), else its own.
+function SlotView.EntryIcon(entry)
+	local id = entry and entry.kind == "ring" and tonumber(tostring(entry.id):match("^ring:(%d+)$"))
+	if id and ns.Rings then return ns.Rings.LiveIcon(id) end
+	return entry and entry.icon
+end
+
 -- Mask inset (template CircleMask/SquareMask), drop shadow distance (collapsed style), checked distance (set on the
 -- first expand and never reset, so every bar that has been focused shows it).
 local MASK_INSET, SHADOW_DISTANCE, CHECKED_DISTANCE = 3, 4, 4

@@ -181,7 +181,7 @@ ns.SlotView = { New = function(parent)
 	function view:SetShape(shape) self.shape = shape end
 	view.text = new(nil, view)
 	return view
-end, HealerBadge = function(frame, shown) frame.badge = shown end }
+end, HealerBadge = function(frame, shown) frame.badge = shown end, EntryIcon = function(entry) return entry and entry.icon end, RingMarker = function(frame, shown) frame.marker = shown end, MarksRing = function(entry) return not not (entry and entry.kind == "ring") end }
 for _, file in ipairs({ "Face.lua", "Actions.lua" }) do assert(loadfile(dir .. "/" .. file))("ForeverControllerTweaks", ns) end
 ns.Fire("ADDON_LOADED", "ForeverControllerTweaks")
 -- A module file as the game loads it: its own addon name and private table; it reads the core's namespace global.
@@ -219,18 +219,20 @@ check(touchReasons[#touchReasons] == "touch" and header.shown and Touch.Button("
 local first = Touch.Button("left", 1)
 check(first.parent.point[1] == "LEFT" and first.parent.point[4] == 24 and Touch.Button("right", 1).parent.point[4] == -24 and Touch.Button("left", 2).point[5] == -58, "touch: bars on the screen edges, buttons stacked size + gap")
 
--- Slots come from the allocator the routed cells use: no collision with a face shadow slot, each button its own.
--- A routed cell's shadow slot, as Face places it.
+-- Slots come from the allocator the routed cells use: a touch button with a routed cell's action shares that cell's
+-- slot, another action gets one of its own. A routed cell's shadow slot, as Face places it.
 local faceSlot = ns.Actions.Shadow("FB", "T", ns.Actions.Find("spell:133"))
 assert(Touch.SetEntry("left", 1, ns.Actions.Find("spell:133")))
 assert(Touch.SetEntry("right", 1, ns.Actions.Find("item:111")))
 local leftSlot, rightSlot = first.attrs.action, Touch.Button("right", 1).attrs.action
 local shadows = ns.db.chars["Ann-Realm"].shadow
-check(first.attrs.type == "action" and first.attrs.typerelease == "actionrelease" and W.slots[leftSlot].id == 133 and W.slots[rightSlot].id == 111, "touch: entries on their own action slots")
-check(leftSlot >= 145 and leftSlot <= 180 and rightSlot >= 145 and rightSlot <= 180 and faceSlot and leftSlot ~= faceSlot and rightSlot ~= faceSlot and leftSlot ~= rightSlot, "touch: no collision with the routed cells' slots")
-check(shadows[leftSlot].code == "TLT" and shadows[leftSlot].layer == 1 and shadows[faceSlot].code == "FB", "touch: owned per character, keyed apart")
+check(first.attrs.type == "action" and first.attrs.typerelease == "actionrelease" and W.slots[leftSlot].id == 133 and W.slots[rightSlot].id == 111, "touch: entries on action slots")
+check(faceSlot and leftSlot == faceSlot and rightSlot >= 145 and rightSlot <= 180 and rightSlot ~= faceSlot, "touch: Fireball shares the routed cell's slot, the Badge has its own")
+local users = shadows[leftSlot].users
+check(#users == 2 and users[1].code == "FB" and users[2].code == "TLT" and users[2].layer == 1 and shadows[rightSlot].users[1].code == "TRT", "touch: owned per character, the shared slot lists both")
 check(Touch.Entry("left", 1).id == "spell:133" and Touch.Entry("left", 2) == nil, "touch: Entry reads back")
 assert(ns.Actions.ReleaseShadow("FB", "T"))
+check(W.slots[leftSlot].id == 133 and ns.Actions.ShadowSlot("TLT", 1, "spell:133") == leftSlot and #shadows[leftSlot].users == 1, "touch: the routed cell gives it back, the touch button keeps the slot")
 -- The native look: a SlotView over the whole button on the button's slot; a tap presses it (pushed frame only).
 local view = first.view
 check(view and view.parent == first and view.anchor == first and view.slot == leftSlot and view.fallback == ns.Actions.Find("spell:133").icon, "touch: the view covers the button and draws its slot")
@@ -265,14 +267,20 @@ W.slots[leftSlot] = nil
 assert(Touch.SetEntry("left", 1, nil))
 check(W.slots[moved] == nil and shadows[moved] == nil and first.attrs.type == nil, "touch: cleared button gives its slot back")
 check(view.slot == nil and view.fallback == nil, "touch: a cleared button draws empty")
--- No free slot left on bars 6-8: refused with the allocator's reason, nothing stored.
+-- No free slot left on bars 6-8: stored anyway, the button runs the entry's macro text (no live cooldown) and says so;
+-- once a slot frees up, the next apply places it.
 local filled = {}
 for slot = 145, 180 do
 	if not W.slots[slot] then W.slots[slot], filled[#filled + 1] = { kind = "spell", id = 4321 }, slot end
 end
-local _, fullErr = Touch.SetEntry("left", 4, ns.Actions.Find("spell:133"))
-check(tostring(fullErr):find("No free action slot", 1, true) and Touch.Entry("left", 4) == nil, "touch: bars 6-8 full, refused")
+local fourth = Touch.Button("left", 4)
+check(Touch.SetEntry("left", 4, ns.Actions.Find("spell:133")) and Touch.Entry("left", 4).id == "spell:133", "touch: bars 6-8 full, stored anyway")
+check(fourth.attrs["ps-action-T"] == nil and fourth.attrs["ps-macro-T"] == "/cast Fireball" and Touch.WithoutSlot("left", 4, "T"), "touch: full, it runs as macro text and knows it has no slot")
+check(not Touch.WithoutSlot("left", 2, "T") and not Touch.WithoutSlot("left", 5, "T"), "touch: a face action or an empty layer never counts as slotless")
 for _, slot in ipairs(filled) do W.slots[slot] = nil end
+ns.Fire("PLAYER_ENTERING_WORLD")
+check(fourth.attrs["ps-action-T"] and W.slots[fourth.attrs["ps-action-T"]].id == 133 and not Touch.WithoutSlot("left", 4, "T"), "touch: a slot free again, placed on the next apply")
+assert(Touch.SetEntry("left", 4, nil))
 -- Cleared with the Gamepad UI off: the slot is kept until it is on again.
 W.ui = false
 ns.Fire("CVAR_UPDATE", "InputDeviceInterfaceStyle")
@@ -377,7 +385,7 @@ assert(Touch.SetEntry("left", 1, ns.Actions.Find("item:111"), "L"))
 assert(Touch.SetEntry("left", 1, ns.Actions.Find("face:jump"), "B"))
 check(not Touch.SetEntry("left", 1, ns.Actions.Find("item:111"), "X") and Touch.Entry("left", 1, "L").id == "item:111" and Touch.Entry("left", 1).id == "spell:133", "touch: Entry and SetEntry per layer, T by default")
 local slotT, slotL = btn.attrs["ps-action-T"], btn.attrs["ps-action-L"]
-check(slotT and slotL and slotT ~= slotL and W.slots[slotL].id == 111 and shadows[slotL].code == "TLL" and shadows[slotL].layer == 1, "touch: a slot per filled layer, keyed side + layer")
+check(slotT and slotL and slotT ~= slotL and W.slots[slotL].id == 111 and shadows[slotL].users[1].code == "TLL" and shadows[slotL].users[1].layer == 1, "touch: a slot per filled layer, keyed side + layer")
 check(btn.attrs["ps-ileftmod"] == 14 and btn.attrs["ps-irightmod"] == 15, "touch: the crossbar modifiers' pad indexes for the snippet")
 W.combat = true
 hold()
@@ -433,18 +441,22 @@ ns.SetPanelOpen(false)
 assert(Touch.SetEntry("left", 3, nil, "L"))
 
 -- Slot accounting: touch layers and routed cells share bars 6-8's 36 slots; the cap is reported, then enforced.
+assert(Touch.SetEntry("left", 2, nil))
 local used, free, total = Touch.SlotsUsed()
-local faceSlot2 = ns.Actions.Shadow("FB", "T", ns.Actions.Find("spell:133"))
+local faceSlot2 = ns.Actions.Shadow("FB", "T", ns.Actions.Find("game:sit"))
 local used2, free2 = Touch.SlotsUsed()
 check(total == 36 and used2 == used + 1 and free2 == free - 1 and faceSlot2 ~= slotT and faceSlot2 ~= slotL, "touch: SlotsUsed counts routed cells and touch layers in one range")
+check(ns.Actions.Shadow("FR", "T", ns.Actions.Find("spell:133")) == slotT and Touch.SlotsUsed() == used2, "touch: a routed cell with a touch layer's action shares its slot, counted once")
+assert(ns.Actions.ReleaseShadow("FR", "T"))
+assert(ns.Actions.ReleaseShadow("FB", "T"))
 local blocked = {}
 for slot = 145, 180 do
 	if not W.slots[slot] then W.slots[slot], blocked[#blocked + 1] = { kind = "spell", id = 4321 }, slot end
 end
-local _, capErr = Touch.SetEntry("left", 1, ns.Actions.Find("spell:133"), "R")
-check(select(2, Touch.SlotsUsed()) == 0 and tostring(capErr):find("none is free", 1, true) and Touch.Entry("left", 1, "R") == nil, "touch: no free slot: a clear reason, nothing stored")
+check(Touch.SetEntry("left", 1, ns.Actions.Find("game:sit"), "R") and select(2, Touch.SlotsUsed()) == 0 and Touch.WithoutSlot("left", 1, "R"), "touch: no free slot: stored, running without a slot")
 for _, slot in ipairs(blocked) do W.slots[slot] = nil end
-assert(ns.Actions.ReleaseShadow("FB", "T"))
+assert(Touch.SetEntry("left", 1, nil, "R"))
+assert(Touch.SetEntry("left", 2, ns.Actions.Find("game:sit")))
 assert(Touch.SetEntry("left", 1, nil, "L"))
 check(W.slots[slotL] == nil and shadows[slotL] == nil and btn.attrs["ps-action-L"] == nil, "touch: an emptied layer gives its slot back")
 
@@ -508,7 +520,7 @@ W.char = "Bob"
 ns.Fire("PLAYER_ENTERING_WORLD")
 local bob = Touch.Config()
 check(bob.sides.left.count == 4 and bob.sides.right.size == 40 and bob.sides.right.alpha == 0.8 and bob.sides.left.inset == 10 and bob.count == nil and bob.enabled and bob.show == "always", "touch: migration: old settings on both sides")
-check(Touch.Entry("left", 2).id == "spell:133" and Touch.Entry("left", 2, "L") == nil and ns.db.chars["Bob-Realm"].shadow[170].code == "TLT", "touch: migration: the entry is T, its slot keyed for T")
+check(Touch.Entry("left", 2).id == "spell:133" and Touch.Entry("left", 2, "L") == nil and ns.Actions.ShadowSlot("TLT", 2, "spell:133") == 170, "touch: migration: the entry is T, its slot keyed for T")
 check(bob.sides.left.showEmpty == true and bob.sides.right.showEmpty == true and bob.showEmpty == nil and bob.sides.left.shape == "circle", "touch: migration: the old global showEmpty on both sides, circles")
 -- A config already per side but with the global showEmpty of the build before: copied to both sides once.
 ns.db.chars["Cat-Realm"] = { touch = { enabled = false, show = "gamepad", showEmpty = true, sides = { left = { count = 3, showEmpty = false }, right = { count = 2 } }, bars = {} } }

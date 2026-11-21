@@ -352,7 +352,7 @@ local function repairMacros(macros, path, fix)
 	end
 end
 
-local CHAR_TABLES = { highest = 1, shadow = 1, cells = 3, faceEntries = 2 }
+local CHAR_TABLES = { highest = 1, shadow = 1, placed = 1, cells = 3, faceEntries = 2 }
 -- The per-character migrations (ns.MigrateChar): legacyFaceDone (Face, PS:Back/Inspect macros to routed cells),
 -- routedUnderDone (Face, FCT: macros left under routed cells), macroPrefixDone (Actions, PS: macros renamed FCT:).
 local CHAR_FLAGS = { "legacyFaceDone", "routedUnderDone", "macroPrefixDone" }
@@ -401,6 +401,8 @@ end
 local function loadDB()
 	local db = asTable(ForeverControllerTweaksDB)
 	local fresh = next(db) == nil
+	-- A first install, not an update: What's new (Panel/WhatsNew.lua) shows nothing then.
+	ns.freshDB = fresh
 	-- 0, negative, fractional, NaN or infinite counts as the first version (inf % 1 and NaN % 1 are NaN).
 	local version = db.version
 	if type(version) ~= "number" or version < 1 or version % 1 ~= 0 then db.version = fresh and VERSION or 1 end
@@ -456,7 +458,8 @@ local HELP = "/fct (or /controllertweaks) opens the settings; so do L2 + R2 + Cr
 	.. " | setup (the first-run guide) | detect (press-each-button controller setup) | family playstation|xbox|switch|reset"
 	.. " | preset native|split | role <L1 R1 L2 R2 P1-P4> <leftmod rightmod friendly hostile none>"
 	.. " | face <bottom right left top> <interact inspect back jump> | learn <L1 R1 L2 R2 P1-P4>|cancel | reset (the layout)"
-	.. " | release (gives back every slot and macro before uninstalling) | status | selftest | ringlog | debug on|off | help"
+	.. " | whatsnew (what's new in this version; turns it back on) | cleanup (finds duplicate FCT: macros and stray hidden slots and tidies them)"
+	.. " | sync (status; now, on, off, undo) | export | import | release (gives back every slot and macro before uninstalling) | status | selftest | ringlog | debug on|off | help"
 
 function ns.commands.help() ns.log(HELP) end
 

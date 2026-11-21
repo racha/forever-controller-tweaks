@@ -123,4 +123,65 @@ for _, code in ipairs({ "P1", "P2", "P3", "P4" }) do
 end
 UI.Bindings.EndGuided()
 check(rowOf("P1").kind == "slot", "guided mode over: action row again")
+-- L3 / R3 while nothing of ours holds them: every bar shows the game's own binding (core context), its prompt name
+-- and gold art like a reserved face cell; an atlas the client lacks falls back to the stick's glyph. Once a bar holds
+-- an action the stick is ours: that cell shows it and the others are empty again.
+local NATIVE = { PADLSTICK = "TOGGLEAUTORUN", PADRSTICK = "TOGGLEPINGLISTENER" }
+GetBindingAction = function(key) return NATIVE[key] or "" end
+local getAtlas = C_Texture.GetAtlasInfo
+C_Texture.GetAtlasInfo = function(atlas) if atlas ~= "gamepad-actionbar-ping-up" then return getAtlas(atlas) end end
+b:Refresh()
+local l3, r3 = rowOf("L3"), rowOf("R3")
+local allNative = true
+for _, cell in ipairs(l3.cells) do allNative = allNative and cell.native and cell.icon.atlas == "gamepad-actionbar-autorun-up" and cell.icon.shown end
+check(l3.kind == "slot" and allNative and l3.name.text == "Auto-run", "L3 unbound: Auto-run on every bar, the gold art, its name")
+check(r3.cells[2].native and r3.cells[2].native.name == "Ping" and r3.cells[2].icon.atlas == "gamepad-ps-PADRSTICK-normal", "R3 unbound: Ping, the stick glyph where the art is missing")
+local tip = nodeOf(l3.cells[1]).tip()
+check(tip.title == "Auto-run" and tip.lines[#tip.lines]:find("the same on every bar", 1, true), "the native cell's tooltip says it's the game's own, on every bar")
+assert(ns.Face.SetCellEntry("L3", "R", { id = "face:jump", name = "Jump", icon = 7 }, 1))
+b:Refresh()
+l3 = rowOf("L3")
+check(l3.cells[3].entry and not l3.cells[3].native and not l3.cells[1].native and not l3.cells[1].icon.shown and rowOf("R3").cells[1].native, "L3 taken over: its own cell, the empty bars empty again; R3 still native")
+assert(ns.Face.SetCellEntry("L3", "R", nil))
+b:Refresh()
+check(rowOf("L3").cells[1].native, "every bar cleared: native again")
+GetBindingAction = function() return "" end
+b:Refresh()
+check(not rowOf("L3").cells[1].native and not rowOf("L3").cells[1].icon.shown, "nothing bound natively: empty")
+C_Texture.GetAtlasInfo = getAtlas
+
+-- A ring button's More: under the Healer mode row (greyed: a ring), the ring's own Middle, the Rings tab's setting
+-- shared by every button that opens it, stepped through Rings.SetMiddle. Not on a non-ring cell; none without Rings.
+local totems = { id = 4, name = "Totems", middle = "cancel", count = 4, slots = {} }
+local setMiddle = {}
+ns.Rings = {
+	Get = function(id) if id == 4 then return totems end end, Frame = function() return CreateFrame("Frame") end,
+	SetMiddle = function(id, middle) setMiddle[#setMiddle + 1] = id .. "=" .. middle totems.middle = middle return true end,
+	HealerAllowed = function() return nil, "This button holds a ring." end, LiveIcon = function() return 9 end, IsOpen = function() return false end,
+}
+assert(ns.Face.SetCellEntry("L3", "T", { id = "ring:4", name = "Open ring: Totems", icon = 9, kind = "ring" }, 1))
+b:Refresh()
+local function moreOf(cell)
+	b:Focus(nodeOf(cell))
+	W.press(b, "PAD4")
+	return pickerRows()
+end
+more = moreOf(rowOf("L3").cells[1])
+check(more[1] and more[1].name == "Healer mode: Off" and more[2] and more[2].name == "Middle: Cancel", "ring cell More: Healer mode (greyed), then Middle: Cancel")
+UI.ActionPicker.Choose(2)
+check(setMiddle[1] == "4=last" and totems.middle == "last", "picking it steps the ring's own Middle to Use last")
+b:Refresh()
+more = moreOf(rowOf("L3").cells[1])
+check(more[2] and more[2].name == "Middle: Use last", "the row follows the ring: Middle: Use last")
+UI.ActionPicker.Choose(2)
+check(setMiddle[2] == "4=cancel" and totems.middle == "cancel", "and back to Cancel")
+b:Refresh()
+more = moreOf(rowOf("L3").cells[2])
+check(more[2] == nil or more[2].name ~= "Middle: Cancel" and more[2].name ~= "Middle: Use last", "an empty cell's More has no Middle row")
+UI.ActionPicker.Close()
+check(UI.Bindings.RingMiddleMore({ id = "spell:133", kind = "spell" }) == nil and UI.Bindings.RingMiddleMore({ id = "ring:9", kind = "ring" }) == nil, "only for a ring that exists")
+assert(ns.Face.SetCellEntry("L3", "T", nil))
+ns.Rings = nil
+check(UI.Bindings.RingMiddleMore({ id = "ring:4", kind = "ring" }) == nil, "no row without the Rings module")
+
 io.stdout:write(("bindings_spec: %d checks passed\n"):format(checks))

@@ -352,14 +352,35 @@ end
 
 local function macroIndex(name) return findMacro(name) or findMacro(name, true) end
 
+-- How many macros carry this name (two can: a name shared by two can't tell their slots apart).
+local function macroCount(name)
+	local account, character = call(GetNumMacros)
+	local count = 0
+	for i = 1, account or 0 do if call(GetMacroInfo, i) == name then count = count + 1 end end
+	for i = MAX_ACCOUNT + 1, MAX_ACCOUNT + (character or 0) do if call(GetMacroInfo, i) == name then count = count + 1 end end
+	return count
+end
+
+-- The game keeps a macro body with a trailing newline (the macro editor counts it): bodies are compared without
+-- trailing whitespace.
+local function trimmed(body) return type(body) == "string" and (body:gsub("%s+$", "")) or nil end
+
+-- False while the macro list isn't there yet (at login it can read empty for a moment): nothing is dropped then.
+local function macrosLoaded()
+	local account, character = call(GetNumMacros)
+	return (account or 0) + (character or 0) > 0
+end
+
 local function macroEntries(add)
 	local account, character = call(GetNumMacros)
 	local indexes = {}
 	for i = 1, account or 0 do indexes[#indexes + 1] = i end
 	for i = MAX_ACCOUNT + 1, MAX_ACCOUNT + (character or 0) do indexes[#indexes + 1] = i end
+	-- Sync.lua's FCT:Sync macros hold settings, not actions.
+	local Sync = ns.Sync
 	for _, index in ipairs(indexes) do
 		local name, icon = call(GetMacroInfo, index)
-		if name and not ours(name) then add({ id = "macro:" .. name, category = "Macros", name = name, icon = icon or QUESTION, kind = "macro", payload = name }) end
+		if name and not ours(name) and not (Sync and Sync.IsSyncMacro(name, call(GetMacroBody, index))) then add({ id = "macro:" .. name, category = "Macros", name = name, icon = icon or QUESTION, kind = "macro", payload = name }) end
 	end
 end
 
@@ -496,23 +517,34 @@ end
 local function cleanup()
 	local used = usedMacros()
 	if not used then return end
+	-- An entry whose macro can't be found is dropped below: never while the list reads empty, or the macro would stay,
+	-- unregistered, and the next write would make "FCT:Bags 2" beside it.
+	if not macrosLoaded() then return ns.debug("macro cleanup: the macro list isn't loaded yet") end
 
+	-- A macro the addon took over rather than made here (adopted: made on another machine, whose SavedVariables know
+	-- its other characters) is only let go when unused, never deleted: an alt there may have it on its bars.
 	local account, character, me = registries()
 	for name, info in pairs(account) do
 		info.chars[me] = used[name] or nil
 		if not next(info.chars) then
-			local index = findMacro(name)
+			local index = not info.adopted and findMacro(name)
 			if index then DeleteMacro(index) end
 			account[name] = nil
 		end
 	end
-	for name in pairs(character) do
+	for name, info in pairs(character) do
 		if not used[name] then
-			local index = findMacro(name, true)
+			local index = not info.adopted and findMacro(name, true)
 			if index then DeleteMacro(index) end
 			character[name] = nil
 		end
 	end
+end
+
+-- Registers a macro of ours the registry doesn't hold (made on another machine, or before settings were lost).
+local function adoptMacro(name, index, id)
+	local account, character, me = registries()
+	if index > MAX_ACCOUNT then character[name] = { id = id, adopted = true } else account[name] = { id = id, chars = { [me] = true }, adopted = true } end
 end
 
 -- Builds before the registry made these face actions as unregistered macros. Their bodies, as the addon wrote them:
@@ -545,16 +577,19 @@ function Actions.AdoptLegacy(slot)
 end
 
 local FULL = "Your macro slots are full (%d account, %d character). Delete a macro to put game actions like %s on the crossbar."
+-- Leftovers from lost settings are taken back before the first write of a session (below).
+local adoptOnce
 
 -- The index of the addon's macro for a game entry, made if needed. A name the player already uses is skipped
 -- ("FCT:Bags" taken -> "FCT:Bags 2").
 local function ensureMacro(entry)
+	adoptOnce()
 	local account, character, me = registries()
 	local id, payload = entry.id, entry.payload
 	-- Reuse: the cleanup after the assign flags this character.
 	-- An older build may have written another body: brought up to date first.
 	local function current(index)
-		if call(GetMacroBody, index) ~= payload.text then EditMacro(index, nil, nil, payload.text) end
+		if trimmed(call(GetMacroBody, index)) ~= trimmed(payload.text) then EditMacro(index, nil, nil, payload.text) end
 		return index
 	end
 	for name, info in pairs(account) do
@@ -566,13 +601,20 @@ local function ensureMacro(entry)
 		if index then return current(index) end
 	end
 
+	-- A macro the registry doesn't know: made on another machine (macros and bars follow the account, SavedVariables
+	-- stay on each machine), or before settings were lost, or dropped while the macro list wasn't loaded. One of our
+	-- names, our exact text, no one else's entry and the only macro of that name: registered and used, never copied
+	-- (that copy was the "FCT:Bags 2" .. "FCT:Bags 9" leak).
 	local name
 	for n = 1, 9 do
 		local candidate = n == 1 and payload.macro or (payload.macro:sub(1, 14) .. " " .. n)
-		if not macroIndex(candidate) then
-			name = candidate
-			break
+		local index = macroIndex(candidate)
+		if index and not ours(candidate) and macroCount(candidate) == 1 and trimmed(call(GetMacroBody, index)) == trimmed(payload.text) then
+			adoptMacro(candidate, index, id)
+			ns.debug("macro %s taken back for %s", candidate, id)
+			return index
 		end
+		if not index and not name then name = candidate end
 	end
 	if not name then return nil, "Controller Tweaks couldn't find a free macro name for " .. entry.name .. "." end
 
@@ -637,6 +679,8 @@ local HOLDING = "Put down what the cursor is holding first."
 local ROUTED = "%s needs press and release, which a crossbar slot can't send: Controller Tweaks routes it on this button instead."
 
 local NOT_EMPTY = "That action slot isn't free after all; Controller Tweaks left it as it was."
+-- Shadow slots' synced list (below): a cleared slot leaves it.
+local forget
 
 -- Picks entry up and places it in slot. guard (shadow slots): the slot must be empty or hold what the addon placed
 -- (expected); if PlaceAction hands back anything else, it goes back into the slot and nothing is deleted.
@@ -678,6 +722,7 @@ function Actions.Clear(slot)
 		PickupAction(slot)
 		ClearCursor()
 	end
+	forget(slot)
 	cleanup()
 	local tracked = highestSlots()
 	if tracked then tracked[slot] = nil end
@@ -686,13 +731,55 @@ end
 
 -- Shadow slots: a routed cell's entry that a slot can hold also sits in a spare action slot, so the router and its
 -- click catcher fire it natively (UseAction: hold-to-cast, empower, flyouts) and it draws every native state.
--- db.chars[char].shadow[slot] = { code, layer, id, holds }: holds is what the addon placed (kind:id, a macro by name),
--- so a slot the player changed is noticed and given up without clearing it.
+-- db.chars[char].shadow[slot] = { holds, body, users = { { code, layer, id }, ... } }: holds is what the addon placed
+-- (kind:id, a macro by name), so a slot the player changed is noticed and given up without clearing it. Cells and touch
+-- buttons with the same action share one slot (users). These records stay on this machine.
+-- db.chars[char].placed[slot] = { holds, at }: every bars 6-8 slot the addon placed or took back on any machine
+-- (synced, Sync.lua; at = server time), valid while the slot still holds it. The take-back reuses or frees those no
+-- record here holds. No macro body: 36 of up to 255 letters would cost sync macros; a macro renamed elsewhere just
+-- stops matching and its entry drops.
+local repaired = setmetatable({}, { __mode = "k" })
+
+local function repairPlaced(char)
+	if type(char.placed) ~= "table" then char.placed = {} end
+	if repaired[char.placed] then return end
+	repaired[char.placed] = true
+	for slot, item in pairs(char.placed) do
+		if type(slot) ~= "number" or type(item) ~= "table" or type(item.holds) ~= "string" then char.placed[slot] = nil else item.body = nil end
+	end
+	-- Slots this machine held before the list existed.
+	for slot, info in pairs(char.shadow) do
+		if not char.placed[slot] and type(info.holds) == "string" then char.placed[slot] = { holds = info.holds, at = 0 } end
+	end
+end
+
+local function validUser(user) return type(user) == "table" and type(user.code) == "string" and user.layer ~= nil and type(user.id) == "string" end
+
+-- Before shared slots a record was one cell's { code, layer, id, holds, body }: that cell becomes its one user. Bad
+-- users go, and a record left without any.
+local function repairShadow(owned)
+	for slot, info in pairs(owned) do
+		if type(info.users) ~= "table" then info.users, info.code, info.layer, info.id = { { code = info.code, layer = info.layer, id = info.id } }, nil, nil, nil end
+		for i = #info.users, 1, -1 do if not validUser(info.users[i]) then table.remove(info.users, i) end end
+		if not info.users[1] then owned[slot] = nil end
+	end
+end
+
 local function shadowSlots()
 	local char = ns.Face.CharDB()
 	if not char then return nil end
 	char.shadow = char.shadow or {}
-	return char.shadow
+	repairShadow(char.shadow)
+	repairPlaced(char)
+	return char.shadow, char.placed
+end
+
+local function inRange(slot) return slot >= SHADOW_FIRST and slot <= SHADOW_LAST end
+
+-- A slot the addon no longer places: its synced entry goes.
+function forget(slot)
+	local _, placed = shadowSlots()
+	if placed and inRange(slot) then placed[slot] = nil end
 end
 
 local function signature(slot)
@@ -714,6 +801,8 @@ local function stamp(slot, info)
 	info.holds = signature(slot)
 	info.macro = nil
 	info.body = GetActionInfo(slot) == "macro" and macroBody(slot) or nil
+	local _, placed = shadowSlots()
+	if placed and inRange(slot) and placed[slot] ~= info then placed[slot] = { holds = info.holds, at = call(GetServerTime) or 0 } end
 end
 
 -- Still the addon's: what it placed, or the same spell at a higher rank (learning a rank moves the bars up to it) or
@@ -743,10 +832,39 @@ local function isGamepadSlot(slot)
 	return first and slot >= first and slot < first + STORAGE_SLOTS or false
 end
 
+-- The cell's slot: the slot, its record, the cell's user entry and its index there.
 local function ownedSlot(code, layer)
 	for slot, info in pairs(shadowSlots() or {}) do
-		if info.code == code and info.layer == layer then return slot, info end
+		for i, user in ipairs(info.users) do
+			if user.code == code and user.layer == layer then return slot, info, user, i end
+		end
 	end
+end
+
+-- True when slot already holds what placing entry would put there: the same spell (a spell group's top rank), item,
+-- toy or mount, the same macro of the player's, or one of our macros for that game action (our name, our text, the
+-- only macro of that name; registered if it wasn't). Pet spells and equipment sets aren't matched.
+local function holdsEntry(slot, entry)
+	if not C_ActionBar.HasAction(slot) then return false end
+	local kind, id = GetActionInfo(slot)
+	local want, payload = entry.kind, entry.payload
+	if want == "spell" then return kind == "spell" and id == payload end
+	if want == "spellgroup" then
+		local top = topRank(payload)
+		return kind == "spell" and top ~= nil and id == top.id
+	end
+	if want == "item" or want == "toy" then return (kind == "item" or kind == "toy") and id == payload end
+	if want == "mount" then return kind == "summonmount" and id == (payload == RANDOM_MOUNT and RANDOM_MOUNT_ACTION or payload.mountID) end
+	if kind ~= "macro" or not (want == "macro" or want == "game") then return false end
+	local name = C_ActionBar.GetActionText(slot)
+	if not name or macroCount(name) ~= 1 then return false end
+	if want == "macro" then return name == payload end
+	local base, named = payload.macro, false
+	for n = 1, 9 do named = named or name == (n == 1 and base or base:sub(1, 14) .. " " .. n) end
+	local index = macroIndex(name)
+	if not (named and trimmed(call(GetMacroBody, index)) == trimmed(payload.text)) then return false end
+	if not ours(name) then adoptMacro(name, index, entry.id) end
+	return true
 end
 
 local RELEASED = "Controller Tweaks gave its action slots back (/fct release); /reload to use them again."
@@ -754,56 +872,101 @@ local released
 
 local FULL_SHADOW = "No free action slot for %s: routed buttons and touch-bar buttons share the 36 hidden slots on keyboard bars 6-8 (slots 145-180), and none is free. Clear one of them, or empty a slot there."
 
+-- A cell leaves its slot: the last one out clears it while it still holds the addon's action, else just lets it go.
+local function leave(owned, slot, info, i)
+	if info.users[2] then
+		table.remove(info.users, i)
+		return true
+	end
+	if stillOurs(slot, info) then
+		local ok, err = Actions.Clear(slot)
+		if not ok then return nil, err end
+	end
+	owned[slot] = nil
+	forget(slot)
+	return true
+end
+
 -- The shadow slot holding entry for this cell, placed if needed (out of combat, empty cursor). Returns the slot, or nil
--- and a reason. A slot the player changed is given up (left as is) and a new one picked; the cell's previous entry is
--- replaced in its own slot.
+-- and a reason (and "full" when no slot is free: the caller may run the entry as macro text meanwhile). A slot the player
+-- changed is given up (left as is) and a new one picked. Another cell's slot with the same action is shared. The cell's
+-- previous entry is replaced in its own slot, or, when other cells share it, the cell moves to a slot of its own.
 function Actions.Shadow(code, layer, entry)
 	if released then return nil, RELEASED end
+	adoptOnce()
 	local owned = shadowSlots()
 	if not owned then return nil, "no character yet" end
-	local slot, info = ownedSlot(code, layer)
+	local slot, info, user, i = ownedSlot(code, layer)
 	if slot and C_ActionBar.HasAction(slot) and not stillOurs(slot, info) then
-		owned[slot], slot = nil, nil
+		owned[slot] = nil
+		forget(slot)
+		slot = nil
 	end
-	if slot and info.id == entry.id and C_ActionBar.HasAction(slot) then return slot end
+	local same = slot and user.id == entry.id
+	if same and C_ActionBar.HasAction(slot) then return slot end
 	if InCombatLockdown() then return nil, COMBAT end
 	if GetCursorInfo() then return nil, HOLDING end
 	local full = Actions.Find(entry.id)
 	if not full then return nil, tostring(entry.name) .. " is no longer available." end
 
+	local me = { code = code, layer = layer, id = entry.id }
+	-- An emptied slot is placed again for every cell on it; a new entry first looks for a slot that already has it.
+	for candidate = SHADOW_LAST, SHADOW_FIRST, -1 do
+		local other = not same and candidate ~= slot and owned[candidate]
+		if other and not isGamepadSlot(candidate) and holdsEntry(candidate, full) and stillOurs(candidate, other) then
+			if slot then
+				local ok, err = leave(owned, slot, info, i)
+				if not ok then return nil, err end
+			end
+			table.insert(other.users, me)
+			return candidate
+		end
+	end
+	if slot and not same and info.users[2] then
+		table.remove(info.users, i)
+		slot = nil
+	end
+
 	if not slot then
+		-- A bars 6-8 slot no cell holds that already has this action: placed by this addon on another machine (bars follow
+		-- the account, the shadow records stay on each machine), or before settings were lost. Taken as it is.
+		for candidate = SHADOW_LAST, SHADOW_FIRST, -1 do
+			if not slot and not owned[candidate] and not isGamepadSlot(candidate) and holdsEntry(candidate, full) then slot = candidate end
+		end
+		if slot then
+			owned[slot] = { users = { me } }
+			stamp(slot, owned[slot])
+			ns.debug("shadow slot %d taken back for %s %s", slot, tostring(code), tostring(layer))
+			return slot
+		end
 		for candidate = SHADOW_LAST, SHADOW_FIRST, -1 do
 			if not owned[candidate] and not C_ActionBar.HasAction(candidate) and not isGamepadSlot(candidate) then
 				slot = candidate
 				break
 			end
 		end
-		if not slot then return nil, FULL_SHADOW:format(entry.name) end
+		if not slot then return nil, FULL_SHADOW:format(entry.name), "full" end
 	end
 	local ok, err = place(slot, full, true, owned[slot] and C_ActionBar.HasAction(slot))
 	if not ok then return nil, err end
-	owned[slot] = { code = code, layer = layer, id = entry.id }
+	if owned[slot] then user.id = entry.id else owned[slot] = { users = { me } } end
 	stamp(slot, owned[slot])
 	return slot
 end
 
 -- The cell's shadow slot while it still holds what the addon placed, else nil. Reads only.
 function Actions.ShadowSlot(code, layer, id)
-	local slot, info = ownedSlot(code, layer)
-	if slot and info.id == id and stillOurs(slot, info) then return slot end
+	local slot, info, user = ownedSlot(code, layer)
+	if slot and user.id == id and stillOurs(slot, info) then return slot end
 end
 
--- Gives the cell's shadow slot back: cleared if it still holds the addon's action, else just let go.
+-- Gives the cell's shadow slot back: cleared when no other cell shares it and it still holds the addon's action, else
+-- just let go.
 function Actions.ReleaseShadow(code, layer)
 	local owned = shadowSlots()
-	local slot, info = ownedSlot(code, layer)
+	local slot, info, _, i = ownedSlot(code, layer)
 	if not slot then return true end
-	if stillOurs(slot, info) then
-		local ok, err = Actions.Clear(slot)
-		if not ok then return nil, err end
-	end
-	owned[slot] = nil
-	return true
+	return leave(owned, slot, info, i)
 end
 
 -- Slot writes make and delete FCT: macros, whose UPDATE_MACROS (and the catalog messages after it) run synchronously;
@@ -824,9 +987,11 @@ local function guard(fn)
 	end
 end
 for _, name in ipairs({ "Assign", "Clear", "Shadow", "ReleaseShadow" }) do Actions[name] = guard(Actions[name]) end
+-- Sync.lua's macro writes run as slot writes too.
+Actions.Guard = guard
 
--- Bars 6-8 as the allocator sees them: slots it holds (routed cells and touch buttons alike), empty slots it could
--- still take, and the range's size.
+-- Bars 6-8 as the allocator sees them: slots it holds (routed cells and touch buttons alike, a shared slot once), empty
+-- slots it could still take, and the range's size.
 function Actions.ShadowCapacity()
 	local owned = shadowSlots() or {}
 	local used, free = 0, 0
@@ -871,9 +1036,303 @@ local function upgradeRanks()
 	end
 end
 
+---------------------------------------------------------------------------------------------------------------------
+-- Leftovers. The registries and the shadow records live only in the SavedVariables; lost (a fresh SV, a reinstall), the
+-- addon's FCT: macros and the bars 6-8 slots holding them look like the player's, and every write then makes another
+-- "FCT:Bags 2" and takes another empty slot. Once per login, out of combat with the Gamepad UI on (before the first
+-- slot write, or on entering the world), the provably ours are taken back: a macro named as the addon names a game
+-- action ("FCT:<short>", or that with " 2" to " 9") whose body is word for word one the addon writes for it. Per action
+-- one copy is kept (one already on a slot first) and registered; every crossbar storage or bars 6-8 slot holding
+-- another copy then holds it, and the other copies are deleted, except one also on some other slot (kept, unregistered).
+-- A bars 6-8 slot holding one of them that no shadow record holds goes back to a routed cell or touch button that wants
+-- that action, else is cleared. A name two macros share is never touched: its slots can't be told apart.
+
+-- The bodies the addon writes, or wrote, for a game spec: its text, and a button's other click form.
+local function knownBodies(entry)
+	local bodies = { [trimmed(entry.payload.text)] = true }
+	local spec = GAME_BY_KEY[tostring(entry.id):match("^game:(.+)$") or ""]
+	local button = spec and spec.button and _G[spec.button] and spec.button
+	if button then
+		bodies[CLICK.up:format(button, button)] = true
+		bodies[trimmed(CLICK.both:format(button, button))] = true
+	end
+	return bodies
+end
+
+-- Every name the addon gives an action's macro, game actions and addons' CLICK bindings alike: name -> a list of
+-- { id, bodies } (two addon buttons can share a name's first 16 characters; the body tells them apart).
+local function ourNames()
+	local names = {}
+	for _, category in ipairs(Actions.Catalog()) do
+		for _, entry in ipairs(category.entries) do
+			local payload = entry.kind == "game" and type(entry.payload) == "table" and entry.payload
+			if payload and payload.macro and payload.text then
+				local info, base = { id = entry.id, bodies = knownBodies(entry) }, payload.macro
+				for n = 1, 9 do
+					local name = n == 1 and base or base:sub(1, 14) .. " " .. n
+					names[name] = names[name] or {}
+					table.insert(names[name], info)
+				end
+			end
+		end
+	end
+	return names
+end
+
+-- The copies of each game action's macro, by id: { index, name, perChar, storage = {slots}, shadow = {slots}, other }.
+local function leftoverCopies(first)
+	local names, groups, byName, count = ourNames(), {}, {}, {}
+	local numAccount, numCharacter = call(GetNumMacros)
+	local function scan(from, to, perChar)
+		for index = from, to do
+			local name = call(GetMacroInfo, index)
+			if name then count[name] = (count[name] or 0) + 1 end
+			local body, info = trimmed(call(GetMacroBody, index)), nil
+			for _, candidate in ipairs(name and names[name] or {}) do
+				if not info and candidate.bodies[body or ""] then info = candidate end
+			end
+			if info then
+				local copy = { index = index, name = name, perChar = perChar, storage = {}, shadow = {}, other = 0 }
+				groups[info.id] = groups[info.id] or {}
+				table.insert(groups[info.id], copy)
+				byName[name] = copy
+			end
+		end
+	end
+	scan(1, numAccount or 0, false)
+	scan(MAX_ACCOUNT + 1, MAX_ACCOUNT + (numCharacter or 0), true)
+	for id, list in pairs(groups) do
+		for k = #list, 1, -1 do
+			if count[list[k].name] > 1 then
+				byName[list[k].name] = nil
+				table.remove(list, k)
+			end
+		end
+		if not list[1] then groups[id] = nil end
+	end
+	for slot = 1, first + STORAGE_SLOTS - 1 do
+		local copy = GetActionInfo(slot) == "macro" and byName[C_ActionBar.GetActionText(slot) or ""]
+		if copy then
+			local where = slot >= first and copy.storage or slot >= SHADOW_FIRST and slot <= SHADOW_LAST and copy.shadow
+			if where then where[#where + 1] = slot else copy.other = copy.other + 1 end
+		end
+	end
+	return groups
+end
+
+local function placeMacro(index, slot)
+	PickupMacro(index)
+	PlaceAction(slot)
+	ClearCursor()
+end
+
+-- True when any of wants (ids) wants what slot holds.
+local function wanted(slot, wants)
+	local current = Actions.CurrentId(slot)
+	for _, id in ipairs(wants) do
+		if id == current then return true end
+		local full = Actions.Find(id)
+		if full and holdsEntry(slot, full) then return true end
+	end
+	return false
+end
+
+-- Every action this character's bindings and touch buttons use from a slot, on every pad: a slot holding one stays.
+local function allWants()
+	local wants = {}
+	for _, need in ipairs(ns.Face.AllShadowNeeds and ns.Face.AllShadowNeeds() or ns.Face.ShadowNeeds()) do wants[#wants + 1] = need.id end
+	for _, need in ipairs(ns.Touch and ns.Touch.ShadowNeeds and ns.Touch.ShadowNeeds() or {}) do wants[#wants + 1] = need.id end
+	return wants
+end
+
+-- Runs the take-back now (out of combat, empty cursor, the storage range readable). Returns what it did: kept (macros
+-- registered), deleted, moved (slots pointed at a kept copy), adopted (bars 6-8 slots given back to a cell) and
+-- cleared; nil when it couldn't run.
+function Actions.AdoptLeftovers()
+	local first = C_GamepadUI and call(C_GamepadUI.GetFirstGamepadActionStorageSlotIndex)
+	if InCombatLockdown() then return nil, "combat" end
+	if GetCursorInfo() then return nil, "cursor" end
+	if not ns.Face.CharDB() then return nil, "character" end
+	if not first then return nil, "bars" end
+	if not macrosLoaded() then return nil, "macros" end
+	local account, character, me = registries()
+	local done = { kept = 0, deleted = 0, moved = 0, adopted = 0, cleared = 0 }
+	local keepers, doomed = {}, {}
+	for id, list in pairs(leftoverCopies(first)) do
+		-- One on the crossbar first, then one on bars 6-8, then the first.
+		local keeper, rank = list[1], 0
+		for _, copy in ipairs(list) do
+			local mine = #copy.storage > 0 and 2 or #copy.shadow > 0 and 1 or 0
+			if mine > rank then keeper, rank = copy, mine end
+		end
+		local registry = keeper.perChar and character or account
+		if not (registry[keeper.name] and registry[keeper.name].id == id) then
+			adoptMacro(keeper.name, keeper.index, id)
+			done.kept = done.kept + 1
+		end
+		keepers[keeper.name] = id
+		for _, copy in ipairs(list) do
+			if copy ~= keeper then
+				for _, slots in ipairs({ copy.storage, copy.shadow }) do
+					for _, slot in ipairs(slots) do
+						placeMacro(keeper.index, slot)
+						done.moved = done.moved + 1
+					end
+				end
+				if copy.other == 0 then doomed[#doomed + 1] = copy end
+				local list2 = copy.perChar and character or account
+				if list2[copy.name] and list2[copy.name].id == id then list2[copy.name] = nil end
+			end
+		end
+	end
+	-- Indexes shift with each delete: found again by name (unique, see leftoverCopies).
+	for _, copy in ipairs(doomed) do
+		local index = findMacro(copy.name, copy.perChar)
+		if index then
+			DeleteMacro(index)
+			done.deleted = done.deleted + 1
+		end
+	end
+	-- Bars 6-8 slots holding a kept copy that no shadow record holds.
+	local owned, placed = shadowSlots()
+	local needs = ns.Face.ShadowNeeds()
+	for _, need in ipairs(ns.Touch and ns.Touch.ShadowNeeds and ns.Touch.ShadowNeeds() or {}) do needs[#needs + 1] = need end
+	local function adopt(slot, need)
+		owned[slot] = { users = { { code = need.code, layer = need.layer, id = need.id } } }
+		stamp(slot, owned[slot])
+		done.adopted = done.adopted + 1
+	end
+	local function free(slot)
+		PickupAction(slot)
+		ClearCursor()
+		forget(slot)
+		done.cleared = done.cleared + 1
+	end
+	for slot = SHADOW_LAST, SHADOW_FIRST, -1 do
+		local id = not owned[slot] and GetActionInfo(slot) == "macro" and keepers[C_ActionBar.GetActionText(slot) or ""]
+		if id then
+			local taker
+			for _, need in ipairs(needs) do
+				if not taker and need.id == id and not ownedSlot(need.code, need.layer) then taker = need end
+			end
+			if taker then adopt(slot, taker) else free(slot) end
+		end
+	end
+	-- Slots the addon placed on any machine (the synced list) that no record here holds: given to a cell or touch button
+	-- that wants that action and has no slot yet, else freed when nothing of this character needs it. Freed only while
+	-- sync is in step: off, paused or waiting, this machine's bindings may not be the other machines'. A slot the list
+	-- doesn't name is the player's and stays.
+	local clearing, wants = ns.Sync and ns.Sync.InStep and ns.Sync.InStep()
+	for slot = SHADOW_LAST, SHADOW_FIRST, -1 do
+		local item = placed[slot]
+		if item and not owned[slot] and not isGamepadSlot(slot) then
+			if not stillOurs(slot, item) then
+				placed[slot] = nil
+			else
+				local taker
+				for _, need in ipairs(needs) do
+					local full = not taker and not ownedSlot(need.code, need.layer) and Actions.Find(need.id)
+					if full and holdsEntry(slot, full) then taker = need end
+				end
+				if taker then
+					adopt(slot, taker)
+				elseif clearing then
+					wants = wants or allWants()
+					if not wanted(slot, wants) then free(slot) end
+				end
+			end
+		end
+	end
+	cleanup()
+	return done
+end
+
+local function changedAny(done) return done.kept + done.deleted + done.moved + done.adopted + done.cleared > 0 end
+
+-- Once a session, retried until it has run: each time it can't, the debug log says why.
+local adopted
+function adoptOnce()
+	if adopted then return end
+	-- After the login sync has put this machine's cells and touch bars in: the take-back gives bars 6-8 slots to them.
+	local why = released and "released" or not ns.db and "db" or not ns.Active() and "gamepad UI off" or ns.Sync and not ns.Sync.Settled() and "sync" or nil
+	local done
+	if not why then done, why = Actions.AdoptLeftovers() end
+	if not done then return ns.debug("leftovers: waiting (%s)", why) end
+	adopted = true
+	ns.debug("leftovers: kept %d, deleted %d, moved %d, adopted %d, cleared %d", done.kept, done.deleted, done.moved, done.adopted, done.cleared)
+	local L = ns.UI and ns.UI.L
+	if L and done.deleted + done.cleared > 0 then ns.log(L.LEFTOVERS_CLEANED:format(done.deleted, done.cleared)) end
+	return changedAny(done)
+end
+
+-- On entering the world, after a fight, when the Gamepad UI comes on and when the macro list arrives (until it has
+-- run): what it gave back is applied again.
+local adoptNow = guard(function() if adoptOnce() then ns.Fire("FCT_LAYOUT_CHANGED", "layout") end end)
+for _, event in ipairs({ "PLAYER_ENTERING_WORLD", "PLAYER_REGEN_ENABLED", "FCT_ACTIVE_CHANGED", "UPDATE_MACROS", "FCT_SYNC_SETTLED" }) do
+	ns.On(event, function() if not adopted and not Actions.Busy() then adoptNow() end end)
+end
+
+-- /fct cleanup: the take-back now, whatever ran before; prints what it did.
+local adoptCommand = guard(function() return Actions.AdoptLeftovers() end)
+function ns.commands.cleanup()
+	local L = ns.UI.L
+	if released then return ns.log(RELEASED) end
+	local done, why = adoptCommand()
+	if not done then return ns.log(L.CLEANUP_CANT:format(L.CLEANUP_WHY[why] or tostring(why))) end
+	adopted = true
+	ns.log(L.CLEANUP_DONE:format(done.kept, done.deleted, done.moved, done.adopted, done.cleared))
+	if changedAny(done) then ns.Fire("FCT_LAYOUT_CHANGED", "layout") end
+end
+
 -- True when the slot holds one of the addon's registered FCT: macros.
 function Actions.Ours(slot)
 	return C_ActionBar.HasAction(slot) and GetActionInfo(slot) == "macro" and not not ours(C_ActionBar.GetActionText(slot) or "")
+end
+
+-- A slot's action name for a list: its spell, item, mount, set or flyout, else the slot's text (a macro's name).
+local function slotName(slot)
+	local kind, id = GetActionInfo(slot)
+	local name
+	if kind == "spell" then name = call(C_Spell.GetSpellName, id)
+	elseif kind == "item" then name = call((C_Item or {}).GetItemNameByID, id)
+	elseif kind == "summonmount" then name = call((C_MountJournal or {}).GetMountInfoByID, id)
+	elseif kind == "equipmentset" then name = id
+	elseif kind == "flyout" then name = call(GetFlyoutInfo, id) end
+	return tostring(name or C_ActionBar.GetActionText(slot) or kind)
+end
+
+-- Bars 6-8 slots holding something that isn't the addon's: the player's own actions there, which keep slots from the
+-- routed cells and touch buttons. { slot, holds, name, icon } each, top down (the order the allocator takes them). A
+-- slot the addon placed on another machine (the synced list) is the addon's while sync is in step, as the take-back
+-- frees it then; off or paused, nothing frees it by itself, so it's listed.
+function Actions.ForeignShadowSlots()
+	local owned, placed = shadowSlots()
+	owned, placed = owned or {}, ns.Sync and ns.Sync.InStep and ns.Sync.InStep() and placed or {}
+	local out = {}
+	for slot = SHADOW_LAST, SHADOW_FIRST, -1 do
+		local info, item = owned[slot], placed[slot]
+		local ours = info and stillOurs(slot, info) or item and stillOurs(slot, item)
+		if C_ActionBar.HasAction(slot) and not ours and not isGamepadSlot(slot) and not Actions.Ours(slot) then
+			out[#out + 1] = { slot = slot, holds = signature(slot), name = slotName(slot), icon = call(C_ActionBar.GetActionTexture, slot) }
+		end
+	end
+	return out
+end
+
+-- Clears the slots of such a list that still hold what was listed (out of combat); a record of ours a slot still had
+-- goes too. Returns how many, or nil and a reason.
+function Actions.ClearForeign(list)
+	if InCombatLockdown() then return nil, COMBAT end
+	if GetCursorInfo() then return nil, HOLDING end
+	local owned, count = shadowSlots() or {}, 0
+	for _, item in ipairs(list) do
+		local slot = item.slot
+		if slot >= SHADOW_FIRST and slot <= SHADOW_LAST and signature(slot) == item.holds and Actions.Clear(slot) then
+			owned[slot] = nil
+			count = count + 1
+		end
+	end
+	return count
 end
 
 -- The catalog id of what a storage slot holds, to pre-focus it in the picker.
@@ -1018,18 +1477,22 @@ local deleteOurMacros = guard(function()
 end)
 
 -- /fct release: before uninstalling, gives back every slot the addon holds (shadow and touch slots, cleared while
--- they still hold its action) and deletes its registered FCT: macros, which leaves its game commands off the crossbar.
+-- they still hold its action) and deletes its registered FCT: macros, which leaves its game commands off the crossbar,
+-- and its FCT:Sync macros (sync goes off on this machine).
 -- Nothing is placed again until /reload; routed cells run as macro text meanwhile.
 function ns.commands.release()
 	if InCombatLockdown() then return ns.log(COMBAT) end
 	if GetCursorInfo() then return ns.log(HOLDING) end
 
-	local slots = 0
+	local slots, users = 0, {}
 	for _, info in pairs(shadowSlots() or {}) do
-		if Actions.ReleaseShadow(info.code, info.layer) then slots = slots + 1 end
+		slots = slots + 1
+		for _, user in ipairs(info.users) do users[#users + 1] = user end
 	end
+	for _, user in ipairs(users) do Actions.ReleaseShadow(user.code, user.layer) end
+	for _ in pairs(shadowSlots() or {}) do slots = slots - 1 end
 	released = true
-	local macros = deleteOurMacros()
+	local macros = deleteOurMacros() + (ns.Sync and ns.Sync.Release() or 0)
 	ns.log(("gave back %d action slots and deleted %d FCT: macros. /reload to place them again."):format(slots, macros))
 	ns.Fire("FCT_LAYOUT_CHANGED", "release")
 end

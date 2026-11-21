@@ -362,8 +362,8 @@ function UI.RefreshSoon(window)
 	end)
 end
 
--- Layout edits (here, from /fct or from Learn) redraw the open window.
-ns.On("FCT_LAYOUT_CHANGED", function()
-	if current and current:IsShown() then UI.RefreshSoon(current) end
-end)
+-- Layout edits (here, from /fct or from Learn) and a ring's new last pick (its live icon) redraw the open window.
+local function refreshCurrent() if current and current:IsShown() then UI.RefreshSoon(current) end end
+ns.On("FCT_LAYOUT_CHANGED", refreshCurrent)
+ns.On("FCT_RING_LAST", refreshCurrent)
 

@@ -250,7 +250,19 @@ ns.SlotView = { New = function(parent)
 	function view:SetSlot(slot, icon) self.slot, self.fallback = slot, icon end
 	view.text = frame(nil, nil, view)
 	return view
-end, HealerBadge = function(f, shown) f.badge = shown end }
+end, HealerBadge = function(f, shown) f.badge = shown end, RingMarker = function(f, shown) f.marker = shown end }
+-- As SlotView's: a ring entry wears the marker unless the setting is off or that ring is open; it shows the ring's live
+-- icon.
+function ns.SlotView.MarksRing(entry)
+	local id = entry and entry.kind == "ring" and tonumber(tostring(entry.id):match("^ring:(%d+)$"))
+	if not id or ns.db and ns.db.ringMarker == false then return false end
+	return not (ns.Rings and ns.Rings.IsOpen(id))
+end
+function ns.SlotView.EntryIcon(entry)
+	local id = entry and entry.kind == "ring" and tonumber(tostring(entry.id):match("^ring:(%d+)$"))
+	if id and ns.Rings then return ns.Rings.LiveIcon(id) end
+	return entry and entry.icon
+end
 for _, file in ipairs({ "Face.lua", "Actions.lua" }) do loadAddonFile(file) end
 -- Remap's hold, recorded: a held ring holds it from its open until its CVar is back.
 local holds = {}
@@ -826,6 +838,25 @@ nextFrame()
 check(W.cvars[AXIS] == "0" and ns.db.rings.axisSaved == nil and #W.writes == 2, "temp: then put back as before")
 C_CVar, GetCVar = nil, getCVar
 
+-- A button the layout moves (L1 as the right modifier, PADRTRIGGER) held as the ring opens: no CVar change, which would
+-- drop our config under it, so its release comes as the key it went down as. A still fires.
+ns.Remap.Outputs = function() return { L1 = "PADRTRIGGER", L2 = "PADLTRIGGER", R1 = "PADLSHOULDER" } end
+IsKeyDown = function(k) return k == "PADRTRIGGER" end
+W.cvars[AXIS], W.writes = "0", {}
+open()
+check(ring.shown and W.cvars[AXIS] == "0" and #W.writes == 0 and ns.db.rings.axisSaved == nil and lastHold() == true, "moved: L1 held as the right modifier: the keys stay off, Remap held")
+aim(90)
+check(press("PAD1", true) == nil and press("PAD1", false) == "spell 639", "moved: A fires the slot aimed at")
+nextFrame()
+check(#W.writes == 0 and W.cvars[AXIS] == "0" and lastHold() == false, "moved: nothing to put back, Remap let go")
+IsKeyDown = function(k) return k == "PADLTRIGGER" end
+open()
+check(W.cvars[AXIS] == "1" and #W.writes == 1, "moved: a held button on its native key (L2 as the left modifier) leaves the keys on")
+press("PAD2", true)
+nextFrame()
+check(W.cvars[AXIS] == "0" and lastHold() == false, "moved: then put back as before")
+ns.Remap.Outputs, IsKeyDown = nil, function() return false end
+
 -- Stale pick: a held ring opened with its stick already pushed ignores that slot until the stick re-centres or moves
 -- to another one.
 aim(90)
@@ -984,6 +1015,36 @@ check(hold.shown and holdStick(hold, "Camera") == false and holdStick(hold, "Loo
 aim(0, 0)
 hold.scripts.OnUpdate(hold, 1 / 60)
 check(not hold.shown, "hold-off: right stick centred, let go")
+-- Through a cast (a heal aimed with the left stick): the second doesn't run while the player casts or channels; the
+-- stick back in the middle still lets go; after the cast the cap runs on. Other units' casts are filtered by the event.
+local castEvent = function(event) hold.scripts.OnEvent(hold, event, "player") end
+aimLeft(90)
+Rings.HoldStick("left", 1)
+castEvent("UNIT_SPELLCAST_START")
+hold.scripts.OnUpdate(hold, 2.5)
+check(hold.shown, "hold-off cast: a 2.5 s cast keeps the left stick held")
+castEvent("UNIT_SPELLCAST_SUCCEEDED")
+castEvent("UNIT_SPELLCAST_STOP")
+hold.scripts.OnUpdate(hold, 0.5)
+check(hold.shown, "hold-off cast: after the cast the second starts running")
+hold.scripts.OnUpdate(hold, 0.6)
+check(not hold.shown, "hold-off cast: and the cap lets go a second after the cast ended")
+Rings.HoldStick("left", 1)
+castEvent("UNIT_SPELLCAST_CHANNEL_START")
+castEvent("UNIT_SPELLCAST_SUCCEEDED")
+hold.scripts.OnUpdate(hold, 5)
+check(hold.shown, "hold-off cast: a channel keeps it too, its SUCCEEDED at the start ends nothing")
+W.sticks[1] = { x = 0.1, y = 0 }
+hold.scripts.OnUpdate(hold, 1 / 60)
+check(not hold.shown, "hold-off cast: mid-channel, the stick back in the middle lets go")
+castEvent("UNIT_SPELLCAST_CHANNEL_STOP")
+aimLeft(90)
+Rings.HoldStick("left", 1)
+castEvent("UNIT_SPELLCAST_START")
+ns.Fire("PLAYER_ENTERING_WORLD")
+hold.scripts.OnUpdate(hold, 1.1)
+check(not hold.shown, "hold-off cast: entering the world drops a cast whose stop never came")
+aim(0, 0)
 W.combat = false
 
 -- The snippet picks as Rings.SlotAt does, all round.
@@ -1096,13 +1157,44 @@ secure(ring.RunAttribute, ring, "_open", heals.id, "touch")
 check(frames.ForeverControllerTweaksRingSlot1.attrs.unit == nil and frames.ForeverControllerTweaksRingSlot1.attrs.checkselfcast == true, "healer: an ordinary ring's slot has no unit, cast checks on")
 secure(ring.RunAttribute, ring, "_close")
 
+-- Last target (design/1.5.0.md 6): off by default; on, a binding's middle release casts on the place it last healed,
+-- only while that unit can be helped. It remembers the place, per binding and character.
+check(not ns.Face.CellEntry("DU", "T").healerLast and Rings.Healer(hid).middle == "cancel" and ring.attrs[hp .. "m"] == nil, "healer last: off by default")
+check(select(2, ns.Face.SetHealerLast("DD", "T", true)) == "Healer mode is off on this button.", "healer last: only on a button in Healer mode")
+W.combat = true
+check(select(2, ns.Face.SetHealerLast("DU", "T", true)) == "out of combat only", "healer last: switched out of combat only")
+W.combat = false
+assert(ns.Face.SetHealerLast("DU", "T", true))
+local lid = hid .. "_last"
+check(ns.Face.CellEntry("DU", "T").healerLast and dpad.attrs["ps-ring-top"] == lid and ring.attrs["r" .. lid .. "m"] == "last" and Rings.Healer(lid).middle == "last", "healer last: the binding's own ring, its middle written")
+W.combat = true
+check(heal(STEP) == "spell 133" and dpad.attrs.unit == "party1" and ns.Face.CharDB().ringLast[lid][1] == 2, "healer last: a cast remembers the place")
+check(heal() == "spell 133" and dpad.attrs.unit == "party1" and not ring.shown, "healer last: let go in the middle, cast on Party 1 again")
+W.units.party1 = "hostile"
+check(heal() == nil and not ring.shown, "healer last: the place can't be helped now, nothing cast")
+W.units.party1 = nil
+check(heal() == nil and not ring.shown, "healer last: the place is empty, nothing cast")
+W.units.party1 = "friend"
+check(heal(0) == "spell 133" and dpad.attrs.unit == "player" and heal() == "spell 133" and dpad.attrs.unit == "player", "healer last: aiming elsewhere moves it")
+check(Rings.LiveIcon(lid) ~= nil and ns.Face.CellEntry("DU", "T").icon == copy.icon, "healer last: the button keeps the spell's icon")
+W.combat = false
+ns.Fire("PLAYER_ENTERING_WORLD")
+check(ring.attrs["r" .. lid .. "l"] == 1, "healer last: the place restored after a reload")
+assert(ns.Face.SetHealerLast("DU", "T", false))
+check(not ns.Face.CellEntry("DU", "T").healerLast and dpad.attrs["ps-ring-top"] == hid, "healer last: off again, the plain healer ring")
+W.combat = true
+check(heal() == nil, "healer last: off, the middle casts nothing")
+W.combat = false
+
 -- Off: the copy goes, the cell is native again; a routed entry keeps its action.
 assert(ns.Face.SetHealer("DU", "T", false))
 check(ns.Face.CellEntry("DU", "T") == nil and dpad.attrs["ps-ring-top"] == nil and storage[183], "healer off: the copy is dropped, the slot fires natively again")
 assert(ns.Face.SetCellEntry("FB", "T", Actions.Find("spell:133")))
 assert(ns.Face.SetHealer("FB", "T", true))
 check(ns.Face.CellEntry("FB", "T").healer and router.attrs["ps-ring-top"] == hid, "healer: a routed spell cell opens the ring")
+assert(ns.Face.SetHealerLast("FB", "T", true))
 assert(ns.Face.SetHealer("FB", "T", false))
+check(ns.Face.CellEntry("FB", "T").healerLast == nil, "healer off: Last target goes with it")
 check(ns.Face.CellEntry("FB", "T").id == "spell:133" and not ns.Face.CellEntry("FB", "T").healer and router.attrs["ps-ring-top"] == nil, "healer off: a routed cell keeps its spell")
 assert(ns.Face.SetCellEntry("FB", "T", ringEntry))
 GamepadActionBarBindingUtil = nil
@@ -1126,6 +1218,87 @@ assert(ns.Touch.SetEntry("left", 2, nil))
 Actions.Shadow, Actions.ReleaseShadow = shadow, releaseShadow
 W.units = {}
 
+-- Middle (design/1.5.0.md 1): Cancel by default; with Use last a Hold ring let go in the middle, or A with nothing
+-- aimed, fires the slot this character fired last, and the ring's buttons show its icon. Every fire records the slot
+-- (in combat, by the snippets); it is saved per character with the slot's action and dropped when that changes.
+assert(Rings.SetStick(heals.id, "right"))
+assert(Rings.SetShow(heals.id, "hold"))
+check(heals.middle == "cancel" and ring.attrs[p .. "m"] == nil, "middle: Cancel by default, nothing written")
+check(not Rings.SetMiddle(heals.id, "first") and heals.middle == "cancel", "middle: cancel or last only")
+W.combat = true
+check(select(2, Rings.SetMiddle(heals.id, "last")) == "Controller Tweaks changes rings out of combat only.", "middle: set out of combat only")
+aim(0, 0)
+press("PAD1", true)
+aim(90)
+check(press("PAD1", false) == "spell 639" and ring.attrs[p .. "l"] == 3, "last: a fire records its slot, in combat")
+local function annLast() return ns.Face.CharDB().ringLast[heals.id] end
+check(annLast()[1] == 3 and annLast()[2] == "spellgroup:Holy Light", "last: saved for this character with the slot's action")
+press("PAD1", true)
+aim(0, 0)
+check(press("PAD1", false) == nil and not ring.shown, "last: with Cancel, let go in the middle: nothing")
+check(Rings.LiveIcon(heals.id) == Rings.Icon(heals), "live icon: with Cancel, the ring's own")
+W.combat = false
+assert(Rings.SetMiddle(heals.id, "last"))
+check(heals.middle == "last" and ring.attrs[p .. "m"] == "last" and ring.attrs[p .. "l"] == 3, "last: Use last written, the pick written back")
+local hl = heals.slots[3].icon
+check(Rings.LiveIcon(heals.id) == hl and ns.SlotView.EntryIcon(ns.Face.CellEntry("FB", "T")) == hl and touch.view.fallback == hl, "live icon: the last slot's on cells and touch buttons")
+W.combat = true
+press("PAD1", true)
+check(press("PAD1", false) == "spell 639" and not ring.shown, "last: Hold let go in the middle fires the last slot")
+press("PAD1", true)
+aim(180)
+check(press("PAD1", false) == "item item:6948" and annLast()[1] == 5 and touch.view.fallback == heals.slots[5].icon, "last: an aimed fire as before, now the last; the buttons follow in combat")
+press("PAD1", true)
+aim(45)
+check(press("PAD1", false) == nil and ring.attrs[p .. "l"] == 5 and annLast()[1] == 5, "last: an empty slot fires nothing and isn't remembered")
+aim(0, 0)
+press("PAD1", true)
+check(keyUp("PAD1") == "item item:6948" and not ring.shown and press("PAD1", false) == nil, "last: A with nothing aimed fires the last slot")
+press("PAD1", true)
+press("PAD2", true)
+check(not ring.shown and press("PAD1", false) == nil, "last: B still cancels")
+click(touch, true)
+check(ring.shown and click(slot1, false) == "spell 133" and annLast()[1] == 1, "last: a tapped slot is remembered")
+W.combat = false
+assert(Rings.SetShow(heals.id, "toggle"))
+W.combat = true
+press("PAD1", true)
+check(press("PAD1", false) == nil and ring.shown, "last: a Toggle ring's release only opens it")
+check(press("PAD1", true) == nil and not ring.shown and press("PAD1", false) == nil, "last: the button again only closes it")
+W.combat = false
+assert(Rings.SetShow(heals.id, "hold"))
+assert(Rings.SetSlot(heals.id, 1, Actions.Find("game:sit")))
+check(annLast() == nil and ring.attrs[p .. "l"] == nil and Rings.LiveIcon(heals.id) == Rings.Icon(heals), "last: its slot changed, the pick is dropped")
+W.combat = true
+press("PAD1", true)
+check(press("PAD1", false) == nil and not ring.shown, "last: no pick, the middle fires nothing")
+W.combat = false
+ns.Face.CharDB().ringLast[heals.id] = { 7, "game:sit" }
+assert(Rings.SetCount(heals.id, 6))
+check(annLast() == nil and ring.attrs[p .. "l"] == nil, "last: a slot past a smaller count is dropped")
+assert(Rings.SetCount(heals.id, 8))
+ns.Face.CharDB().ringLast[heals.id] = { 7, "game:sit" }
+ns.Fire("PLAYER_ENTERING_WORLD")
+check(ring.attrs[p .. "l"] == 7 and Rings.LiveIcon(heals.id) == heals.slots[7].icon, "last: restored after a reload while the slot holds it")
+check(Rings.LiveIcon(999) == "Interface\\Icons\\INV_Misc_QuestionMark", "live icon: an unknown ring")
+-- The marker hides on every button of a ring while it is open (ps-ring), and the touch buttons redraw.
+check(touch.view.text.marker == true and not Rings.IsOpen(heals.id), "marker: on the touch button that opens the ring")
+W.combat = true
+press("PAD1", true)
+check(Rings.IsOpen(heals.id) and touch.view.text.marker == false, "marker: hidden while the ring is open, in combat")
+press("PAD1", false)
+check(not Rings.IsOpen(heals.id) and touch.view.text.marker == true, "marker: back when it closes")
+W.combat = false
+-- A Dynamic ring opened from a stick press aims with the other stick.
+assert(Rings.SetStick(heals.id, "dynamic"))
+secure(ring.RunAttribute, ring, "_open", heals.id, "hold", "rstick")
+local fromR3 = ring.attrs["ps-aimside"]
+secure(ring.RunAttribute, ring, "_close")
+secure(ring.RunAttribute, ring, "_open", heals.id, "hold", "lstick")
+check(fromR3 == "left" and ring.attrs["ps-aimside"] == "right", "dynamic: R3 aims with the left stick, L3 with the right")
+secure(ring.RunAttribute, ring, "_close")
+assert(Rings.SetStick(heals.id, "right"))
+
 -- Renames and icons follow on every binding; deleting a ring clears every binding to it, every character.
 assert(Rings.Rename(heals.id, "Big heals"))
 local cell = ns.Face.CellEntry("FB", "T")
@@ -1141,7 +1314,8 @@ check(ns.Face.CellEntry("FB", "T") == nil and ns.Touch.Entry("left", 1) == nil, 
 local bob = ns.db.chars["Bob-Realm"]
 check(bob.cells["054c/0ce6"].DD.R == nil and bob.cells["054c/0ce6"].DD.B.id == "spell:133" and bob.touch.bars.right[2] == nil, "delete: other characters' bindings cleared, the rest kept")
 check(ns.db.chars["Cy-Realm"].cells["054c/0ce6"].DU.T.id == "ring:" .. other.id, "delete: another ring's binding kept")
-check(ring.attrs[p .. "n"] == nil and ring.attrs[p .. "t1"] == nil and router.attrs["ps-ring-top"] == nil and touch.attrs["ps-ring-T"] == nil, "delete: secure attributes gone")
+check(ring.attrs[p .. "n"] == nil and ring.attrs[p .. "t1"] == nil and ring.attrs[p .. "m"] == nil and ring.attrs[p .. "l"] == nil and router.attrs["ps-ring-top"] == nil and touch.attrs["ps-ring-T"] == nil, "delete: secure attributes gone")
+check(ns.Face.CharDB().ringLast[heals.id] == nil, "delete: the last pick goes too")
 check(Actions.Find("ring:" .. heals.id) == nil, "delete: gone from the catalog")
 for _ = 2, Rings.MAX_RINGS do assert(Rings.New()) end
 check(select(2, Rings.New()):find("most there can be", 1, true), "rings: at most " .. Rings.MAX_RINGS)
@@ -1150,9 +1324,13 @@ check(select(2, Rings.New()):find("most there can be", 1, true), "rings: at most
 local db = {
 	rings = { nextId = "x", list = {
 		[1] = { id = 1, name = "  Heals  ", count = 99, slots = { [1] = { id = "spell:133", name = "Fireball", icon = 1 }, [2] = "bad", [13] = { id = "spell:1" }, [3] = { id = "ring:1" }, [4] = { id = "item:6948", icon = {} } } },
-		[2] = { id = 1, name = "dup" }, [3] = "junk", x = { id = 5 }, [4] = { id = 7, icon = {}, slots = "no", stick = "up", show = "press", style = "round" },
+		[2] = { id = 1, name = "dup" }, [3] = "junk", x = { id = 5 }, [4] = { id = 7, icon = {}, slots = "no", stick = "up", show = "press", style = "round", middle = "first" },
 	} },
-	chars = { ["Bob-Realm"] = { cells = { dev = { FB = { T = { id = "ring:9" }, L = { id = "spell:133" } } } }, touch = { bars = { left = { [1] = { T = { id = "ring:7" } } } } } } },
+	ringMarker = "yes",
+	chars = {
+		["Bob-Realm"] = { cells = { dev = { FB = { T = { id = "ring:9" }, L = { id = "spell:133" } } } }, touch = { bars = { left = { [1] = { T = { id = "ring:7" } } } } }, ringLast = { [1] = { 1, "spell:133" }, [9] = { 1, "spell:1" }, hspell133 = { 2, "spell:133" }, [7] = "bad", x = { 1, "a" }, [2] = { 0.5, "spell:1" } } },
+		["Cy-Realm"] = { ringLast = 5, cells = { dev = { DU = { T = { id = "spell:133", healer = true, healerLast = true }, L = { id = "spell:133", healerLast = true }, R = { id = "spell:133", healer = true, healerLast = 1 } } } } },
+	},
 }
 local fixes = {}
 Rings.Repair(db, function(what) fixes[#fixes + 1] = what end)
@@ -1162,6 +1340,12 @@ check(list[1].name == "Heals" and list[1].count == 8 and list[2].name == "Ring 7
 check(list[1].stick == "right" and list[2].stick == "right", "repair: a missing or unknown stick is Right")
 check(list[1].show == "toggle" and list[2].show == "toggle", "repair: a missing or unknown Show is Toggle")
 check(list[1].style == "full" and list[2].style == "full", "repair: a missing or unknown Style is Full")
+check(list[1].middle == "cancel" and list[2].middle == "cancel", "repair: a missing or unknown Middle is Cancel")
+local bobLast = db.chars["Bob-Realm"].ringLast
+local cy = db.chars["Cy-Realm"].cells.dev.DU
+check(db.ringMarker == nil and fixes[1] ~= nil, "repair: a bad ring marker setting is on again")
+check(cy.T.healerLast == true and cy.L.healerLast == nil and cy.R.healerLast == nil, "repair: Last target only true and only in Healer mode")
+check(bobLast[1][1] == 1 and bobLast.hspell133 and bobLast[9] == nil and bobLast[7] == nil and bobLast.x == nil and bobLast[2] == nil and db.chars["Cy-Realm"].ringLast == nil, "repair: last picks of existing and healer rings kept, the rest dropped")
 local s = list[1].slots
 check(s[1].id == "spell:133" and s[1].kind == "spell" and s[2] == nil and s[3] == nil and s[13] == nil and s[4].icon == nil and s[4].name == "item:6948" and next(list[2].slots) == nil, "repair: slots")
 local bobCells = db.chars["Bob-Realm"].cells.dev.FB

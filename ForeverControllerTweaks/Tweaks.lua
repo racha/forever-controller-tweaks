@@ -1,4 +1,5 @@
--- Forever Controller Tweaks "Tweaks": small account-wide conveniences, each off until turned on in the Tweaks tab.
+-- Forever Controller Tweaks "Tweaks": small account-wide conveniences, each off until turned on in the Tweaks tab, but
+-- the sort bags key (on, L3, by default).
 -- Saved in ns.db.tweaks (one boolean per key, repaired on load). Like the rest of the addon they act only while the
 -- Gamepad UI is on.
 -- Taint: no StaticPopup, ShowUIPanel/HideUIPanel, FrameControlsManager, SmartNavigation, InputBindingManager or menu
@@ -18,6 +19,7 @@
 --   Tweaks.Is(key), Call, Name, Money  helpers for TweaksGear.lua: a tweak acts now; a guarded API call; a printable
 --                                  name (never a secret); coins as text.
 --   Tweaks.SortBags()              sorts the bags (the Sort button and the picker's Sort bags action).
+--   Tweaks.SortKeyWanted()         the stick key the sort bags key binds now (bags shown), or nil.
 --   Tweaks.BuyStack(index)         buys a full stack of merchant item index; no index: the item under the cursor.
 local _, ns = ...
 local Tweaks = {}
@@ -35,6 +37,8 @@ Tweaks.NUMBERS = { rumbleStrength = { 0.1, 1, 0.1, 0.6 } }
 Tweaks.CHOICES = {
 	lightBar = { "default", "class", "custom" },
 	lightColor = { "red", "orange", "yellow", "green", "teal", "cyan", "blue", "purple", "pink", "white" },
+	-- The sort bags key: a stick press while the bags are open. Starts on (the first option).
+	sortKey = { "L3", "R3", "off" },
 }
 Tweaks.LIGHT = {
 	red = { 1, 0, 0 }, orange = { 1, 0.45, 0 }, yellow = { 1, 0.85, 0 }, green = { 0, 1, 0 }, teal = { 0, 0.8, 0.55 },
@@ -61,6 +65,8 @@ local STEP = { junk = 0.2, learn = 0.3, mail = 0.4 }
 -- Same as Blizzard's merchant: a buy at or above this asks first, so one press never spends it.
 local HIGH_PRICE = MERCHANT_HIGH_PRICE_COST or 1500000
 local POLL = 0.25
+-- Our frames over the bags sit one strata above them at a fixed level (the bags are toplevel: see the Sort button).
+local ABOVE_BAGS, ABOVE_LEVEL = "HIGH", 10
 local MERCHANT_ROWS = MERCHANT_ITEMS_PER_PAGE or 10
 local ATTACHMENTS = ATTACHMENTS_MAX_RECEIVE or 16
 local POOR = Enum and Enum.ItemQuality and Enum.ItemQuality.Poor or 0
@@ -166,6 +172,163 @@ function Tweaks.SortBags()
 	if PlaySound and SOUNDKIT and SOUNDKIT.UI_BAG_SORTING_01 then PlaySound(SOUNDKIT.UI_BAG_SORTING_01) end
 	C_Container.SortBags()
 end
+
+---------------------------------------------------------------------------------------------------------------------
+-- Sort bags key (design/1.5.0.md 3.2): while a bag frame shows, a stick press (sortKey) sorts the bags; with them
+-- closed it works as usual (Auto-run, Ping or a stick cell). Learnt from Improved Forever's Bags.lua (MIT): a priority
+-- override binding on our own button, set while the bags show and cleared when they hide. Bindings change out of
+-- combat only: cleared as a fight starts (the lockdown follows that event) and set again after it. The bags are read
+-- by a poll of their visibility, never a hook on them. The button acts on the release (a plain button's LeftButtonUp)
+-- and not with a shoulder or trigger held, so those combinations stay the game's.
+local SORT_KEYS = { L3 = "PADLSTICK", R3 = "PADRSTICK" }
+local HELD_MODS = { "PADLSHOULDER", "PADRSHOULDER", "PADLTRIGGER", "PADRTRIGGER" }
+local BAG_FRAMES = NUM_CONTAINER_FRAMES or 13
+
+local function modifierHeld()
+	local ok, state = pcall(C_GamePad.GetDeviceMappedState)
+	local held = ok and type(state) == "table" and state.buttons
+	if not held then return false end
+	for _, key in ipairs(HELD_MODS) do
+		local index = C_GamePad.ButtonBindingToIndex(key)
+		if index and held[index + 1] then return true end
+	end
+	return false
+end
+
+local sortKey = CreateFrame("Button", "ForeverControllerTweaksSortKey", UIParent)
+sortKey:SetScript("OnClick", function() if not modifierHeld() then Tweaks.SortBags() end end)
+local sortBound
+
+local function bagsShown()
+	local combined = ContainerFrameCombinedBags
+	if combined and combined:IsVisible() then return true end
+	for i = 1, BAG_FRAMES do
+		local bag = _G["ContainerFrame" .. i]
+		if bag and bag:IsVisible() then return true end
+	end
+	return false
+end
+
+function Tweaks.SortKeyWanted()
+	local key = ns.db and SORT_KEYS[Tweaks.Get("sortKey")]
+	return key and ns.Active() and bagsShown() and key or nil
+end
+
+local function syncSortKey()
+	local want = Tweaks.SortKeyWanted()
+	if want == sortBound or InCombatLockdown() then return end
+	ClearOverrideBindings(sortKey)
+	if want then SetOverrideBindingClick(sortKey, true, want, sortKey:GetName()) end
+	sortBound = want
+end
+
+-- The key bound now ("PADLSTICK" | "PADRSTICK"), or nil: bags closed, Off, the Gamepad UI off, or in combat.
+function Tweaks.SortKeyBound() return sortBound end
+
+-- The footer prompt (design: the user's 2026-11-19 mock-up): "<stick> Sort" in a segment of our own drawn like the
+-- bags' gamepad footer (Blizzard's PromptedBindingFooter, an InputPromptLegend: gamepad-footer-slot-bg and
+-- -frameneutral, 10 padding, a 24 glyph, the label 4 after it, 44 tall). On the combined bags it carries that footer
+-- on as one box (the user's 2026-11-20 test: no line between Close and Sort): our segment covers the footer's right
+-- cap, drawn above it, and has no left cap of its own, so the footer's top and bottom edges run straight into ours and
+-- our right cap closes both. Both atlases are nine-sliced 8 of 32 on every side (UiTextureAtlasElementSliceData), so
+-- the cap is 8 wide; the art sits on a child one cap further left that our frame clips. The glyph keeps the native gap
+-- after the last prompt (15, InputLegendPromptGroup.lua STANDARD_PROMPT_PADDING), clear of the covered cap. The
+-- footer grows and shrinks with its prompts and the segment follows its edge. The separate bags have no footer: the
+-- segment alone, with all four sides, sits under the backpack. Our own frame under UIParent, one strata above the bags
+-- (the toplevel bags outrank anything in theirs, see the Sort button): nothing is called on or written to Blizzard's
+-- footer, only its legend frame read. Shown while the key is bound and, on the combined bags, while their footer shows
+-- (it hides while the search box has the pad); checked every frame while bound.
+local LEGEND_PAD, LEGEND_ICON, LEGEND_TEXT_GAP, LEGEND_H, LEGEND_CAP, LEGEND_GAP = 10, 24, 4, 44, 8, 15
+local sortPrompt
+
+local function newSortPrompt()
+	local UI = ns.UI
+	local f = CreateFrame("Frame", nil, UIParent)
+	f:SetHeight(LEGEND_H)
+	f:SetFrameStrata(ABOVE_BAGS)
+	f:SetFrameLevel(ABOVE_LEVEL)
+	f:EnableMouse(false)
+	f:SetClipsChildren(true)
+	local art = CreateFrame("Frame", nil, f)
+	art:SetPoint("BOTTOMRIGHT")
+	local bg = art:CreateTexture(nil, "BACKGROUND")
+	bg:SetAtlas("gamepad-footer-slot-bg")
+	bg:SetAllPoints()
+	local border = art:CreateTexture(nil, "BORDER")
+	border:SetAtlas("gamepad-footer-slot-frameneutral")
+	border:SetAllPoints()
+	f.art = art
+	-- On the art, not on f: the art is a child frame and would draw over f's own regions.
+	f.glyph = UI.Glyph(art, LEGEND_ICON)
+	f.label = art:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+	f.label:SetPoint("LEFT", f.glyph, "RIGHT", LEGEND_TEXT_GAP, 0)
+	f.label:SetText(T.SORT)
+	f:Hide()
+	return f
+end
+
+-- The bags' gamepad footer legend while it shows (read only), else nil.
+local function bagFooter(combined)
+	local footer = combined and combined.gamepadFooter
+	local legend = type(footer) == "table" and footer.inputLegend
+	return legend and legend.IsVisible and legend:IsVisible() and legend or nil
+end
+
+-- Where the prompt goes now: the frame and the point on it, or nil to hide it.
+function Tweaks.SortPromptSpot()
+	if not sortBound then return end
+	local combined = ContainerFrameCombinedBags
+	if combined and combined:IsVisible() then
+		local legend = bagFooter(combined)
+		return legend, "TOPRIGHT", legend and -LEGEND_CAP
+	end
+	local backpack = ContainerFrame1
+	if backpack and backpack:IsVisible() then return backpack, "BOTTOMLEFT", 0 end
+end
+
+local function drawSortPrompt()
+	local anchor, point, x = Tweaks.SortPromptSpot()
+	if not anchor then return sortPrompt and sortPrompt:Hide() end
+	sortPrompt = sortPrompt or newSortPrompt()
+	if sortPrompt.anchor ~= anchor then
+		local joined = x ~= 0
+		sortPrompt:ClearAllPoints()
+		sortPrompt:SetPoint("TOPLEFT", anchor, point, x, 0)
+		sortPrompt.art:SetPoint("TOPLEFT", joined and -LEGEND_CAP or 0, 0)
+		sortPrompt.inset = joined and LEGEND_CAP - LEGEND_PAD + LEGEND_GAP or LEGEND_PAD
+		sortPrompt.glyph:SetPoint("TOPLEFT", sortPrompt, "TOPLEFT", sortPrompt.inset, -LEGEND_PAD)
+		sortPrompt.anchor = anchor
+	end
+	if sortPrompt.key ~= sortBound then
+		sortPrompt.key = sortBound
+		sortPrompt.glyph:SetCode(sortBound)
+	end
+	sortPrompt:SetWidth(sortPrompt.inset + LEGEND_ICON + LEGEND_TEXT_GAP + sortPrompt.label:GetStringWidth() + LEGEND_PAD)
+	sortPrompt:Show()
+end
+Tweaks.DrawSortPrompt = drawSortPrompt
+
+-- Every frame, but only while the key is bound: the footer's prompts (and with them its width) change with the focus.
+local promptWatch = CreateFrame("Frame")
+promptWatch:Hide()
+promptWatch:SetScript("OnUpdate", drawSortPrompt)
+local function watchPrompt()
+	promptWatch:SetShown(sortBound ~= nil)
+	drawSortPrompt()
+end
+
+-- ponytail: a 4-a-second visibility read of the bag frames for the whole session; hooks on them would be Blizzard writes.
+ns.On("FCT_READY", function() C_Timer.NewTicker(POLL, function() syncSortKey() watchPrompt() end) end)
+ns.On("FCT_COMBAT_START", function()
+	if InCombatLockdown() or not sortBound then return end
+	ClearOverrideBindings(sortKey)
+	sortBound = nil
+	watchPrompt()
+end)
+ns.On("PLAYER_REGEN_ENABLED", function()
+	syncSortKey()
+	watchPrompt()
+end)
 
 ---------------------------------------------------------------------------------------------------------------------
 -- Vendors.
@@ -1032,7 +1195,15 @@ local function textButton(text, width, onClick)
 end
 
 -- Shows button on anchor (point, relative point, x, y) while shown (default: anchor) is visible, a level above it.
-local function place(button, anchor, point, relativePoint, x, y, shown)
+-- The bags' Sort button: on the combined bags' title bar, the size of its close button, in the corner where that X
+-- sits (the Gamepad UI hides it). The bags are a toplevel window: each click or show raises them one level above the
+-- highest frame of their strata, and their title-bar art sits ~500 levels up inside them, so a button in their strata
+-- that copies a level is buried until the next poll, and the two climb to the level cap where it stays buried. One
+-- strata up, at a fixed level, nothing climbs.
+local SORT_SMALL, SORT_X = 22, -3
+
+-- strata: a fixed strata (at ABOVE_LEVEL) instead of the anchor's, for a button over a toplevel window.
+local function place(button, anchor, point, relativePoint, x, y, shown, strata)
 	shown = shown or anchor
 	if not (anchor and shown and shown:IsVisible()) then return button:Hide() end
 	if button.anchor ~= anchor then
@@ -1040,13 +1211,10 @@ local function place(button, anchor, point, relativePoint, x, y, shown)
 		button:SetPoint(point, anchor, relativePoint, x, y)
 		button.anchor = anchor
 	end
-	button:SetFrameStrata(anchor:GetFrameStrata())
-	button:SetFrameLevel(anchor:GetFrameLevel() + 10)
+	button:SetFrameStrata(strata or anchor:GetFrameStrata())
+	button:SetFrameLevel(strata and ABOVE_LEVEL or anchor:GetFrameLevel() + 10)
 	button:Show()
 end
-
--- Sort on the combined bags' title bar: the size of the title bar's close button.
-local SORT_SMALL = 22
 
 local function build()
 	-- Blizzard's own sort button's art. Our frames here are never children of Blizzard windows, so the pad cursor
@@ -1077,16 +1245,15 @@ end
 
 local function update()
 	if not buttons.sort then return end
-	-- Combined bags (the Gamepad UI's): their search box spans the whole top row, so Sort sits on the title bar, left
-	-- of the close button. Separate bags: Blizzard's own sort button's place (hidden in the Gamepad UI).
+	-- Combined bags (the Gamepad UI's): their search box spans the whole top row, so Sort sits on the title bar's right
+	-- end. Separate bags: Blizzard's own sort button's place (hidden in the Gamepad UI).
 	local combined = ContainerFrameCombinedBags and ContainerFrameCombinedBags:IsVisible() and ContainerFrameCombinedBags
-	local close = combined and combined.CloseButton
-	if close then
+	if combined then
 		buttons.sort:SetSize(SORT_SMALL, SORT_SMALL)
-		place(buttons.sort, on("sortBags") and close, "RIGHT", "LEFT", -2, 0, combined)
+		place(buttons.sort, on("sortBags") and combined, "TOPRIGHT", "TOPRIGHT", SORT_X, 0, nil, ABOVE_BAGS)
 	else
 		buttons.sort:SetSize(28, 26)
-		place(buttons.sort, on("sortBags") and (combined or ContainerFrame1), "TOPRIGHT", "TOPRIGHT", combined and -30 or -9, combined and -3 or -34)
+		place(buttons.sort, on("sortBags") and ContainerFrame1, "TOPRIGHT", "TOPRIGHT", -9, -34, nil, ABOVE_BAGS)
 	end
 
 	local buying = on("buyStack") and MerchantFrame and MerchantFrame:IsVisible() and MerchantFrame.selectedTab == 1

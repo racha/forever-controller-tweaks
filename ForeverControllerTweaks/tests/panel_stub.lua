@@ -325,6 +325,7 @@ function PickupAction(s) W.calls[#W.calls + 1] = "Pickup" .. s; W.cursor, W.acti
 function PlaceAction(s) W.calls[#W.calls + 1] = "Place" .. s; W.cursor, W.actions[s] = W.actions[s], W.cursor end
 function ClearCursor() W.cursor = nil end
 function SetOverrideBinding(_, _, key, action) W.override = key .. "->" .. action end
+function SetOverrideBindingClick(owner, priority, key, name) W.override = key .. "->CLICK " .. name .. (priority and " (priority)" or "") W.overrideOwner = owner end
 function ClearOverrideBindings() W.override = nil end
 
 -- events

@@ -12,7 +12,8 @@
 -- be placed it runs its secure macro text instead (ps-entry-<layer>). Routed cells apply on every crossbar page, and
 -- a click catcher over the cell's crossbar slot takes mouse clicks, hover and gamepad focus.
 -- A back paddle has no crossbar slot: only its cells route (a layer without one does nothing), and only while the
--- paddle has no role, so it still outputs PADPADDLEn.
+-- paddle has no role, so it still outputs PADPADDLEn. The stick presses (L3, R3) are the same, without roles: bound
+-- only while a cell holds an entry, so an unused one keeps its native Auto-run or Ping.
 -- The header owns the bindings and drops them in vehicles, override/possess bars and pet battles, in combat too.
 local _, ns = ...
 local Layout = ns.Layout
@@ -21,16 +22,22 @@ local ACTION_SLOT = { interact = 5, inspect = 6, back = 7, jump = 8 }
 -- The game's default bindings (bar slots 1-8), used only when the core binding context can't be read.
 local ASSUMED_SLOT = { PADDLEFT = 1, PADDUP = 2, PADDRIGHT = 3, PADDDOWN = 4, PAD3 = 5, PAD4 = 6, PAD2 = 7, PAD1 = 8 }
 -- Cells use the Bindings grid's ids: row codes (face positions first, in Layout.FACE_POSITIONS order, as the router
--- index; the paddles last, so Glyphs' ps-key1..8 stay the crossbar keys) and layers T/L/R/B (top, left, right, bottom bar).
-local CODES = { "FB", "FR", "FL", "FT", "DU", "DL", "DR", "DD", "P1", "P2", "P3", "P4" }
+-- index; the paddles and stick presses last, so Glyphs' ps-key1..8 stay the crossbar keys) and layers T/L/R/B (top,
+-- left, right, bottom bar).
+local CODES = { "FB", "FR", "FL", "FT", "DU", "DL", "DR", "DD", "P1", "P2", "P3", "P4", "L3", "R3" }
 local CODE_KEY = {
 	FB = "PAD1", FR = "PAD2", FL = "PAD3", FT = "PAD4", DU = "PADDUP", DL = "PADDLEFT", DR = "PADDRIGHT", DD = "PADDDOWN",
-	P1 = "PADPADDLE1", P2 = "PADPADDLE2", P3 = "PADPADDLE3", P4 = "PADPADDLE4",
+	P1 = "PADPADDLE1", P2 = "PADPADDLE2", P3 = "PADPADDLE3", P4 = "PADPADDLE4", L3 = "PADLSTICK", R3 = "PADRSTICK",
 }
 local CODE_POS = { FB = "bottom", FR = "right", FL = "left", FT = "top" }
 local POS_CODE = { bottom = "FB", right = "FR", left = "FL", top = "FT" }
-local ROUTER_NAME = { DU = "DpadUp", DL = "DpadLeft", DR = "DpadRight", DD = "DpadDown", P1 = "Paddle1", P2 = "Paddle2", P3 = "Paddle3", P4 = "Paddle4" }
+local ROUTER_NAME = { DU = "DpadUp", DL = "DpadLeft", DR = "DpadRight", DD = "DpadDown", P1 = "Paddle1", P2 = "Paddle2", P3 = "Paddle3", P4 = "Paddle4", L3 = "LeftStick", R3 = "RightStick" }
 local PADDLES = { P1 = true, P2 = true, P3 = true, P4 = true }
+-- Buttons without a crossbar slot: the paddles and the stick presses. Paddle roles (PaddleFree) stay paddle-only.
+local NO_SLOT = { P1 = true, P2 = true, P3 = true, P4 = true, L3 = true, R3 = true }
+-- A router's kind for a ring's Dynamic stick (Rings.lua): a face button and R3 aim with the left stick, the rest with
+-- the right one.
+local KIND = { L3 = "lstick", R3 = "rstick" }
 local CELL_LAYERS = { "T", "L", "R", "B" }
 local CELL_LAYER = { T = "top", L = "left", R = "right", B = "bottom" }
 local CELL_BAR = { T = "topBar", L = "leftBar", R = "rightBar", B = "bottomBar" }
@@ -227,7 +234,7 @@ end
 -- else goes into the cell's storage slot (Actions.Assign), D-pad base layer included. A paddle has no storage slot.
 function Face.Routable(code, layer, entry)
 	if not (CODE_KEY[code] and CELL_LAYER[layer]) then return false end
-	if PADDLES[code] or layer == "T" and CODE_POS[code] then return true end
+	if NO_SLOT[code] or layer == "T" and CODE_POS[code] then return true end
 	return not not (entry and not ns.Actions.SLOT_KINDS[ns.Actions.KindOf(entry)])
 end
 
@@ -257,7 +264,7 @@ local BAR_INDEX = { T = 1, L = 2, R = 3, B = 4 }
 local function storageSlot(code, layer, page)
 	local util = GamepadActionBarBindingUtil
 	local storage = util and util.GetGamepadStorageSlotIndexFromPageAndPageUnitSlotID
-	if not storage or PADDLES[code] or (layer == "T" and CODE_POS[code]) then return end
+	if not storage or NO_SLOT[code] or (layer == "T" and CODE_POS[code]) then return end
 
 	local ok, slot = pcall(storage, page, (BAR_INDEX[layer] - 1) * ns.Actions.PER_BAR + nativeSlot(CODE_KEY[code]))
 	return ok and slot or nil
@@ -344,9 +351,27 @@ function Face.SetHealer(code, layer, on, page)
 	local new = {}
 	for key, value in pairs(entry) do new[key] = value end
 	new.healer = on or nil
+	if not on then new.healerLast = nil end
 	if new.native and not on then new = nil end
 	row[layer] = new
 	list[code] = next(row) and row or nil
+	ns.Fire("FCT_LAYOUT_CHANGED", "layout")
+	return true
+end
+
+-- A Healer mode cell's middle (design/1.5.0.md 6): on, letting go in the middle casts on the place it last healed
+-- (healerLast = true); off, nothing. Only on a cell in Healer mode. Fires FCT_LAYOUT_CHANGED("layout").
+function Face.SetHealerLast(code, layer, on)
+	if InCombatLockdown() then return nil, "out of combat only" end
+	local list = cells(true)
+	local row = list and list[code]
+	local entry = row and row[layer]
+	if not (entry and entry.healer) then return nil, "Healer mode is off on this button." end
+
+	local new = {}
+	for key, value in pairs(entry) do new[key] = value end
+	new.healerLast = on or nil
+	row[layer] = new
 	ns.Fire("FCT_LAYOUT_CHANGED", "layout")
 	return true
 end
@@ -403,8 +428,8 @@ local function setup()
 	for i, router in ipairs(routers) do
 		router:SetAttribute("ps-pos", CODE_POS[CODES[i]] or CODES[i])
 		-- A dynamic ring aims with the stick of the hand that isn't on the button (Rings.lua); a paddle, like a
-		-- D-pad button, with the right one.
-		router:SetAttribute("ps-kind", CODE_POS[CODES[i]] and "face" or PADDLES[CODES[i]] and "paddle" or "dpad")
+		-- D-pad button, with the right one; a stick press with the other stick.
+		router:SetAttribute("ps-kind", CODE_POS[CODES[i]] and "face" or PADDLES[CODES[i]] and "paddle" or KIND[CODES[i]] or "dpad")
 		router:SetAttribute("type", "macro")
 		router:SetAttribute("typerelease", "macro")
 		router:SetAttribute("pressAndHoldAction", true)
@@ -586,7 +611,7 @@ end
 -- Writes one router's targets (unresolved collects the override kinds it could not resolve); returns the key's slot
 -- in a bar, nil for a paddle: it has none, so it has no native target, no targeting layer and no override bar.
 local function aim(router, actionBars, code, action, routes, mods, unresolved)
-	local slot = not PADDLES[code] and nativeSlot(CODE_KEY[code]) or nil
+	local slot = not NO_SLOT[code] and nativeSlot(CODE_KEY[code]) or nil
 	for layer, barKey in pairs(BARS) do
 		local target = slot and button(actionBars, barKey, slot)
 		router:SetAttribute("ps-" .. layer, target and target:GetName() or nil)
@@ -661,7 +686,7 @@ local function migrateLegacyFace(char)
 	local storage = util and util.GetGamepadStorageSlotIndexFromPageAndPageUnitSlotID
 	for page = 1, storage and Actions.STANDARD_PAGES or 0 do
 		for _, code in ipairs(CODES) do
-			for layer, barIndex in pairs(not PADDLES[code] and BAR_INDEX or {}) do
+			for layer, barIndex in pairs(not NO_SLOT[code] and BAR_INDEX or {}) do
 				local ok, slot = pcall(storage, page, (barIndex - 1) * Actions.PER_BAR + nativeSlot(CODE_KEY[code]))
 				local oldID = ok and slot and Actions.CurrentId(slot)
 				-- An unregistered PS: macro from an older build is taken on only when its body is the addon's own.
@@ -827,6 +852,36 @@ end
 
 -- The shadow action slot a routed cell fires, or nil (as of the last apply).
 function Face.Slot(code, layer) return shadowOf[code .. "/" .. tostring(layer)] end
+
+-- The routed cells of this character and pad whose entry fires from a shadow slot: { code, layer, id } each (a paddle
+-- with a role and Healer mode cells fire none). Actions.lua gives them back their slots after lost settings.
+function Face.ShadowNeeds()
+	local list, out = cells(), {}
+	for _, code in ipairs(CODES) do
+		local row = list and list[code]
+		local carried = not PADDLES[code] or Face.PaddleFree(code)
+		for _, layer in ipairs(CELL_LAYERS) do
+			local entry = carried and row and row[layer]
+			if entry and not entry.healer and not entry.native and ns.Actions.SLOT_KINDS[ns.Actions.KindOf(entry)] then out[#out + 1] = { code = code, layer = layer, id = entry.id } end
+		end
+	end
+	return out
+end
+
+-- Every entry of this character a shadow slot could hold, on every pad, whatever this machine's pad, roles or Healer
+-- mode: { code, layer, id, pad } each. A synced bars 6-8 slot is freed only when none of them wants its action (another
+-- machine may play on that pad).
+function Face.AllShadowNeeds()
+	local char, out = Face.CharDB(), {}
+	for pad, list in pairs(char and type(char.cells) == "table" and char.cells or {}) do
+		for code, row in pairs(type(list) == "table" and list or {}) do
+			for layer, entry in pairs(type(row) == "table" and row or {}) do
+				if type(entry) == "table" and type(entry.id) == "string" and ns.Actions.SLOT_KINDS[ns.Actions.KindOf(entry)] then out[#out + 1] = { code = code, layer = layer, id = entry.id, pad = pad } end
+			end
+		end
+	end
+	return out
+end
 
 -- True while this key's router is held down and its press went to this layer (T/L/R/B); a stance or pet bar that
 -- took the press, a state change and a stand-down all read false. Readable in combat. Glyphs presses its mirror by it.

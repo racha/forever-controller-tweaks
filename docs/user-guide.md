@@ -111,6 +111,15 @@ On a pad with back paddles (Xbox Elite, DualSense Edge), each paddle is either a
 - In a vehicle, an override or possess bar, or a pet battle, the paddles do nothing, like the moved face actions.
 - Paddle rows show only when the addon knows your pad has paddles: an Xbox Elite or DualSense Edge, or any pad whose paddles you taught it with **Detect controller buttons**.
 
+### L3 and R3
+
+Pressing a stick can hold actions too. **L3** has a row at the bottom of the left column and **R3** at the bottom of the right one (on Xbox and Switch they're named LS and RS), each with a cell per bar, like a back paddle without a role.
+
+- The cells are the same on every crossbar page.
+- A stick press is taken over only while one of its bars holds an action. While one does, its empty bars do nothing. Clear every bar and it's the game's again: **L3** auto-runs and **R3** pings.
+- While nothing of yours is on a stick press, its cells show the game's own action (**Auto-run**, **Ping**) on every bar.
+- A ring set to **Dynamic** opened from a stick press aims with the other stick.
+
 ### Action picker
 
 - **L1 / R1** switch categories: Spells, Items, Mounts, Macros, Movement, Targeting, Combat, Windows, Misc, AddOns and Rings.
@@ -153,6 +162,7 @@ Two bars of tap buttons on the left and right edges of the screen, for playing t
 - **On / Off** and **Show** are the first rows under the preview. Show can be **Always**, **Gamepad UI** (while it's on), **In combat** or **Never**.
 - The middle shows your screen with both bars at their real size and place.
 - The edge columns list each bar's buttons, with four cells per button: one per bar (top, left, right, bottom), like the Bindings rows. A tap uses the action for the bar your modifiers have open. An empty cell hides its button on that bar. **Cross** opens the action picker, **Square** clears a cell.
+- **Slots x / 36** counts the hidden action slots (keyboard bars 6-8) your touch buttons and moved actions use. If none is free, a new action still works, but without a live cooldown until one frees up. If your own actions sit on those bars, **Free up slots** next to the counter lists them and, after you confirm, clears them from there (the actions themselves stay in your spellbook, bags and macros).
 - Under them, switch between **Left bar** and **Right bar**, then D-pad left / right change that side's buttons per bar (1–12), button size, spacing, distance from the edge, up / down, opacity, **Shape** (Circle or Square) and **Empty buttons** (Hide or Show).
 
 Touch buttons look and behave like native crossbar slots. They're saved per character, and they work in combat.
@@ -187,11 +197,13 @@ Radial menus of actions you build yourself. Open the **Rings** tab, or `/fct rin
   - **Toggle** (the default): a press opens the ring, and it stays open until you use a slot, press its button again or press **Circle**.
   - **Hold:** the ring shows only while you hold its button.
 - **Style:** how the ring looks, per ring. **Full** (the default) is the game's radial wheel, with each slot's name. **Compact** is the small round picker the game uses for flyouts (the aura and stance picker). It opens on the crossbar button you pressed, with the ring's icon and that bar's modifier buttons in the middle; the slot you aim at gets the highlight and an arrow points at it. From a touch button it opens in the middle of the screen. Both aim the same way.
+- **Middle:** what letting go in the middle does, per ring. **Cancel** (the default): nothing. **Use last**: the slot you used last on this character fires (a Hold ring let go in the middle, or **Cross** with nothing aimed), and the buttons that open the ring show its icon. The ring's middle shows it too while nothing is aimed. Changing or emptying that slot forgets it. A Toggle ring still only opens on its button. You can also switch it from a button that opens the ring: **Triangle** on the cell in Bindings or Touch has a **Middle** row; it changes the ring itself, for every button that opens it.
 - **Using a ring:** put **Open ring** on any face, D-pad or touch cell in Bindings or Touch. In **Full** the ring looks like the game's own radial menu. Flick the stick to a slot and let the stick go to use it. Letting go of the button and the stick at the same moment uses it too.
   - **Toggle:** **Cross** uses the lit slot. Letting go of the button while aiming uses the slot; with nothing aimed the ring stays open, so you can still aim. **Circle**, a stick press or the ring's button again closes it without using anything.
   - **Hold:** let go of the button to use the slot you aim at. With nothing aimed, the ring just closes.
   - If the stick was already pushed when the ring opened, that slot isn't used until you centre the stick or move it off that slot.
-- While a ring is open the addon turns on the game's stick-as-buttons setting (`GamePadStickAxisButtons`) and puts your own value back when it closes. The other stick keeps moving or looking, and the aiming stick is held back after release until it's centred. Works in combat.
+- While a ring is open the addon turns on the game's stick-as-buttons setting (`GamePadStickAxisButtons`) and puts your own value back when it closes. The other stick keeps moving or looking, and the aiming stick is held back after release until it's centred, while you cast or channel what it fired, or for a second at most. Works in combat.
+- **Arrow on ring buttons:** every button that opens a ring wears the game's small flyout arrow at its top edge (on the crossbar, in Bindings and on touch buttons); it hides while that ring is open. On by default; untick **Arrow on ring buttons** at the foot of the ring list to turn it off for all your characters.
 - **On a touch button:** a tap opens the ring, a tap on a slot uses it, a tap outside closes it.
 - Slots show cooldowns, charges, range and whether they're usable. Rings are shared by all your characters and use no hidden action slots.
 - `/fct ringlog` prints the last ring events. Add those lines to a ring bug report.
@@ -211,16 +223,18 @@ Any button that holds a heal can open a ring of your group instead: aim at someo
   - a heal absorb as a darker stretch at the end of the health;
   - a red pulse under 30% health;
   - a tinted glow and the type icon when they have a debuff you can dispel.
+- **Last target:** in **Bindings**, on a button in Healer mode, **Triangle** shows **Middle: Cancel** under the Healer mode row. Pick it to switch to **Middle: Last target**: letting go in the middle then casts on the place you last healed with that button (it remembers the place, like Party 2, not the person). While you hold the ring with the stick in the middle, that place lights up with its tooltip. If that unit can't be helped now, nothing is cast. Per button and per character; off by default.
 - **Touch:** a tap opens the ring, a tap on a place casts there.
-- There are no settings: it always shows while held and always aims with the stick for that button. It works in combat; switching it on or off is out of combat. It needs the Rings module.
+- Apart from Last target there are no settings: it always shows while held and always aims with the stick for that button. It works in combat; switching it on or off is out of combat. It needs the Rings module.
 
 ## Tweaks
 
-Small conveniences, on the **Tweaks** tab (the last tab). **Each one is off until you turn it on**, they're saved for all your characters, and they work only while the Gamepad UI is on. The tab has four columns; hover or focus a row for its tooltip.
+Small conveniences, on the **Tweaks** tab (the last tab). **Each one is off until you turn it on** (except the sort bags key), they're saved for all your characters, and they work only while the Gamepad UI is on. The tab has four columns; hover or focus a row for its tooltip.
 
 ### Bags & vendors
 
 - **Sort bags button:** a Sort button on your bags. With the controller, use **Clean Up** in the bag menu, or the picker's **Sort bags** action.
+- **Sort bags key:** while your bags are open, a stick press sorts them: **L3** (the default, on from the start), **R3** or **Off**. With the bags closed the stick works as usual. Not with a shoulder or trigger held. While it works, the bags' controller footer shows an **L3 Sort** (or **R3 Sort**) prompt at its end.
 - **Sell junk:** sells your grey items when you talk to a merchant. One chat line lists what sold and for how much.
 - **Repair:** repairs your gear at a merchant who repairs. **Use guild funds first** pays from the guild bank when the guild allows it, else from your own money.
 - **Buy a full stack:** a **Stack** button on stackable merchant items (for touch and mouse). With the controller, put the picker's **Buy a full stack** action on a button and press it while the cursor is on the item. A stack that costs 150 gold or more is left to the game's own Multi-buy, which asks first. It says when the item is sold out, and buys only what your money covers.
@@ -257,6 +271,7 @@ Small conveniences, on the **Tweaks** tab (the last tab). **Each one is off unti
 - **Battery on the minimap:** a round button on the minimap's ring, next to the others, with the controller's charge. Hidden for pads that don't report one.
 - **Rare nearby alert:** a line on screen and a rumble when a rare is near. Once per rare, never in a fight, on a flight or while dead.
 - **Light bar:** **Game default**, **Class colour** or **Custom**, with **Colour** picking one of 10 colours. **Combat flash** turns the light red while you're in combat. For pads with a light bar, such as the DualSense; Steam may take the light over.
+- **Sync between machines:** the same switch as in **Sync & backup**. Untick it to stop this computer reading and writing the sync macros; they stay for your other computers. Tick it again to merge with the newest copy (it asks first if this computer has its own setup). It's set per computer and never syncs itself.
 
 ### Loot & gear
 
@@ -332,10 +347,52 @@ Because every controller press is being recorded, you control the setup itself w
 
 Pressing a button that's already used shows which step uses it. Press a different one. **Reset detection** forgets the setup, and the game's default mapping comes back.
 
+## What's new
+
+After an update, a window opens once with what changed since the version you last saw, newest first (at most 5 versions, then a link to the rest). It waits until you're out of combat and no other window of the addon is open; a new install doesn't show it.
+
+- Scroll with the right stick, the D-pad, the mouse wheel or the scroll bar. **Circle** or the X closes it.
+- **Never show again** at the top right (D-pad Up from the top of the notes, then **Cross**) turns it off for good. It's never ticked for you, and only counts when you close the window with it ticked.
+- `/fct whatsnew` shows this version's notes and turns the window back on. There is no setting for it in the windows.
+- It's the same for all your characters: the first one you log in with after an update sees it.
+
+## Playing on more than one computer
+
+World of Warcraft saves the addon's settings on each computer, but keeps your macros and action bars for your account. So the addon also keeps a copy of its settings in a few account macros, **FCT:Sync 1**, **FCT:Sync 2**… (usually 6 to 8), and every computer you log in on uses the newest copy. It's on by default.
+
+- **What syncs:** bindings (for every character, per controller), touch bars, rings, controller setup (roles, face actions, detection), tweaks, keyboard settings and quick messages, the other options, and whether you've done the setup guide.
+- **What stays on each computer:** the keyboard's learned words, which slot each ring used last, Healer mode's last target, the What's new state, the debug log, and the addon's own records of its macros and hidden slots (it finds those again by itself).
+- **When:** it reads at login, once the game has loaded your macro list, before the crossbar is set up. It never writes before it has read (and taken in) what the other computer saved. It writes a few seconds after you change something, out of combat and at most every 30 seconds. A change made just before quitting goes out at your next login on that computer.
+- **Parts:** each part (one character's bindings on one controller, the rings, the tweaks…) syncs on its own. If the same part changed on two computers, the newer change wins, chat says so, and **Undo last sync** brings the other back.
+- **First time on a computer with its own setup:** it asks once, **Use synced** or **Keep mine**. Either way the other copy is kept for Undo. A new install just takes the synced settings.
+- **Another controller:** bindings are kept per controller, so a handheld with a different pad starts with none. Sync & backup then offers **Copy bindings from** your other controller.
+
+### Sync & backup
+
+**Triangle → More → Sync & backup**, on any tab.
+
+| Row | What it does |
+|---|---|
+| Sync between machines | On: this computer reads and writes the sync macros. Off: it stops, here only; the macros stay for your other computers. |
+| Last synced, On the server, What syncs | When and from which computer, how many sync macros there are and how many of your 120 account macros are free, and what they carry. The line under them says Up to date, Changes waiting (in a fight, with a chat box or a ring open), or what's wrong. |
+| Sync now | Writes this computer's settings now. Also retries after the macro list was full. |
+| Export… / Import… | See below. |
+| Undo last sync | Shown after a sync or an import replaced something: puts it back. One step only. |
+| Copy bindings from … | Shown when this controller has no bindings for this character and another of yours has. |
+
+If the account macros are full, nothing is written (never half a copy) and the window says how many to free (Esc → Macros). If someone deleted the sync macros, this computer's copy is written again. If one was edited and is now damaged, a computer that synced before writes its copy again; a computer that never synced waits until you press **Sync now**. If another computer runs a newer version of the addon, sync pauses here until you update (or until that newer copy is gone: **Sync now** checks again).
+
+`/fct sync` prints the status; `/fct sync now`, `/fct sync on`, `/fct sync off` and `/fct sync undo` do the same as the window.
+
+### Export and import
+
+- **Export…** (`/fct export`) shows your settings as one long text, already selected: press Ctrl+C (Cmd+C on a Mac). The game doesn't let addons copy for you, and chat text can't be selected, so this box is the way to copy it. An export holds this character's bindings for this controller, touch bars, rings, tweaks, keyboard settings, options and the controller layout. It has no character or realm names.
+- **Import…** (`/fct import`): click the box and paste (Ctrl+V or Cmd+V). The parts that would change are listed with what changes; untick any you want to keep as they are. **Import** asks once, then replaces the ticked parts; **Undo last sync** puts yours back. Pasting needs a keyboard: a controller alone can't paste.
+
 ## Turning it off
 
 - **Game default layout:** More → Game default, or `/fct preset native`.
-- **Uninstalling:** type `/fct release` first. It empties the addon's hidden slots on keyboard bars 6–8 and deletes its `FCT:` macros. Then disable or delete the addon (and its three module folders) and restart. The controller config is cleaned up on logout, so the game is fully native.
+- **Uninstalling:** type `/fct release` first. It empties the addon's hidden slots on keyboard bars 6–8 and deletes its `FCT:` macros, the `FCT:Sync` ones included (do it on your last computer; sync stops on that one). Then disable or delete the addon (and its three module folders) and restart. The controller config is cleaned up on logout, so the game is fully native.
 
 ## Troubleshooting
 
@@ -347,6 +404,7 @@ Pressing a button that's already used shows which step uses it. Press a differen
 | The shortcut doesn't open the settings | Use `/fct` or the minimap button, then check the controller type |
 | A game action does nothing | Check your macro list (Esc → Macros) for free slots |
 | A moved action does nothing | Check keyboard bars 6–8 have free slots (slots 145–180) |
+| Many "FCT:… 2", "FCT:… 3" macros, or "Slots" full in the Touch tab | `/fct cleanup` keeps one of each, deletes the copies and frees the hidden slots |
 | Something was blocked | `/fct selftest`, then report it with `Logs/taint.log` (see CONTRIBUTING) |
 | Everything is wrong | `/fct reset`, or disable the addon and restart |
 
