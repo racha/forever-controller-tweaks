@@ -254,12 +254,14 @@ GamepadMainActionBarFrame = { PageUnit = { actionBars = actionBars } }
 
 local function loadAddonFile(file) assert(loadfile(dir .. "/" .. file))("ForeverControllerTweaks", ns) end
 loadAddonFile("Core.lua")
+loadAddonFile("Profile.lua")
 loadAddonFile("Layout.lua")
 ns.Device = { Current = function() return { key = "054c/0ce6" } end, SwapTargets = function() return W.cvars.GamepadSwapTargetModifiers == "1" end }
 loadAddonFile("Face.lua")
 loadAddonFile("Actions.lua")
 ns.Fire("ADDON_LOADED", "ForeverControllerTweaks")
-ns.db.devices["054c/0ce6"] = { roles = {}, face = {} }
+ns.db.devices["054c/0ce6"] = { raw = {} }
+ns.db.profiles["054c/0ce6"], ns.db.deviceProfile["054c/0ce6"] = { name = "DualSense", roles = {}, face = {} }, { id = "054c/0ce6", at = 0 }
 ns.db.options.debug = true
 W.char = "Ann"
 
@@ -894,7 +896,10 @@ check(lookups == 0, "64 reads: no lookup")
 ns.Device.Current = function() return { key = "045e/0b13" } end
 check(ns.Face.CellEntry("FT", "T"), "another pad: still the cached cells until told")
 ns.Fire("FCT_LAYOUT_CHANGED", "device")
-check(ns.Face.CellEntry("FT", "T") == nil, "device change: that pad's cells (none)")
+check(ns.Face.CellEntry("FT", "T").id == "spell:133", "a new pad plays on the last profile used until it gets its own")
+ns.db.profiles["045e/0b13"], ns.db.deviceProfile["045e/0b13"] = { name = "Xbox", roles = {}, face = {} }, { id = "045e/0b13", at = 0 }
+ns.Fire("FCT_LAYOUT_CHANGED", "device")
+check(ns.Face.CellEntry("FT", "T") == nil, "device change: that pad's profile's cells (none)")
 local ySlot = ns.Actions.ShadowSlot("FT", "T", "spell:133")
 check(ySlot and W.slots[ySlot].id == 133 and ns.db.chars["Ann-Realm"].shadow[ySlot], "another pad without cells: the shadow slot is kept")
 ns.Device.Current = function() return nil end

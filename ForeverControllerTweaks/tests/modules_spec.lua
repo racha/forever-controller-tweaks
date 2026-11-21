@@ -160,12 +160,13 @@ check(errors() == "", "no errors while loading: " .. errors())
 check(not ns.Touch == not has.Touch and not ns.Keyboard == not has.Keyboard and not ns.Rings == not has.Rings, "module APIs follow the loaded set")
 
 -- Side tabs: Bindings, then the loaded modules in the fixed order, whatever order they loaded in, then the core's
--- Tweaks.
+-- Tweaks and Settings.
 local wanted = { "Bindings" }
 for _, module in ipairs({ "Touch", "Keyboard", "Rings" }) do
 	if has[module] then wanted[#wanted + 1] = ({ Touch = L.TOUCH_TAB, Keyboard = "Keyboard", Rings = "Rings" })[module] end
 end
 wanted[#wanted + 1] = "Tweaks"
+wanted[#wanted + 1] = "Settings"
 local titles = {}
 for i, spec in ipairs(UI.TABS) do titles[i] = spec[2] end
 check(table.concat(titles, ",") == table.concat(wanted, ","), "tabs " .. table.concat(titles, ",") .. ", wanted " .. table.concat(wanted, ","))

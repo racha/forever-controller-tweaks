@@ -88,7 +88,7 @@ local function entryFor(key, raw, defaults)
 	local entry = ns.db.devices[key]
 	if entry then return entry end
 
-	entry = { raw = defaults.raw, roles = {}, face = {} }
+	entry = { raw = defaults.raw }
 	ns.db.devices[key] = entry
 	local setup = defaults.known and "" or "; unknown vendor: /fct family playstation|xbox|switch or /fct detect sets it up"
 	ns.log(string.format("new controller %s (%s, %s)%s", tostring(raw.name), key, defaults.family, setup))
@@ -144,8 +144,8 @@ end
 function Device.SwapTargets() return not not (GetCVarBool and GetCVarBool("GamepadSwapTargetModifiers")) end
 
 -- Re-resolves the controller; fires FCT_LAYOUT_CHANGED("device") when it changed, or always with force. Each
--- vendor/product keeps its own db entry, so a Steam virtual pad and a physical one have separate layouts. A detected
--- pad uses the label style the player chose.
+-- vendor/product keeps its own db entry (its hardware: a Steam virtual pad and a physical one learn and detect apart);
+-- the layout and bindings are its profile's (Profile.lua). A detected pad uses the label style the player chose.
 function Device.Refresh(force)
 	if not ns.db then return nil end
 

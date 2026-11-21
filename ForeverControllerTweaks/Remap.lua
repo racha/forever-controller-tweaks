@@ -122,8 +122,8 @@ local function clearLeftovers()
 	for _, id in ipairs(ns.Device.Listed(C_GamePad.GetAllConfigIDs)) do
 		if Layout.IsOurs(getConfig(id)) then
 			local key = keyOf(id)
-			local entry = ns.db.devices[key]
-			if not dirty and not (entry and (next(entry.roles) or entry.detect)) then ns.log("removed a leftover controller config of ours for " .. key .. " (no layout set)") end
+			local entry, profile = ns.db.devices[key], ns.Profile and ns.Profile.Get(ns.Profile.IdFor(key))
+			if not dirty and not (entry and (next(profile and profile.roles or {}) or entry.detect)) then ns.log("removed a leftover controller config of ours for " .. key .. " (no layout set)") end
 			if not writeNative(id) then restoring[key] = id end
 		end
 	end
@@ -353,9 +353,10 @@ function ns.commands.status()
 	end
 	for _, pos in ipairs(Layout.FACE_POSITIONS) do faceParts[#faceParts + 1] = pos .. "=" .. face[pos] end
 
-	local layout = Layout.PresetName(ns.db.devices[device.key].roles)
+	local profile = ns.Profile and ns.Profile.Current()
+	local layout = Layout.PresetName(profile and profile.roles)
 	local extras = (device.hasPaddles and ", paddles" or "") .. (ns.Device.SwapTargets() and ", swap targets on" or "")
-	ns.log(string.format("%s %s (%s%s): layout %s, remap %s", tostring(device.name), device.key, device.family, extras, layout, Remap.State()))
+	ns.log(string.format("%s %s (%s%s): profile %s, layout %s, remap %s", tostring(device.name), device.key, device.family, extras, profile and profile.name or "none", layout, Remap.State()))
 	ns.log("roles " .. table.concat(roleParts, " ") .. " | face " .. table.concat(faceParts, " "))
 end
 

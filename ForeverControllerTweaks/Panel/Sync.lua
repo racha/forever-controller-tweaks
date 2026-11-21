@@ -1,5 +1,5 @@
--- Forever Controller Tweaks panel: Sync & backup, Export, Import and the first-sync question (design/sync.md 6), in
--- the What's new look (the portrait frame on FCT's window base). Our own frames and EditBoxes only: no Menu,
+-- Forever Controller Tweaks panel: Export, Import, the first-sync question and the sync status lines of the Settings
+-- tab (design/sync.md 6), the windows in the What's new look (the portrait frame on FCT's window base). Our own frames and EditBoxes only: no Menu,
 -- StaticPopup, Settings page or SmartNavigation; the clipboard is the player's Ctrl/Cmd+C and +V (CopyToClipboard is
 -- protected). Both text boxes carry ForeverControllerTweaksNoKeyboard, which the on-screen keyboard skips.
 local _, ns = ...
@@ -8,12 +8,8 @@ local L = UI.L
 local Sync = ns.Sync
 
 local STRINGS = {
-	SYNC_MORE = "Sync & backup",
-	SYNC_MORE_TIP = "Keep your settings the same on every computer you play on, and export or import them.",
-	SYNC_TITLE = "Controller Tweaks · Sync & backup",
-	SYNC_SUB = "Keep your settings the same on every computer you play on.",
 	SYNC_ON = "Sync between machines",
-	SYNC_ON_TIP = "Your bindings, rings, touch bars, controller setup, tweaks and keyboard settings are saved on the game's server in a few account macros (FCT:Sync 1, 2, …). Every computer you log in on uses the newest copy.\nOff: this computer stops reading and writing them. The macros stay for your other computers.",
+	SYNC_ON_TIP = "Your profiles and bindings, rings, touch bars, controller setup, tweaks and keyboard settings are saved on the game's server in a few account macros (FCT:Sync 1, 2, …). Every computer you log in on uses the newest copy.\nOff: this computer stops reading and writing them. The macros stay for your other computers.",
 	SYNC_LAST_LABEL = "Last synced", SYNC_SERVER_LABEL = "On the server", SYNC_WHAT_LABEL = "What syncs",
 	SYNC_LAST = "%s · from %s",
 	SYNC_NEVER = "Not synced yet",
@@ -22,7 +18,7 @@ local STRINGS = {
 	SYNC_KEPT = "%d account macros, kept for your other computers",
 	SYNC_CHARS = "bindings for %d characters", SYNC_CHAR = "bindings for 1 character",
 	SYNC_RINGS = "%d rings", SYNC_RING = "1 ring",
-	SYNC_REST = "touch bars, controller setup, tweaks, keyboard",
+	SYNC_REST = "profiles, touch bars, controller setup, tweaks, keyboard",
 	SYNC_WHAT_OFF = "nothing on this computer",
 	SYNC_WHAT_PAUSED = "paused on this computer",
 	SYNC_OK = "Up to date",
@@ -35,8 +31,6 @@ local STRINGS = {
 	SYNC_IMPORT = "Import…", SYNC_IMPORT_TIP = "Settings from an export, yours or a friend's. You see what changes first.",
 	SYNC_UNDO = "Undo last sync (%s)",
 	SYNC_UNDO_TIP = "Puts back the settings the last sync or import replaced: %s.",
-	SYNC_COPY = "Copy bindings from %s",
-	SYNC_COPY_TIP = "This controller has no bindings for this character yet. Copies the ones you made on %s; the crossbar slots stay as they are. Undo puts it back.",
 	SYNC_FULL = "Needs %d more free account macros (Esc → Macros). Your settings stay on this computer.",
 	SYNC_CORRUPT = "The sync macros were changed or are incomplete. This computer's copy will be written again.",
 	SYNC_CORRUPT_FRESH = "The sync macros were changed or are incomplete. Press Sync now to replace them with this computer's settings.",
@@ -44,14 +38,14 @@ local STRINGS = {
 	SYNC_BIG = "Too much to sync (over %d macros).",
 	SYNC_UNAVAILABLE_LINE = "This game client can't sync: C_EncodingUtil is missing.",
 	SYNC_FIRST = "Controller Tweaks found settings from another computer (%s, %s). Use them on this computer?",
-	SYNC_FIRST_SUB = "Keep mine sends this computer's settings to the other instead. Either way, Sync & backup → Undo brings the other copy back.",
+	SYNC_FIRST_SUB = "Keep mine sends this computer's settings to the other instead. Either way, Settings → Undo last sync brings the other copy back.",
 	SYNC_USE = "Use synced",
 	SYNC_KEEP = "Keep mine",
 	EXPORT_TITLE = "Controller Tweaks · Export",
 	EXPORT_SUB = "Your settings as text, to keep or to share.",
 	EXPORT_HINT = "It's selected: press Ctrl+C (Cmd+C on a Mac) to copy it.",
 	EXPORT_HAS = "%s · %d characters",
-	EXPORT_BINDINGS = "Bindings for this character (%s)",
+	EXPORT_BINDINGS = "Bindings for this character (profile %s)",
 	EXPORT_ALL = "Select all",
 	EXPORT_ALL_TIP = "Selects the whole text again, ready for Ctrl+C (Cmd+C on a Mac).",
 	IMPORT_TITLE = "Controller Tweaks · Import",
@@ -65,7 +59,7 @@ local STRINGS = {
 	IMPORT_RINGS = "%d rings replace your %d",
 	IMPORT_ROW_TIP = "Ticked parts replace yours as a whole; unticked ones stay as they are.",
 	IMPORT_GO = "Import",
-	IMPORT_CONFIRM = "Replace these settings with the imported ones? You can undo it from Sync & backup.",
+	IMPORT_CONFIRM = "Replace these settings with the imported ones? Settings → Undo last sync puts yours back.",
 	IMPORT_BAD = "This isn't a Controller Tweaks export, or part of it is missing.",
 	IMPORT_NEWER = "This export is from a newer Controller Tweaks. Update the addon to import it.",
 	IMPORT_SAME = "Nothing to change: these settings match yours.",
@@ -114,15 +108,6 @@ local function newWindow(w, h, title, sub)
 	divider:SetPoint("TOPLEFT", PAD, -60)
 	divider:SetPoint("TOPRIGHT", -PAD, -60)
 	return window
-end
-
-local function divider(window, y)
-	local line = window:CreateTexture(nil, "ARTWORK")
-	line:SetAtlas("Options_HorizontalDivider")
-	line:SetHeight(1)
-	line:SetPoint("TOPLEFT", PAD, -y)
-	line:SetPoint("TOPRIGHT", -PAD, -y)
-	return line
 end
 
 -- A dialog-art button (UI.Dialog's), focused by the pad with its highlight locked.
@@ -219,11 +204,7 @@ end
 local function colour(fs, color) fs:SetTextColor(color:GetRGB()) end
 
 ---------------------------------------------------------------------------------------------------------------------
--- Sync & backup
-
-local W_ = 520
-local main, switch, statusLines, stateLine, stateLine2, line, nowButton, exportButton, importButton, undoButton, copyButton
-local copyKey
+-- The sync status, for the Settings tab (Panel/SettingsTab.lua), and the first-sync question over it
 
 local function lastText(status)
 	local last = status.last
@@ -248,13 +229,19 @@ local function whatText(status)
 	return table.concat(parts, ", ")
 end
 
+-- { { label, value }, ... }: last synced, on the server, what syncs.
+function Panel.StatusLines(status)
+	return { { L.SYNC_LAST_LABEL, lastText(status) }, { L.SYNC_SERVER_LABEL, serverText(status) }, { L.SYNC_WHAT_LABEL, whatText(status) } }
+end
+
 local STATES = {
 	ok = { "SYNC_OK", GREEN_FONT_COLOR }, pending = { "SYNC_PENDING", NORMAL_FONT_COLOR }, choice = { "SYNC_CHOICE", NORMAL_FONT_COLOR },
 	off = { "SYNC_OFF", GRAY_FONT_COLOR }, full = { "SYNC_FULL", RED_FONT_COLOR }, corrupt = { "SYNC_CORRUPT", RED_FONT_COLOR },
 	newer = { "SYNC_NEWER", RED_FONT_COLOR }, big = { "SYNC_BIG", RED_FONT_COLOR }, unavailable = { "SYNC_UNAVAILABLE_LINE", RED_FONT_COLOR },
 }
 
-local function stateText(status)
+-- The state line and its colour.
+function Panel.StateText(status)
 	local spec = STATES[status.state] or STATES.ok
 	local text = L[spec[1]]
 	if status.state == "full" then text = text:format(status.need or 1) end
@@ -263,106 +250,14 @@ local function stateText(status)
 	return text, spec[2]
 end
 
-local function refreshMain()
-	local status = Sync.Status()
-	switch:Set(status.on, status.state ~= "unavailable")
-	local values = { lastText(status), serverText(status), whatText(status) }
-	local y = 112
-	for i, pair in ipairs(statusLines) do
-		pair.label:ClearAllPoints()
-		pair.label:SetPoint("TOPRIGHT", main, "TOPLEFT", 150, -y)
-		pair.value:ClearAllPoints()
-		UI.At(pair.value, main, 160, y)
-		pair.value:SetText(values[i])
-		y = y + math.max(17, pair.value:GetStringHeight() + 4)
-	end
-	local text, color = stateText(status)
-	stateLine:ClearAllPoints()
-	UI.At(stateLine, main, 160, y + 2)
-	stateLine:SetText(text)
-	colour(stateLine, color)
-	y = math.max(240, y + 2 + stateLine:GetStringHeight() + 14)
-	line:ClearAllPoints()
-	line:SetPoint("TOPLEFT", PAD, -y)
-	line:SetPoint("TOPRIGHT", -PAD, -y)
-	y = y + 12
-	placeButtons(main, { nowButton, exportButton, importButton }, y)
-	nowButton:SetEnabled(status.on and status.state ~= "newer" and status.state ~= "unavailable" and status.state ~= "choice")
-	exportButton:SetEnabled(Sync.Available())
-	importButton:SetEnabled(Sync.Available())
-	local nodes = { switch.node, nowButton.node, exportButton.node, importButton.node }
-	local extra = {}
-	local backup = status.backup
-	undoButton:SetShown(backup ~= nil)
-	if backup then
-		local keys = {}
-		for key in pairs(backup.s) do keys[#keys + 1] = key end
-		undoButton:SetText(L.SYNC_UNDO:format(Sync.When(backup.at)))
-		undoButton.node.tip = { title = L.SYNC_UNDO:format(Sync.When(backup.at)), lines = { L.SYNC_UNDO_TIP:format(Sync.KindList(keys)) } }
-		extra[#extra + 1] = undoButton
-	end
-	local name
-	copyKey, name = Sync.OtherPad()
-	copyButton:SetShown(copyKey ~= nil)
-	if copyKey then
-		copyButton:SetText(L.SYNC_COPY:format(name))
-		copyButton.node.tip = { title = L.SYNC_COPY:format(name), lines = { L.SYNC_COPY_TIP:format(name) } }
-		extra[#extra + 1] = copyButton
-	end
-	local wide = 3 * BUTTON_W + 2 * BUTTON_GAP
-	for _, b in ipairs(extra) do
-		y = y + BUTTON_H + 11
-		b:SetWidth(wide)
-		b:ClearAllPoints()
-		UI.At(b, main, (W_ - wide) / 2, y)
-		nodes[#nodes + 1] = b.node
-	end
-	main:SetHeight(y + BUTTON_H + 13)
-	UI.Fit(main)
-	main:SetNodes(nodes)
-	main:SetPrompts({ { "PAD1", L.SELECT }, { "PAD2", L.CLOSE } })
-end
+local function settings() return UI.SettingsTab and UI.SettingsTab.Window() end
 
-local function toggleSync()
-	local status = Sync.Status()
-	Sync.SetOn(not status.on)
-	ns.log(status.on and L.SYNC_LINE_OFF or L.SYNC_LINE_ON)
-	refreshMain()
-end
-
-local function buildMain()
-	main = newWindow(W_, 286, L.SYNC_TITLE, L.SYNC_SUB)
-	switch = checkRow(main, PAD, 70, W_ - 2 * PAD, toggleSync)
-	switch.label:SetText(L.SYNC_ON)
-	switch.node = UI.Node(main, switch, toggleSync, { onFocus = function(on) switch.wash:SetShown(on) end, tip = { title = L.SYNC_ON, lines = { L.SYNC_ON_TIP } } })
-	statusLines = {}
-	for _, key in ipairs({ "SYNC_LAST_LABEL", "SYNC_SERVER_LABEL", "SYNC_WHAT_LABEL" }) do
-		local label = main:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-		label:SetJustifyH("RIGHT")
-		label:SetText(L[key])
-		statusLines[#statusLines + 1] = { label = label, value = UI.Text(main, "GameFontHighlight", 160, 112, "", W_ - 160 - PAD) }
-	end
-	stateLine = UI.Text(main, "GameFontHighlight", 160, 180, "", W_ - 160 - PAD)
-	line = divider(main, 240)
-	nowButton = button(main, L.SYNC_NOW, function()
-		Sync.Now()
-		refreshMain()
-	end, L.SYNC_NOW_TIP)
-	exportButton = button(main, L.SYNC_EXPORT, function() Panel.OpenExport() end, L.SYNC_EXPORT_TIP)
-	importButton = button(main, L.SYNC_IMPORT, function() Panel.OpenImport() end, L.SYNC_IMPORT_TIP)
-	undoButton = button(main, "", function() Sync.Undo() end)
-	copyButton = button(main, "", function() if copyKey then Sync.CopyFrom(copyKey) end end)
-	main.OnRefresh = refreshMain
-	-- The first-sync question closes only with a choice: the X waits while it is up.
-	main.ClosePanelButton:SetScript("OnClick", function() if not UI.DialogShown() then UI.CloseAll() end end)
-end
-
--- The first-sync dialog over the Sync & backup window. B and Escape ask again; combat closes both and the question
--- comes back after the fight.
+-- The first-sync dialog over the Settings tab. B and Escape ask again; combat closes both and the question comes back
+-- after the fight.
 local function ask()
-	local choice = Sync.Choice()
-	if not (choice and main and main:IsShown()) or UI.DialogShown() then return end
-	UI.Dialog():Open(main, {
+	local choice, owner = Sync.Choice(), settings()
+	if not (choice and owner and owner:IsShown()) or UI.DialogShown() then return end
+	UI.Dialog():Open(owner, {
 		text = L.SYNC_FIRST:format(tostring(choice.host), choice.when),
 		sub = L.SYNC_FIRST_SUB,
 		buttons = { L.SYNC_USE, L.SYNC_KEEP },
@@ -373,11 +268,10 @@ local function ask()
 	})
 end
 
+-- The Settings tab, with the first-sync question over it while one waits.
 function Panel.Open()
 	if InCombatLockdown() then return ns.log(L.COMBAT) end
-	if not main then buildMain() end
-	UI.Show(main)
-	if main:IsShown() then ask() end
+	if UI.SettingsTab and UI.SettingsTab.Open() then ask() end
 end
 
 -- Opens the question on its own once nothing else is in the way (no fight, no loading screen, the pad free, the
@@ -387,7 +281,7 @@ local loading = false
 local function askWhenFree()
 	if not Sync.Choice() or InCombatLockdown() or loading or not ns.Active() or not ns.padFree() then return end
 	local current = UI.Current()
-	if current and current ~= main then return end
+	if current and current ~= settings() then return end
 	Panel.Open()
 end
 local function askSoon() if Sync.Choice() then C_Timer.After(ASK_DELAY, askWhenFree) end end
@@ -402,7 +296,6 @@ end)
 ns.On("FCT_PAD_FREE", function(free) if free then askSoon() end end)
 ns.On("FCT_ACTIVE_CHANGED", function(active) if active then askSoon() end end)
 ns.On("FCT_PANEL_OPEN", function(open) if not open then askSoon() end end)
-ns.On("FCT_SYNC_CHANGED", function() if main and main:IsShown() then UI.RefreshSoon(main) end end)
 
 ---------------------------------------------------------------------------------------------------------------------
 -- Export
@@ -414,10 +307,10 @@ local function selectAll()
 	exportBox.edit:HighlightText()
 end
 
--- "Bindings for this character (DualSense Wireless Controller), 3 rings, touch bars, controller layout, tweaks, keyboard".
+-- "Bindings for this character (profile DualSense Wireless Controller), 3 rings, touch bars, profile layout, tweaks, keyboard".
 local function exportWhat(held)
-	local parts, device = {}, ns.Device and ns.Device.Current()
-	if held.bindings and next(held.bindings) then parts[#parts + 1] = L.EXPORT_BINDINGS:format(device and device.name or L.GENERIC_SHORT) end
+	local parts = {}
+	if held.bindings and next(held.bindings) then parts[#parts + 1] = L.EXPORT_BINDINGS:format(held.layout and held.layout.name or L.GENERIC_SHORT) end
 	local rings = held.rings and held.rings.list and #held.rings.list or 0
 	if rings > 0 then parts[#parts + 1] = plural(rings, L.SYNC_RING, L.SYNC_RINGS) end
 	for _, id in ipairs({ "touch", "layout", "tweaks", "keyboard", "options" }) do

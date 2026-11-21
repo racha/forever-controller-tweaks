@@ -1,4 +1,4 @@
--- The Sync & backup, Export and Import windows and the first-sync dialog on the panel stub (design/sync.md 6), the
+-- The Export and Import windows and the first-sync dialog on the panel stub (design/sync.md 6), the
 -- core's TOC files loaded as the game loads them: lua tests/sync_panel_spec.lua
 local here = (arg and arg[0] or ""):match("^(.*)[/\\]") or "."
 local dir = here .. "/.."
@@ -95,46 +95,21 @@ local function indexOf(list, value)
 	for i, v in ipairs(list) do if v == value then return i end end
 end
 
--- More: Sync & backup right after Learn controller, on every tab.
+-- More has no Sync & backup any more: its switch, status, Sync now, Undo, Export and Import are the Settings tab's.
 UI.Bindings.Open()
 UI.OpenMore(UI.Current())
 local more = pickerRows()
-check(indexOf(more, L.SYNC_MORE) and indexOf(more, L.SYNC_MORE) == indexOf(more, L.LEARN) + 1, "More: Sync & backup after Learn controller")
+check(indexOf(more, L.LEARN) and not indexOf(more, "Sync & backup"), "More: no Sync & backup")
 UI.ActionPicker.Close()
-
--- Sync & backup: the switch, the status, three buttons; the switch turns sync off and on here.
-UI.Sync.Open()
-local main = UI.Current()
-check(main and main:IsShown() and main.NineSlice.Text.text == L.SYNC_TITLE, "Sync & backup opens")
-check(#main.nodes == 4, "switch and three buttons: " .. #main.nodes)
-local tip = main.nodes[1].tip
-check(tip and tip.title == L.SYNC_ON, "the switch is focused first, with its tooltip")
-main:Select()
-check(ns.db.sync.on == false and Sync.Status().state == "off", "A turns sync off on this computer")
-main:Select()
-check(ns.db.sync.on == nil, "A turns it on again")
-local reached = {}
-for _ = 1, 6 do
-	reached[main.focus.region] = true
-	main:Pad("PADDRIGHT")
-	main.repeatKey, main.repeatDir = nil, nil
-end
-main:Focus(main.nodes[1])
-main:Pad("PADDDOWN")
-main.repeatKey, main.repeatDir = nil, nil
-reached[main.focus.region] = true
-local count = 0
-for _ in pairs(reached) do count = count + 1 end
-check(count >= 2, "the pad reaches the buttons")
 UI.CloseAll()
 
--- Export: the text, selected, starts FCT1:.
+-- Export: the text, selected, starts FCT2:.
 UI.Sync.OpenExport()
 local export = UI.Current()
 check(export and export.NineSlice.Text.text == L.EXPORT_TITLE, "Export opens")
 local text
 for _, f in ipairs(W.frames) do
-	if f.parent and type(f.text) == "string" and f.text:find("^FCT1:") then text = f.text end
+	if f.parent and type(f.text) == "string" and f.text:find("^FCT2:") then text = f.text end
 end
 check(text and #text > 10, "the export text is in the box")
 check(not text:find("Ann"), "no character name in the export")
@@ -175,17 +150,19 @@ check(other.db.tweaks.sellJunk == true and other.db.chars["Ann-Realm"].cells["05
 local name = other.db.chars["Ann-Realm"].cells["054c/0ce6"].FB.R.name
 check(name and name ~= "spell:133", "names come back from the game: " .. tostring(name))
 local after = UI.Current()
-check(after and after.NineSlice.Text.text == L.SYNC_TITLE and #after.nodes == 5, "back in Sync & backup, with Undo")
+local undoShown = false
+for _, node in ipairs(after and after.nodes or {}) do undoShown = undoShown or node.region.GetText and node.region:GetText():find("^Undo last sync") ~= nil end
+check(after and after == UI.SettingsTab.Window() and undoShown, "back in the Settings tab, with Undo last sync")
 UI.CloseAll()
 -- The import goes out with the next write, 30 s after the login one.
 W.advance(31)
 
--- The first sync on a machine with its own settings: the dialog over Sync & backup; B asks again; a choice applies.
+-- The first sync on a machine with its own settings: the dialog over the Settings tab; B asks again; a choice applies.
 local own = boot({ version = 2, tweaks = { sellJunk = false, lightBar = "game" }, chars = { ["Ann-Realm"] = { cells = { ["054c/0ce6"] = { FT = { T = { id = "spell:9", name = "Nine", icon = 2, kind = "spell" } } } } } } })
 UI, L, Sync = own.UI, own.UI.L, own.Sync
 W.advance(3)
 check(Sync.Choice() ~= nil, "the first sync waits for a choice")
-check(UI.DialogShown() and UI.Current() and UI.Current().NineSlice.Text.text == L.SYNC_TITLE, "the dialog opens over Sync & backup")
+check(UI.DialogShown() and UI.Current() and UI.Current() == UI.SettingsTab.Window(), "the dialog opens over the Settings tab")
 UI.Current().ClosePanelButton.scripts.OnClick()
 check(UI.DialogShown(), "the X waits while the question is up")
 UI.Dialog():OnPad("PAD2")

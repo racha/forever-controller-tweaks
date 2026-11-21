@@ -442,8 +442,8 @@ local function buildDone(page)
 	page.open:SetSpacing(2)
 	function page:Refresh()
 		local device = ns.Device.Current()
-		local entry = device and ns.db.devices[device.key]
-		self.title:SetText(string.format(L.DONE_HEADING, UI.PresetLabel(Layout.PresetName(entry and entry.roles))))
+		local profile = device and ns.Profile and ns.Profile.Current()
+		self.title:SetText(string.format(L.DONE_HEADING, UI.PresetLabel(Layout.PresetName(profile and profile.roles))))
 		local roles = Layout.Roles()
 		for role, row in pairs(self.rows) do row:Set(role, roles, false) end
 		self.open:SetText(UI.OpenWays())

@@ -151,6 +151,9 @@ local function validDetect(detect)
 	return true
 end
 
+local function validRoles(roles) return validAssignment(roles, function(phys) return Layout.NATIVE_KEY[phys] ~= nil end, IS_ROLE, #Layout.ROLES) end
+local function validFace(face) return validAssignment(face, function(pos) return IS_POSITION[pos] end, IS_ACTION, #Layout.FACE_ACTIONS) end
+
 function Layout.RepairDevice(entry, key)
 	if type(key) ~= "string" or not key:match("^%x%x%x%x/%x%x%x%x$") then return nil, { "bad device key" } end
 	if type(entry) ~= "table" then return nil, { "not a table" } end
@@ -175,13 +178,14 @@ function Layout.RepairDevice(entry, key)
 		entry.raw = Layout.DefaultsForKey(key).raw
 		fix("raw missing")
 	end
-	if not entry.roles or not validAssignment(entry.roles, function(phys) return Layout.NATIVE_KEY[phys] ~= nil end, IS_ROLE, #Layout.ROLES) then
-		if entry.roles then fix("roles") end
-		entry.roles = {}
+	-- Roles and face actions are a profile's since 1.5.1 (Profile.lua); an older entry keeps valid ones for the migration.
+	if entry.roles and not validRoles(entry.roles) then
+		entry.roles = nil
+		fix("roles")
 	end
-	if not entry.face or not validAssignment(entry.face, function(pos) return IS_POSITION[pos] end, IS_ACTION, #Layout.FACE_ACTIONS) then
-		if entry.face then fix("face") end
-		entry.face = {}
+	if entry.face and not validFace(entry.face) then
+		entry.face = nil
+		fix("face")
 	end
 	if entry.detect and not validDetect(entry.detect) then
 		entry.detect = nil
@@ -504,11 +508,54 @@ function Layout.PresetName(roles)
 	return "custom"
 end
 
+-- SavedVariables repair for one profiles[id] entry (Profile.lua), in place: { name, roles, face }, or a tombstone
+-- { gone = true }. Returns the entry (nil to drop it) and what was fixed.
+local PROFILE_FIELDS = { name = "string", roles = "table", face = "table" }
+
+function Layout.RepairProfile(profile, id)
+	if type(id) ~= "string" or not (id:match("^%x%x%x%x/%x%x%x%x$") or id:match("^p%d+$")) then return nil, { "bad profile id" } end
+	if type(profile) ~= "table" then return nil, { "not a table" } end
+	if profile.gone ~= nil then
+		if profile.gone == true then return { gone = true }, {} end
+		return nil, { "gone" }
+	end
+
+	local fixes = {}
+	local function fix(what) fixes[#fixes + 1] = what end
+	for field, value in pairs(profile) do
+		if PROFILE_FIELDS[field] ~= type(value) then
+			profile[field] = nil
+			fix("dropped " .. tostring(field))
+		end
+	end
+	if not (profile.name and profile.name:find("%S")) then
+		profile.name = "Profile"
+		fix("name")
+	end
+	if not profile.roles or not validRoles(profile.roles) then
+		if profile.roles then fix("roles") end
+		profile.roles = {}
+	end
+	if not profile.face or not validFace(profile.face) then
+		if profile.face then fix("face") end
+		profile.face = {}
+	end
+	return profile, fixes
+end
+
 -- Runtime helpers for the current device (ns.Device), used by the commands and the settings screen.
 
+-- The current controller's profile (Profile.lua): nil before there is one, which reads as the native layout.
 local function current()
+	local Profile = ns.Profile
+	return Profile and Profile.Current(), ns.Device and ns.Device.Current()
+end
+
+-- A write needs a profile: the first controller's Default is made now if the login sync hasn't made one yet.
+local function writable()
 	local device = ns.Device and ns.Device.Current()
-	return device and ns.db.devices[device.key], device
+	if not (device and ns.Profile) then return nil end
+	return ns.Profile.Ensure(), device
 end
 
 local function swapTargets() return ns.Device and ns.Device.SwapTargets() end
@@ -531,7 +578,7 @@ end
 function Layout.PhysicalFor(key) return Layout.SourceOf(key, ns.Remap and ns.Remap.Outputs() or Layout.NATIVE_KEY) end
 
 function Layout.SetRole(phys, role)
-	local entry, device = current()
+	local entry, device = writable()
 	if not entry then return nil, "no controller found" end
 	if not Layout.NATIVE_KEY[phys] then return nil, "unknown button " .. tostring(phys) .. " (L1 R1 L2 R2 P1-P4)" end
 	if role ~= "none" and not device.raw[phys] then return nil, phys .. " has no raw input on this controller; /fct learn " .. phys .. " first" end
@@ -543,7 +590,7 @@ function Layout.SetRole(phys, role)
 end
 
 function Layout.SetPreset(name)
-	local entry = current()
+	local entry = writable()
 	if not entry then return nil, "no controller found" end
 	if not Layout.PRESETS[name] then return nil, "unknown preset " .. tostring(name) .. " (native, split)" end
 
@@ -552,7 +599,7 @@ function Layout.SetPreset(name)
 end
 
 function Layout.SetFace(pos, action)
-	local entry = current()
+	local entry = writable()
 	if not entry then return nil, "no controller found" end
 
 	local face, err = Layout.AssignFace(entry.face, pos, action)
@@ -562,7 +609,7 @@ function Layout.SetFace(pos, action)
 end
 
 function Layout.Reset()
-	local entry = current()
+	local entry = writable()
 	if not entry then return nil, "no controller found" end
 
 	entry.roles, entry.face = {}, {}

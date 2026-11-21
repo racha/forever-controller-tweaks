@@ -1225,36 +1225,76 @@ UI.DialogButton = dialogButton
 -- A confirm box in StaticPopup's art (UI-DialogBox-Background-Dark under the GameDialogBackgroundTop border, the
 -- dialog focus glow), built by the addon: StaticPopup_Show pushes Blizzard's popup binding set and the popup
 -- templates bind through GamepadMode. Pad: A presses the focused button, B the second (or spec.back), D-pad
--- left/right moves.
+-- left/right moves. Up to three buttons (wider, as StaticPopup grows for three); spec.buttons may be a function. An
+-- optional spec.stepper = { label = fn() -> text, first, last; step = fn(by, wrap) } is a dropdown above the buttons:
+-- up/down move between it and the buttons, left/right (and A) step it, and the texts are read again after a step.
 local dialog
 local DialogMixin = {}
+local DIALOG_W, DIALOG_W3, DIALOG_TEXT_PAD, STEPPER_W = 320, 440, 40, 160
+
+local function buttonsOf(spec) return type(spec.buttons) == "function" and spec.buttons() or spec.buttons end
+
+function DialogMixin:Render()
+	local spec, buttons = self.spec, buttonsOf(self.spec)
+	self.count = #buttons
+	for i = 1, 3 do
+		local button = self["Button" .. i]
+		button:SetText(buttons[i] or "")
+		button:SetShown(buttons[i] ~= nil)
+		button:ClearAllPoints()
+	end
+	if self.count == 1 then self.Button1:SetPoint("BOTTOM", self, "BOTTOM", 0, 16) end
+	if self.count == 2 then
+		self.Button1:SetPoint("BOTTOMRIGHT", self, "BOTTOM", -6.5, 16)
+		self.Button2:SetPoint("BOTTOMLEFT", self, "BOTTOM", 6.5, 16)
+	end
+	if self.count == 3 then
+		self.Button2:SetPoint("BOTTOM", self, "BOTTOM", 0, 16)
+		self.Button1:SetPoint("RIGHT", self.Button2, "LEFT", -13, 0)
+		self.Button3:SetPoint("LEFT", self.Button2, "RIGHT", 13, 0)
+	end
+	local stepper = spec.stepper
+	self.Stepper:SetShown(stepper ~= nil)
+	if stepper then self.Stepper:Set(stepper.label()) end
+end
 
 function DialogMixin:Open(owner, spec)
 	self.owner, self.spec, self.index = owner, spec, 1
+	local width = #buttonsOf(spec) > 2 and DIALOG_W3 or DIALOG_W
+	self:SetWidth(width)
+	self.Text:SetWidth(width - DIALOG_TEXT_PAD)
+	self.SubText:SetWidth(width - DIALOG_TEXT_PAD)
 	self.Text:SetText(spec.text)
 	self.SubText:SetText(spec.sub or "")
-	self.Button1:SetText(spec.buttons[1])
-	self.Button2:SetText(spec.buttons[2] or "")
-	self.Button2:SetShown(spec.buttons[2] ~= nil)
-	self.Button1:ClearAllPoints()
-	if spec.buttons[2] then self.Button1:SetPoint("BOTTOMRIGHT", self, "BOTTOM", -6.5, 16) else self.Button1:SetPoint("BOTTOM", self, "BOTTOM", 0, 16) end
+	self:Render()
+	self.Stepper:ClearAllPoints()
+	self.Stepper:SetPoint("TOP", self.SubText, "BOTTOM", 0, -12)
 	self:ClearAllPoints()
 	self:SetScale(owner:GetScale())
 	self:SetPoint("TOP", owner, "TOPLEFT", owner:GetWidth() / 2, -210)
-	self:SetHeight(math.max(120, 16 + self.Text:GetStringHeight() + 6 + self.SubText:GetStringHeight() + 16 + 21 + 16))
+	local stepper = spec.stepper and self.Stepper:GetHeight() + 12 or 0
+	self:SetHeight(math.max(120, 16 + self.Text:GetStringHeight() + 6 + self.SubText:GetStringHeight() + stepper + 16 + 21 + 16))
 	UI.RaiseAbove(self, owner, "dialog")
 	self:Show()
 	owner:SetPrompts({ { "PAD1", UI.L.SELECT }, { "PAD2", UI.L.BACK } })
 	self:Point()
 end
 
--- The pad-focused button keeps its highlight lit, like a hovered one, beside the cursor.
+-- The pad-focused button keeps its highlight lit, like a hovered one, beside the cursor; index 0 is the stepper.
 function DialogMixin:Point()
-	for i = 1, 2 do
+	for i = 1, 3 do
 		local button = self["Button" .. i]
 		if i == self.index then button:LockHighlight() else button:UnlockHighlight() end
 	end
-	self.owner.cursor:Attach(self["Button" .. self.index], 0)
+	self.Stepper:SetFocused(self.index == 0)
+	self.owner.cursor:Attach(self.index == 0 and self.Stepper or self["Button" .. self.index], 0)
+end
+
+function DialogMixin:Step(by, wrap)
+	local stepper = self.spec and self.spec.stepper
+	if not stepper then return end
+	stepper.step(by, wrap)
+	self:Render()
 end
 
 function DialogMixin:SetSub(text) self.SubText:SetText(text or "") end
@@ -1274,13 +1314,23 @@ function DialogMixin:Press(index)
 end
 
 function DialogMixin:OnPad(key)
-	local two = self.Button2:IsShown()
-	if key == "PADDLEFT" or key == "PADDRIGHT" then
-		self.index = two and key == "PADDRIGHT" and 2 or 1
+	local count, side = self.count or 1, key == "PADDLEFT" and -1 or key == "PADDRIGHT" and 1
+	if self.spec.stepper and self.index == 0 then
+		if side then return self:Step(side) end
+		if key == "PAD1" then return self:Step(1, true) end
+		if key == "PADDDOWN" then
+			self.index = 1
+			return self:Point()
+		end
+	elseif self.spec.stepper and key == "PADDUP" then
+		self.index = 0
+		return self:Point()
+	elseif side then
+		self.index = math.max(1, math.min(count, self.index + side))
 		return self:Point()
 	end
-	if key == "PAD1" then return self:Press(self.index) end
-	if key == "PAD2" then return self:Press(self.spec.back or two and 2 or 1) end
+	if key == "PAD1" and self.index > 0 then return self:Press(self.index) end
+	if key == "PAD2" then return self:Press(self.spec.back or count) end
 end
 
 function UI.Dialog()
@@ -1312,7 +1362,11 @@ function UI.Dialog()
 	dialog.Button1:SetPoint("BOTTOMRIGHT", dialog, "BOTTOM", -6.5, 16)
 	dialog.Button2 = dialogButton(dialog)
 	dialog.Button2:SetPoint("BOTTOMLEFT", dialog, "BOTTOM", 6.5, 16)
-	for index = 1, 2 do
+	dialog.Button3 = dialogButton(dialog)
+	dialog.Button3:Hide()
+	dialog.Stepper = UI.Dropdown(dialog, STEPPER_W, function(by, wrap) dialog:Step(by, wrap) end)
+	dialog.Stepper:Hide()
+	for index = 1, 3 do
 		local button = dialog["Button" .. index]
 		button:SetScript("OnClick", function() dialog:Press(index) end)
 		button:SetScript("OnEnter", function()

@@ -1,5 +1,28 @@
 # Changelog
 
+## 1.5.1 — 2026-11-21
+
+### New: profiles, share bindings between controllers
+- Your layout (which buttons are modifiers, where Jump and Interact sit) and every character's bindings now live in a **profile**. Controllers on the same profile share all of it: bind a spell on your DualSense and it is on your GameSir too. Glyphs and button setup still follow each physical controller.
+- **Nothing changes for you after the update:** each controller you already used becomes its own profile, named after it, with its layout and bindings as they were. Share one when you choose to.
+- **A new controller asks once:** **Use** a profile you have (shared, the same bindings), **Copy** one into a new profile to change on its own, or start **New empty** (the game's layout, no bindings). With more than one profile, a stepper picks which one Use and Copy act on. Until you answer, the new controller plays on the profile you used last; **Circle** answers Use. The question waits for the end of a fight, a loading screen, the controller setup and the setup guide.
+- Your very first controller gets a **Default** profile without asking.
+- `/fct profile` lists your profiles; `/fct profile <name>` switches this controller to one.
+
+### New: Settings tab
+- A sixth side tab after Tweaks, in the same look:
+  - **Profile:** the profile this controller uses (left/right switches it, out of combat), its **Name** (type a new one), **New profile**, **Copy profile** and **Delete profile**. Delete asks first, takes every character's bindings in that profile with it, and moves its controllers to the first profile left. The last profile can't be deleted.
+  - **Controllers:** every controller this computer knows and the profile it plays on.
+  - **Sync between machines:** the switch, when it last synced and from where, what is on the server, **Sync now** and **Undo last sync**.
+  - **Backup:** **Export…** and **Import…**.
+
+### Changed: Sync & backup moved to Settings
+- **Triangle → More → Sync & backup** and **Tweaks → Controller → Sync between machines** are gone: the switch, the status, Sync now, Undo, Export and Import are all in the Settings tab. `/fct sync`, `/fct export` and `/fct import` work as before.
+- **Copy bindings from** is gone too: Use or Copy a profile instead.
+- Profiles sync between your computers with everything else, and so does which profile each controller uses. Deleting a profile on one computer deletes it on the others.
+- An export holds this controller's profile (its name, layout and this character's bindings); an import goes into this controller's profile. Exports from 1.5.0 still import.
+- Sync from this version is written in a new format. A computer still on 1.5.0 pauses sync and says to update; it never writes over the newer copy. Update the addon on every computer you sync.
+
 ## 1.5.0 — 2026-11-21
 
 ### New: What's new

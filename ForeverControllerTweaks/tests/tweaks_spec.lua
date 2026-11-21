@@ -5,7 +5,7 @@
 local here = (arg and arg[0] or ""):match("^(.*)[/\\]") or "."
 local dir = here .. "/.."
 local W = dofile(here .. "/panel_stub.lua")
--- Sync & backup's state line colours (Blizzard globals), read when Panel/Sync.lua loads.
+-- The sync state line colours (Blizzard globals), read when Panel/Sync.lua loads.
 for _, name in ipairs({ "GRAY_FONT_COLOR", "GREEN_FONT_COLOR", "RED_FONT_COLOR", "NORMAL_FONT_COLOR" }) do _G[name] = _G[name] or { GetRGB = function() return 1, 1, 1 end } end
 -- A secure header's wrap keeps its snippet, so the spec can run it.
 getmetatable(W.new("Frame")).WrapScript = function(_, target, _, pre) target.wrap = pre end
@@ -258,14 +258,14 @@ check(next(calls) == nil and #W.log == 0, "all off: nothing sold, repaired, pick
 merchantSpec.visible = false
 W.fire("MERCHANT_CLOSED")
 
--- The tab: last side tab, two columns of checkbox rows under three headers.
+-- The tab: the side tab before Settings, four columns of rows under six headers.
 local L = UI.L
-check(UI.TABS[#UI.TABS].tweaks and UI.TABS[#UI.TABS][2] == "Tweaks", "Tweaks is the last side tab")
+check(UI.TABS[#UI.TABS - 1].tweaks and UI.TABS[#UI.TABS - 1][2] == "Tweaks" and UI.TABS[#UI.TABS].settings, "Tweaks is the side tab before Settings")
 UI.TweaksTab.Open()
 local w = UI.Current()
 local ST = UI.TweaksTab.T
-check(w and w.tabs.index == #UI.TABS, "the tab opens as its own side tab")
-check(#w.nodes == 34, "thirty-four rows: " .. #w.nodes)
+check(w and w.tabs.index == #UI.TABS - 1, "the tab opens as its own side tab")
+check(#w.nodes == 33, "thirty-three rows: " .. #w.nodes)
 local headers = {}
 for _, f in ipairs(W.frames) do if f.parent == w and f.text and type(f.text) == "table" and f.text.text then headers[f.text.text] = true end end
 check(headers[ST.BAGS] and headers[ST.NPCS] and headers[ST.RUMBLE] and headers[ST.CONTROLLER] and headers[ST.GEAR] and headers[ST.SOCIAL], "six section headers")
@@ -275,7 +275,7 @@ local function footer()
 	return out
 end
 local prompts = footer()
-check(prompts.PAD1 == L.SELECT and prompts.PAD4 == L.MORE and prompts.PAD2 == L.CLOSE and prompts.PADLSHOULDER == UI.TABS[#UI.TABS - 1].prompt, "footer: Select, More, the tab before, Close")
+check(prompts.PAD1 == L.SELECT and prompts.PAD4 == L.MORE and prompts.PAD2 == L.CLOSE and prompts.PADLSHOULDER == UI.TABS[#UI.TABS - 2].prompt, "footer: Select, More, the tab before, Close")
 local function focused() return w.focus.region.key end
 check(focused() == "sortBags", "opens on the first row")
 for _, node in ipairs(w.nodes) do check(type(node.tip) == "table" and node.tip.title and node.tip.lines[1], node.region.key .. " has a tooltip") end
@@ -295,7 +295,7 @@ check(walk(10) == "rumble,rumbleStrength,rumble:group,rumble:whisper,rumble:trad
 focusKey("rumble")
 press("PADDRIGHT")
 check(focused() == "battery", "right goes to the Controller column: " .. focused())
-check(walk(7) == "battery,batteryIcon,rareAlert,lightBar,lightColor,combatFlash,syncOn", "Controller column order, Sync between machines last")
+check(walk(6) == "battery,batteryIcon,rareAlert,lightBar,lightColor,combatFlash", "Controller column order (Sync between machines moved to Settings)")
 focusKey("battery")
 press("PADDRIGHT")
 check(focused() == "fastLoot", "right again goes to the last column: " .. focused())
@@ -344,27 +344,8 @@ check(ns.db.tweaks.repair == false and not rowOf("repair").control.check.shown, 
 rowOf("declineDuels").control:Click()
 check(ns.db.tweaks.declineDuels == true, "a click on the checkbox toggles too")
 Tweaks.Set("declineDuels", false)
--- Sync between machines: Sync & backup's switch (db.sync.on, this machine only), not a tweak, not in the tweaks section.
-local syncRow = rowOf("syncOn")
-check(syncRow.label.text == L.SYNC_ON and syncRow.control.check.shown and ns.db.sync.on == nil, "Sync between machines: its row, on")
-for _, node in ipairs(w.nodes) do if node.region.key == "syncOn" then w:Focus(node) end end
-check(w.focus.tip.title == L.SYNC_ON and w.focus.tip.lines[1] == L.SYNC_ON_TIP, "Sync between machines: Sync & backup's tooltip")
-w:Select()
-check(ns.db.sync.on == false and not syncRow.control.check.shown and ns.Sync.Status().state == "off", "A turns sync off on this computer")
-local tweaksSection = ns.Sync.Sections(ns.db).tweaks
-check(ns.db.tweaks.syncOn == nil and tweaksSection.syncOn == nil and not ns.Sync.Encode(tweaksSection):find("sync"), "not a tweak: not in the tweaks section")
-ns.Sync.SetOn(true)
-W.advance(0.5)
-check(ns.db.sync.on == nil and syncRow.control.check.shown, "turned on elsewhere: the row redraws")
-UI.Sync.Open()
-local syncMain = UI.Current()
-syncMain:Focus(syncMain.nodes[1])
-syncMain:Select()
-check(ns.db.sync.on == false, "Sync & backup's switch turns it off")
-UI.TweaksTab.Open()
-w = UI.Current()
-check(not rowOf("syncOn").control.check.shown, "the Tweaks row follows Sync & backup's switch")
-ns.Sync.SetOn(true)
+-- Sync between machines lives in the Settings tab now: no Tweaks row, never a tweak.
+check(rowOf("syncOn") == nil and ns.db.tweaks.syncOn == nil and not ns.Sync.Encode(ns.Sync.Sections(ns.db).tweaks):find("sync"), "no Sync row in Tweaks, not a tweak")
 -- Tooltips: beside the focused row, never over it (right of its column, left from the last column), text wrapped
 -- at a native width.
 local function tooltipFrame() for _, f in ipairs(W.frames) do if f.title and type(f.lines) == "table" and type(f.actions) == "table" then return f end end end

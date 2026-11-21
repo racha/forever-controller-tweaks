@@ -256,6 +256,7 @@ local raw = { L1 = { button = 9 }, R1 = { button = 10 }, L2 = { axis = "LTrigger
 local cells = {}
 ns.db = { options = { glyphs = true, debug = true }, devices = { ["054c/0ce6"] = entry } }
 ns.Device = { Current = function() return { key = "054c/0ce6", raw = raw } end, SwapTargets = function() return swap end, Detecting = function() return detecting end }
+ns.Profile = { Current = function() return entry, "054c/0ce6" end }
 ns.Remap = { State = function() return state end, Outputs = function() return state == "ours" and Layout.Outputs(raw, entry.roles, swap) or nil end }
 -- Face.lua's shadow-slot contract: Slot, Catcher (click catcher frame), Pressed (key held).
 local slotOf, catchers, held = {}, {}, {}

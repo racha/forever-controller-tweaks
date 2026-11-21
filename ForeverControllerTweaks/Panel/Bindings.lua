@@ -423,8 +423,8 @@ end
 -- The roles the player set for this pad (the preset name is read from them).
 local function storedRoles()
 	local device = ns.Device.Current()
-	local entry = device and ns.db.devices[device.key]
-	return entry and entry.roles or {}
+	local profile = device and ns.Profile and ns.Profile.Current()
+	return profile and profile.roles or {}
 end
 
 local function report(ok, err)
@@ -824,7 +824,8 @@ local function refresh()
 	local device = ns.Device.Current() or ns.Device.Refresh()
 	window.device:SetText(device and device.name or "")
 	local state = ns.Remap.State() ~= "off" and L.LAYOUT_ON or L.LAYOUT_NATIVE
-	window.sub:SetText(device and (device.key .. " · " .. state .. " · " .. UI.PresetLabel(Layout.PresetName(storedRoles()))) or L.NO_PAD)
+	local profile = device and ns.Profile and ns.Profile.Current()
+	window.sub:SetText(device and ((profile and profile.name or device.key) .. " · " .. state .. " · " .. UI.PresetLabel(Layout.PresetName(storedRoles()))) or L.NO_PAD)
 	drawing:Place(unpack(DRAWING_PLACE))
 
 	local roles, face = Layout.Roles(), Layout.Face()
@@ -1050,7 +1051,6 @@ function UI.OpenMore(owner, entries, current)
 		{ id = "detectreset", name = L.DETECT_RESET, detail = L.DETECT_RESET_TEXT, run = function() UI.Detect.Reset(owner) end },
 		{ id = "guide", name = L.SETUP_GUIDE, detail = BUTTON_TIPS[1], run = function() UI.Onboarding.Start() end },
 		{ id = "learn", name = L.LEARN, detail = BUTTON_TIPS[2], run = here(function() B.Learn() end) },
-		{ id = "sync", name = L.SYNC_MORE, detail = L.SYNC_MORE_TIP, run = function() UI.Sync.Open() end },
 		{ id = "minimap", name = ns.db.options.minimapIcon == false and L.MINIMAP_SHOW or L.MINIMAP_HIDE, detail = L.MINIMAP_TIP, run = function() UI.ToggleMinimapButton() end },
 		{ id = "reset", name = L.RESET, detail = BUTTON_TIPS[3], run = here(function() B.Reset() end) },
 	}

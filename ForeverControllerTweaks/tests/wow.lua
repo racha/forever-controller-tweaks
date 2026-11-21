@@ -102,7 +102,7 @@ return function(dir, opts)
 
 	ForeverControllerTweaksDB = opts.db
 	W.ns = {}
-	for _, file in ipairs(opts.files or { "Core.lua", "Device.lua", "Layout.lua", "Remap.lua" }) do
+	for _, file in ipairs(opts.files or { "Core.lua", "Device.lua", "Profile.lua", "Layout.lua", "Remap.lua" }) do
 		assert(loadfile(dir .. "/" .. file))("ForeverControllerTweaks", W.ns)
 	end
 

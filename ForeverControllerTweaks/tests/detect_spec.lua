@@ -68,7 +68,7 @@ C_GamePad = {
 }
 
 local ns = {}
-for _, file in ipairs({ "Core.lua", "Device.lua", "Layout.lua", "Remap.lua" }) do assert(loadfile(dir .. "/" .. file))("ForeverControllerTweaks", ns) end
+for _, file in ipairs({ "Core.lua", "Device.lua", "Profile.lua", "Layout.lua", "Remap.lua" }) do assert(loadfile(dir .. "/" .. file))("ForeverControllerTweaks", ns) end
 local Device, Layout = ns.Device, ns.Layout
 local KEY = "1234/5678"
 

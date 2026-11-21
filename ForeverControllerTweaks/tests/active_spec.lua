@@ -106,7 +106,7 @@ end
 GamepadMainActionBarFrame = { PageUnit = { LeftIcon = leftIcon, actionBars = { topBar = { actionButtons = topButtons } } } }
 
 local ns = {}
-for _, file in ipairs({ "Core.lua", "Device.lua", "Layout.lua", "Remap.lua", "Face.lua", "Glyphs.lua" }) do
+for _, file in ipairs({ "Core.lua", "Device.lua", "Profile.lua", "Layout.lua", "Remap.lua", "Face.lua", "Glyphs.lua" }) do
 	assert(loadfile(dir .. "/" .. file))("ForeverControllerTweaks", ns)
 end
 
@@ -167,7 +167,7 @@ SlashCmdList.FOREVERCONTROLLERTWEAKS("learn L1")
 assert(said("learn: Gamepad UI off"))
 SlashCmdList.FOREVERCONTROLLERTWEAKS("role L1 friendly")
 run()
-assert(cleared() and ForeverControllerTweaksDB.devices[DS].roles.L1 == "friendly", "edits are stored while inactive")
+assert(cleared() and ForeverControllerTweaksDB.profiles[ns.Profile.CurrentId()].roles.L1 == "friendly", "edits are stored while inactive")
 SlashCmdList.FOREVERCONTROLLERTWEAKS("preset split")
 
 -- On again during combat: nothing changes until combat ends.

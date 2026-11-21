@@ -59,7 +59,8 @@
 local addonName, ns = ...
 ForeverControllerTweaks = ns
 
-local VERSION, DEBUG_CAP = 2, 500
+local VERSION, DEBUG_CAP = 3, 500
+ns.DB_VERSION = VERSION
 local PREFIX = "|cff33ff99Controller Tweaks|r "
 
 ns.commands = {}
@@ -316,6 +317,8 @@ local MIGRATIONS = {
 			if not entry.confirmed and not ns.Layout.Same(entry.raw, ns.Layout.DefaultsForKey(key).raw) then entry.confirmed = true end
 		end
 	end,
+	-- 3 (1.5.1): every controller becomes its own profile (Profile.lua), under its device key.
+	[3] = function(db) if ns.Profile then ns.Profile.Migrate(db) end end,
 }
 
 local function asTable(value) return type(value) == "table" and value or {} end
@@ -440,6 +443,7 @@ local function loadDB()
 		for version = db.version + 1, VERSION do MIGRATIONS[version](db) end
 		db.version = VERSION
 	end
+	if ns.Profile then ns.Profile.Repair(db, function(what) fixes[#fixes + 1] = what end) end
 	ForeverControllerTweaksDB = db
 	return db, fixes
 end
@@ -459,7 +463,7 @@ local HELP = "/fct (or /controllertweaks) opens the settings; so do L2 + R2 + Cr
 	.. " | preset native|split | role <L1 R1 L2 R2 P1-P4> <leftmod rightmod friendly hostile none>"
 	.. " | face <bottom right left top> <interact inspect back jump> | learn <L1 R1 L2 R2 P1-P4>|cancel | reset (the layout)"
 	.. " | whatsnew (what's new in this version; turns it back on) | cleanup (finds duplicate FCT: macros and stray hidden slots and tidies them)"
-	.. " | sync (status; now, on, off, undo) | export | import | release (gives back every slot and macro before uninstalling) | status | selftest | ringlog | debug on|off | help"
+	.. " | profile (lists them) | profile <name> (this controller uses it) | sync (status; now, on, off, undo) | export | import | release (gives back every slot and macro before uninstalling) | status | selftest | ringlog | debug on|off | help"
 
 function ns.commands.help() ns.log(HELP) end
 

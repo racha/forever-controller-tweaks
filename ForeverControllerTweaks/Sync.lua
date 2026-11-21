@@ -2,9 +2,11 @@
 -- read at login and written when they change; and the codec of /fct export and /fct import.
 --
 -- Sections (design 3.1), each one unit with its own server-time stamp (nothing inside a section is merged): options,
--- tweaks, rings, keyboard, setup, dev:<pad>, b:<Name-Realm>:<pad> (bindings), t:<Name-Realm> (touch bars); and
--- p:<Name-Realm>, the bars 6-8 slots the addon placed on any machine (Actions.lua), merged per slot (the union, the
--- newer entry wins). Local or derived state never syncs: the debug log, the macro registries and shadow records (which
+-- tweaks, rings, keyboard, setup, dev:<pad> (a controller's hardware), prof:<id> (a profile: name, roles, face, or
+-- gone), b:<Name-Realm>:<profile id> (bindings), t:<Name-Realm> (touch bars); and two merged per entry (the union, the
+-- newer entry wins): p:<Name-Realm>, the bars 6-8 slots the addon placed on any machine (Actions.lua), and map, the
+-- profile each controller uses (Profile.lua). Format 1 (before profiles) kept roles and face in dev:<pad> and keyed
+-- bindings by pad: it is read as the profile migration reads an old store. Local or derived state never syncs: the debug log, the macro registries and shadow records (which
 -- cell holds which slot; the take-back rebuilds them), ringLast and the healer last target, What's new, the keyboard's
 -- learned words, Rings' saved stick CVar.
 -- Wire: a sorted-key text form (CBOR's map order isn't stable, and the base comparisons need one string per state),
@@ -14,7 +16,7 @@
 -- State, this machine only: ns.db.sync = { on (nil = on, false = off here), id, base, stamps, marks, last, wrote,
 -- backup, paused, need, pads }. base[key] is the section as this machine and the macros last agreed on it.
 -- Merge per section at login (design 4): R absent: keep L; L absent or empty and never synced: take R; equal: agree;
--- L == base: take R; R == base: keep L; both changed: the newer stamp wins (a tie keeps L); p: sections take the union
+-- L == base: take R; R == base: keep L; both changed: the newer stamp wins (a tie keeps L); p: and map take the union
 -- of both (it goes out again when it differs from R) and never ask. A first sync on a machine
 -- with its own bindings or rings asks once (Sync.Choice, the panel's dialog). Replaced sections go to backup (Undo).
 -- Writes and applies run out of combat with the pad free (ns.whenPadFree), never while a ring is open, a slot write
@@ -29,7 +31,7 @@ local L = {
 	SYNC_MAC = "Mac", SYNC_WINDOWS = "Windows", SYNC_PC = "PC",
 	SYNC_TODAY = "Today %s", SYNC_YESTERDAY = "Yesterday %s",
 	SYNC_GOT = "Synced from %s (%s): %s.",
-	SYNC_BOTH = "%s changed on both computers: kept the newer one from %s (%s). Sync & backup → Undo brings yours back.",
+	SYNC_BOTH = "%s changed on both computers: kept the newer one from %s (%s). Settings → Undo last sync brings yours back.",
 	SYNC_REWROTE = "The sync macros were missing or damaged: written again from this computer.",
 	SYNC_LINE_FULL = "Sync is waiting: free %d account macros (Esc → Macros).",
 	SYNC_LINE_NEWER = "Sync is paused: another computer has a newer Controller Tweaks. Update the addon here.",
@@ -45,24 +47,24 @@ local L = {
 	SYNC_UNAVAILABLE = "Sync, export and import need the game's C_EncodingUtil, which this client doesn't have: they are off.",
 	SYNC_UNDONE = "Put back: %s.",
 	SYNC_NO_UNDO = "Nothing to undo.",
-	SYNC_COPIED = "Copied the bindings from %s.",
 	SYNC_ON_WORD = "on", SYNC_OFF_WORD = "off",
 	SYNC_REPAIRED = "repaired %d damaged sync settings", SYNC_REPAIRED_ONE = "repaired 1 damaged sync setting",
 	SYNC_THIS = "this computer (%s)",
 	IMPORT_DONE = "Imported: %s.",
-	SEC = { bindings = "Bindings on this controller", touch = "Touch bars", rings = "Rings", tweaks = "Tweaks", keyboard = "Keyboard", layout = "Controller layout", setup = "Setup guide", options = "Options", device = "Controller setup" },
+	SEC = { bindings = "Bindings in this profile", touch = "Touch bars", rings = "Rings", tweaks = "Tweaks", keyboard = "Keyboard", layout = "Profile layout", setup = "Setup guide", options = "Options", device = "Controller setup", profile = "Profiles" },
 	-- Sections in chat lines: "bindings, rings".
-	SEC_LOWER = { bindings = "bindings", touch = "touch bars", rings = "rings", tweaks = "tweaks", keyboard = "keyboard", layout = "controller layout", setup = "setup guide", options = "options", device = "controller setup" },
+	SEC_LOWER = { bindings = "bindings", touch = "touch bars", rings = "rings", tweaks = "tweaks", keyboard = "keyboard", layout = "profile layout", setup = "setup guide", options = "options", device = "controller setup", profile = "profiles" },
 }
 Sync.L = L
 
-local FORMAT, MAX_PARTS, BODY_MAX = 1, 20, 255
+-- 2 (1.5.1): profiles. A 1.5.0 machine pauses on it ("newer") and writes nothing.
+local FORMAT, MAX_PARTS, BODY_MAX = 2, 20, 255
 local HEADER = "#FCT%d %d/%d %s "
 -- The gen is the write's server time since GEN_EPOCH (2025-01-01) in base36: 6 letters until 2094. The header is
 -- then at most 19 letters ("#FCT1 20/20 " and the gen and a space).
 local GEN_EPOCH = 1735689600
 local DATA = BODY_MAX - 19
-local EXPORT_PREFIX = "FCT1:"
+local EXPORT_PREFIX = "FCT" .. FORMAT .. ":"
 local ICON = "INV_Misc_Note_01"
 local NAME = "FCT:Sync %d"
 local MACRO_CONSTS = Constants and Constants.MacroConsts or {}
@@ -88,6 +90,14 @@ end
 Sync.Copy = copy
 
 local function serverTime() return call(GetServerTime) or 0 end
+local function isPad(key) return type(key) == "string" and key:find("^%x%x%x%x/%x%x%x%x$") ~= nil end
+local function isId(id) return isPad(id) or type(id) == "string" and id:find("^p%d+$") ~= nil end
+
+-- b:<Name-Realm>:<profile id>: the character and the id, else nil.
+local function bindingsKey(key)
+	local name, id = key:match("^b:(.+):([^:]+)$")
+	if name and isId(id) then return name, id end
+end
 local function finite(value) return type(value) == "number" and value - value == 0 end
 local function trimmed(body) return type(body) == "string" and (body:gsub("%s+$", "")) or nil end
 
@@ -297,6 +307,8 @@ function Sync.Sections(db, base)
 	end
 	if db.onboarded ~= nil or db.declined ~= nil then out.setup = { onboarded = copy(db.onboarded), declined = copy(db.declined) } end
 	for pad, entry in pairs(type(db.devices) == "table" and db.devices or NONE) do out["dev:" .. pad] = copy(entry) end
+	for id, profile in pairs(type(db.profiles) == "table" and db.profiles or NONE) do out["prof:" .. id] = copy(profile) end
+	if type(db.deviceProfile) == "table" and (next(db.deviceProfile) or base.map) then out.map = copy(db.deviceProfile) end
 	for name, char in pairs(type(db.chars) == "table" and db.chars or NONE) do
 		for pad, rows in pairs(type(char) == "table" and type(char.cells) == "table" and char.cells or NONE) do
 			local key = "b:" .. name .. ":" .. pad
@@ -348,7 +360,18 @@ local function validRow(kind, data)
 		end
 		return true
 	end
-	if kind == "layout" then return optionalTables(data, { "roles", "face" }) end
+	if kind == "map" then
+		for key, pick in pairs(data) do
+			if not (isPad(key) and type(pick) == "table" and isId(pick.id) and (pick.at == nil or finite(pick.at))) then return false end
+		end
+		return true
+	end
+	if kind == "profile" then
+		if data.gone ~= nil then return data.gone == true end
+		return (data.name == nil or type(data.name) == "string") and optionalTables(data, { "roles", "face" })
+	end
+	if kind == "layout" then return (data.name == nil or type(data.name) == "string") and optionalTables(data, { "roles", "face" }) end
+	-- roles and face: format 1.
 	if kind == "device" then return optionalTables(data, { "raw", "roles", "face", "detect" }) end
 	if kind == "setup" then return optionalTables(data, { "onboarded", "declined" }) end
 	return true
@@ -360,6 +383,7 @@ local function kindOf(key)
 	if key:find("^t:") then return "touch" end
 	if key:find("^dev:") then return "device" end
 	if key:find("^p:") then return "placed" end
+	if key:find("^prof:") then return "profile" end
 	return key
 end
 Sync.KindOf = kindOf
@@ -380,8 +404,9 @@ end
 local function freshDefault(key, data)
 	local kind = kindOf(key)
 	if kind == "bindings" or kind == "touch" or kind == "rings" then return empty(key, data) end
-	-- Bookkeeping, not a setting of the player's.
-	if kind == "placed" then return true end
+	-- Bookkeeping, not a setting of the player's; map never asks (the union).
+	if kind == "placed" or kind == "map" then return true end
+	if kind == "profile" then return type(data) == "table" and not data.gone and not next(data.roles or NONE) and not next(data.face or NONE) end
 	if kind == "setup" then return true end
 	if kind == "options" then return enc(data) == enc({ glyphs = true, toggleKey = "PADSOCIAL" }) end
 	if kind == "tweaks" then
@@ -399,7 +424,7 @@ local function freshDefault(key, data)
 		return enc(data) == enc(fresh)
 	end
 	if kind == "device" then
-		if type(data) ~= "table" or next(data.roles or NONE) or next(data.face or NONE) or data.detect or data.familyPicked then return false end
+		if type(data) ~= "table" or data.detect or data.familyPicked then return false end
 		local Layout, pad = ns.Layout, key:match("^dev:(.+)$")
 		return not (Layout and Layout.Same and Layout.DefaultsForKey) or Layout.Same(data.raw, Layout.DefaultsForKey(pad).raw)
 	end
@@ -421,8 +446,8 @@ end
 -- sync with own settings: the choice decides), both = { key = true } (both changed, R won), merged = { key = true }
 -- (taken as the union of both: it goes out again) }.
 
--- Placed slots, per slot: the newer entry (a tie keeps L). Removals aren't carried: an entry the slot no longer holds is
--- dropped where it is read (Actions.lua).
+-- Placed slots per slot, map per controller: the newer entry (a tie keeps L). Removals aren't carried: a placed entry
+-- the slot no longer holds is dropped where it is read (Actions.lua); a controller is never forgotten.
 local function union(L, R)
 	local out = copy(L or NONE)
 	for slot, item in pairs(R or NONE) do
@@ -440,7 +465,7 @@ function Sync.Merge(localS, remote, base, stamps, first, own)
 	for key in pairs(keys) do
 		local L, R, B = localS[key], remote[key], base[key]
 		local ls, rs = L ~= nil and enc(L), R and enc(R.d)
-		local joined = R and kindOf(key) == "placed" and union(L, R.d)
+		local joined = R and (kindOf(key) == "placed" or key == "map") and union(L, R.d)
 		local js = joined and enc(joined)
 		if not R then
 			plan.keep[key] = true
@@ -580,8 +605,37 @@ local function putDevice(db, pad, data)
 		db.devices[pad] = nil
 		return
 	end
-	local repaired = ns.Layout and ns.Layout.RepairDevice and ns.Layout.RepairDevice(copy(data), pad)
-	if repaired or not ns.Layout then db.devices[pad] = repaired or copy(data) end
+	data = copy(data)
+	-- Format 1 (an Undo kept from before profiles): the layout is the profile's now.
+	data.roles, data.face = nil, nil
+	local repaired = ns.Layout and ns.Layout.RepairDevice and ns.Layout.RepairDevice(data, pad)
+	if repaired or not ns.Layout then db.devices[pad] = repaired or data end
+end
+
+-- A tombstone forgets the profile everywhere (Profile.Forget: its bindings go, its controllers move); nil removes it
+-- (an Undo of a sync that brought it).
+local function putProfile(db, id, data)
+	db.profiles = type(db.profiles) == "table" and db.profiles or {}
+	if data == nil then
+		db.profiles[id] = nil
+		return
+	end
+	if data.gone then
+		local profile = db.profiles[id]
+		if not (type(profile) == "table" and profile.gone) and ns.Profile then return ns.Profile.Forget(id, 0) end
+		db.profiles[id] = { gone = true }
+		return
+	end
+	local repaired = ns.Layout and ns.Layout.RepairProfile and ns.Layout.RepairProfile(copy(data), id)
+	if repaired or not ns.Layout then db.profiles[id] = repaired or copy(data) end
+end
+
+local function putMap(db, data)
+	local map = {}
+	for key, pick in pairs(type(data) == "table" and data or NONE) do
+		if isPad(key) and type(pick) == "table" and isId(pick.id) then map[key] = { id = pick.id, at = finite(pick.at) and pick.at or 0 } end
+	end
+	db.deviceProfile = map
 end
 
 -- One section into db (data nil removes what can be removed). index: catalogIndex().
@@ -596,13 +650,16 @@ local function put(db, key, data, index)
 		db.declined = type(setup.declined) == "table" and copy(setup.declined) or nil
 		return
 	end
+	if key == "map" then return putMap(db, data) end
 	local pad = key:match("^dev:(%x%x%x%x/%x%x%x%x)$")
 	if pad then return putDevice(db, pad, data) end
-	local name, cellsPad = key:match("^b:(.+):(%x%x%x%x/%x%x%x%x)$")
+	local id = key:match("^prof:(.+)$")
+	if id then return isId(id) and putProfile(db, id, data) end
+	local name, cellsId = bindingsKey(key)
 	if name then
 		local char = charOf(db, name)
 		char.cells = type(char.cells) == "table" and char.cells or {}
-		char.cells[cellsPad] = data ~= nil and fatGrid(data, char.cells[cellsPad], index) or nil
+		char.cells[cellsId] = data ~= nil and fatGrid(data, char.cells[cellsId], index) or nil
 		return
 	end
 	name = key:match("^p:(.+)$")
@@ -714,10 +771,51 @@ function Sync.Repair(db, fix)
 		fix("sync.paused")
 	end
 	if s.need ~= nil and not finite(s.need) then s.need = nil end
+	Sync.SplitDevices(db, s)
 	return s
 end
 
-local function dbVersion() return ns.db and tonumber(ns.db.version) or 2 end
+-- Base, marks, stamps and the backup from before profiles (1.5.0) held a pad's roles and face in dev:<pad>: split as
+-- Profile.Migrate split the store, so the first merge after the update compares like with like. A section changed here
+-- since its last stamp keeps that stamp. Runs on every load; only a dev: with roles or face is touched.
+function Sync.SplitDevices(db, s)
+	local now, split = Sync.Sections(db), {}
+	for key, text in pairs(s.base) do
+		local pad = key:match("^dev:(.+)$")
+		local data = isPad(pad) and Sync.Decode(text)
+		if type(data) == "table" and (data.roles or data.face) then split[pad] = data end
+	end
+	local profiles = type(db.profiles) == "table" and db.profiles or NONE
+	local function profileOf(pad, data)
+		local profile = profiles[pad]
+		return { name = type(profile) == "table" and profile.name or pad, roles = data.roles or {}, face = data.face or {} }
+	end
+	for pad, data in pairs(split) do
+		local dev, prof = "dev:" .. pad, "prof:" .. pad
+		local pending = s.marks[dev] ~= nil and s.marks[dev] ~= hash(s.base[dev])
+		local profile = profileOf(pad, data)
+		data.roles, data.face = nil, nil
+		s.base[dev] = enc(data)
+		if s.base[prof] == nil then
+			s.base[prof], s.stamps[prof] = enc(profile), s.stamps[dev]
+			s.marks[prof] = pending and now[prof] ~= nil and hash(enc(now[prof])) or hash(s.base[prof])
+		end
+		s.marks[dev] = pending and now[dev] ~= nil and hash(enc(now[dev])) or hash(s.base[dev])
+	end
+	local backup = s.backup and s.backup.s or NONE
+	local moved = {}
+	for key, item in pairs(backup) do
+		local pad = key:match("^dev:(.+)$")
+		local data = isPad(pad) and type(item.d) == "table" and item.d
+		if data and (data.roles or data.face) then moved[pad] = data end
+	end
+	for pad, data in pairs(moved) do
+		if backup["prof:" .. pad] == nil then backup["prof:" .. pad] = { d = profileOf(pad, data) } end
+		data.roles, data.face = nil, nil
+	end
+end
+
+local function dbVersion() return ns.db and tonumber(ns.db.version) or ns.DB_VERSION or 2 end
 
 local function platform()
 	if call(IsMacClient) then return L.SYNC_MAC end
@@ -754,10 +852,10 @@ function Sync.When(at)
 end
 
 -- "bindings, rings": the kinds of the keys, deduplicated, in a fixed order.
-local KIND_ORDER = { "bindings", "touch", "rings", "device", "tweaks", "keyboard", "options", "setup", "layout" }
+local KIND_ORDER = { "bindings", "profile", "touch", "rings", "device", "tweaks", "keyboard", "options", "setup", "layout" }
 function Sync.KindList(keys)
 	local seen, out = {}, {}
-	for _, key in ipairs(keys) do seen[kindOf(key)] = true end
+	for _, key in ipairs(keys) do seen[key == "map" and "profile" or kindOf(key)] = true end
 	for _, kind in ipairs(KIND_ORDER) do if seen[kind] then out[#out + 1] = L.SEC_LOWER[kind] end end
 	return table.concat(out, ", ")
 end
@@ -793,6 +891,40 @@ function Sync.Bodies(text, at)
 	return out
 end
 
+-- A pad's profile name as Profile.Migrate gives it (pads: the controller names; profiles: the names so far).
+local function migratedName(profiles, name, unnamed)
+	if ns.Profile then return ns.Profile.MigratedName(profiles, name, unnamed) end
+	return name or "Profile", unnamed
+end
+
+-- A format-1 set (1.5.0), read as Profile.Migrate reads an older store: each pad becomes its own profile under its key,
+-- dev:<pad>'s roles and face (and its stamp) move to prof:<pad>, its controller gets the addon's pick in map, and
+-- b:<Name-Realm>:<pad> keeps its key.
+local function fromFormat1(sections, pads)
+	pads = type(pads) == "table" and pads or NONE
+	local keys, seen = {}, {}
+	for key in pairs(sections) do
+		local pad = key:match("^dev:(.+)$") or select(2, bindingsKey(key))
+		if isPad(pad) and not seen[pad] then keys[#keys + 1], seen[pad] = pad, true end
+	end
+	table.sort(keys)
+	local names, map, unnamed = {}, {}, 0
+	for _, pad in ipairs(keys) do
+		local dev = sections["dev:" .. pad]
+		local data = dev and dev.d
+		local name
+		name, unnamed = migratedName(names, pads[pad], unnamed)
+		names[pad] = { name = name }
+		if not sections["prof:" .. pad] then sections["prof:" .. pad] = { t = dev and dev.t or 0, d = { name = name, roles = copy(data and data.roles) or {}, face = copy(data and data.face) or {} } } end
+		if data then
+			data.roles, data.face = nil, nil
+			map[pad] = { id = pad, at = 0 }
+		end
+	end
+	if next(map) and not sections.map then sections.map = { t = 0, d = map } end
+end
+Sync.FromFormat1 = fromFormat1
+
 -- The newest complete write on the server: payload, parts; or nil and why ("none", "corrupt", "newer").
 function Sync.ReadRemote()
 	local ours = syncMacros()
@@ -823,6 +955,7 @@ function Sync.ReadRemote()
 	for key, item in pairs(payload.s) do
 		if type(key) == "string" and type(item) == "table" and validRow(kindOf(key), item.d) then sections[key] = { t = finite(item.t) and item.t or 0, d = item.d } end
 	end
+	if (tonumber(payload.v) or 0) < 2 then fromFormat1(sections, payload.pads) end
 	payload.s = sections
 	return payload, best.total
 end
@@ -1151,7 +1284,7 @@ function Sync.Status()
 	for _, macro in ipairs(ours) do top = math.max(top, macro.n) end
 	local sections, chars, rings = Sync.Sections(ns.db, s.base), {}, 0
 	for key, data in pairs(sections) do
-		local name = key:match("^b:(.+):%x%x%x%x/%x%x%x%x$")
+		local name = bindingsKey(key)
 		if name and hasEntries(data) then chars[name] = true end
 	end
 	local charCount = 0
@@ -1225,55 +1358,28 @@ function Sync.Release()
 	return deleteAll()
 end
 
--- Another pad with bindings for this character while this one has none: its key and name, else nil.
-function Sync.OtherPad()
-	local device, char = ns.Device and ns.Device.Current(), me()
-	local cells = char and type(char.cells) == "table" and char.cells
-	if not (device and cells) or hasEntries(cells[device.key]) then return end
-	local best
-	for key, rows in pairs(cells) do
-		if key ~= device.key and hasEntries(rows) and (not best or key < best) then best = key end
-	end
-	if best then return best, Sync.PadName(best) end
-end
-
--- Copies the other pad's bindings for this character onto this pad (out of combat); Undo empties it again.
-function Sync.CopyFrom(key)
-	local device = ns.Device and ns.Device.Current()
-	local char, name = me()
-	if not (device and char and type(char.cells) == "table" and hasEntries(char.cells[key])) then return end
-	ns.whenPadFree("sync-copy", function()
-		local target = "b:" .. name .. ":" .. device.key
-		state().backup = { at = serverTime(), host = Sync.Host(), s = { [target] = { d = slimGrid(char.cells[device.key]) } } }
-		char.cells[device.key] = copy(char.cells[key])
-		ns.Fire("FCT_LAYOUT_CHANGED", "layout")
-		ns.log(L.SYNC_COPIED:format(Sync.PadName(key)))
-		Sync.Check()
-	end)
-end
-
 ---------------------------------------------------------------------------------------------------------------------
--- Export and import (design 3.4): this character's bindings for this pad, its touch bars, rings, tweaks, keyboard,
--- options and the pad's roles and face actions, under neutral keys. No character or realm name is ever in it.
+-- Export and import (design 3.4): this controller's profile (its name, roles and face actions, and this character's
+-- bindings in it), the touch bars, rings, tweaks, keyboard and options, under neutral keys. No character or realm name
+-- is ever in it; the profile's name is the one name. An import goes into this controller's profile.
 
 local EXPORT_ROWS = { "bindings", "touch", "rings", "tweaks", "keyboard", "layout", "options" }
 
 -- The local data an export row stands for: data, and the section key it lives in (nil for layout).
 local function localRow(row)
-	local db, device = ns.db, ns.Device and ns.Device.Current()
+	local db = ns.db
 	local char, name = me()
+	local profile, id
+	if ns.Profile then profile, id = ns.Profile.Current() end
 	if row == "bindings" then
-		if not (device and char) then return end
-		return slimGrid(type(char.cells) == "table" and char.cells[device.key] or NONE), "b:" .. name .. ":" .. device.key
+		if not (id and char) then return end
+		return slimGrid(type(char.cells) == "table" and char.cells[id] or NONE), "b:" .. name .. ":" .. id
 	end
 	if row == "touch" then
 		if not char then return end
 		return type(char.touch) == "table" and slimTouch(char.touch) or nil, "t:" .. name
 	end
-	if row == "layout" then
-		local entry = device and type(db.devices) == "table" and db.devices[device.key]
-		return entry and { roles = copy(entry.roles), face = copy(entry.face) } or nil
-	end
+	if row == "layout" then return profile and { name = profile.name, roles = copy(profile.roles), face = copy(profile.face) } or nil end
 	return Sync.Sections(db)[row], row
 end
 
@@ -1346,6 +1452,8 @@ function Sync.Preview(payload)
 		if incoming ~= nil then
 			local mine = localRow(id)
 			local row = { id = id, same = enc(incoming) == enc(mine) }
+			-- The name is the exporter's: an import keeps this profile's.
+			if id == "layout" then row.same = keyChanges(incoming.roles, mine and mine.roles) + keyChanges(incoming.face, mine and mine.face) == 0 end
 			row.missing = (id == "bindings" or id == "layout") and not (ns.Device and ns.Device.Current()) or (id == "bindings" or id == "touch") and not me()
 			if id == "bindings" then row.count = gridChanges(incoming, mine)
 			elseif id == "touch" then row.count = touchChanges(incoming, mine)
@@ -1362,18 +1470,18 @@ end
 -- and the next sync write sends them out.
 function Sync.Import(payload, ids)
 	ns.whenPadFree("sync-import", function()
-		local db, sections, backup, names = ns.db, {}, {}, {}
+		local sections, backup, names = {}, {}, {}
+		local profile, profileId
+		if ns.Profile then profile, profileId = ns.Profile.Ensure() end
 		for _, id in ipairs(ids) do
 			local incoming = payload.s[id]
 			local mine, key = localRow(id)
 			if incoming ~= nil and id == "layout" then
-				local device = ns.Device and ns.Device.Current()
-				local entry = device and type(db.devices) == "table" and db.devices[device.key]
-				if entry then
-					key = "dev:" .. device.key
-					backup[key] = { d = copy(entry) }
-					local new = copy(entry)
-					new.roles, new.face = copy(incoming.roles), copy(incoming.face)
+				if profile then
+					key = "prof:" .. profileId
+					backup[key] = { d = copy(profile) }
+					local new = copy(profile)
+					new.roles, new.face = copy(incoming.roles or {}), copy(incoming.face or {})
 					sections[key] = new
 					names[#names + 1] = id
 				end

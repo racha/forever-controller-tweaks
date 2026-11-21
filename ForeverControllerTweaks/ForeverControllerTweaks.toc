@@ -17,6 +17,7 @@
 Core.lua
 News.lua
 Device.lua
+Profile.lua
 Layout.lua
 Remap.lua
 SlotView.lua
@@ -37,4 +38,5 @@ Panel/Onboarding.lua
 Panel/WhatsNew.lua
 Panel/TweaksTab.lua
 Panel/Sync.lua
+Panel/SettingsTab.lua
 Panel/Panel.lua

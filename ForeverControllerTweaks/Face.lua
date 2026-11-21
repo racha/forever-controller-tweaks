@@ -181,7 +181,8 @@ end
 local busy
 
 
--- Routed cells per character and controller: ns.db.chars[char].cells[deviceKey][code][layer] = { id, name, icon, kind }.
+-- Routed cells per character and profile: ns.db.chars[char].cells[profileId][code][layer] = { id, name, icon, kind }
+-- (a migrated profile's id is its old device key, Profile.lua).
 -- Written out of combat only (the router attributes follow on the next apply). Older stores move in once: the
 -- account-wide ns.db.faceEntries to the first character seen, a character's faceEntries[deviceKey][pos] to the
 -- base layer of that face button.
@@ -205,10 +206,13 @@ local function resolveCells(create)
 		end
 	end
 	char.faceEntries = nil
-	local list = char.cells[device.key]
+	local id = device.key
+	if ns.Profile then id = select(2, (create and ns.Profile.Ensure or ns.Profile.Current)()) end
+	if not id then return nil, true end
+	local list = char.cells[id]
 	if not list and create then
 		list = {}
-		char.cells[device.key] = list
+		char.cells[id] = list
 	end
 	return list, true
 end
@@ -868,8 +872,8 @@ function Face.ShadowNeeds()
 	return out
 end
 
--- Every entry of this character a shadow slot could hold, on every pad, whatever this machine's pad, roles or Healer
--- mode: { code, layer, id, pad } each. A synced bars 6-8 slot is freed only when none of them wants its action (another
+-- Every entry of this character a shadow slot could hold, in every profile, whatever this machine's pad, roles or
+-- Healer mode: { code, layer, id, pad } each (pad: the profile id). A synced bars 6-8 slot is freed only when none of them wants its action (another
 -- machine may play on that pad).
 function Face.AllShadowNeeds()
 	local char, out = Face.CharDB(), {}

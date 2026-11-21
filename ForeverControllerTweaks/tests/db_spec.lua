@@ -31,19 +31,24 @@ local W = new({
 })
 W.login()
 local db = W.ns.db
-local options, devices = db.options, db.devices
-assert(db.version == 2 and ForeverControllerTweaksDB == db)
+local options, devices, profiles = db.options, db.devices, db.profiles
+assert(db.version == 3 and ForeverControllerTweaksDB == db)
 assert(options.glyphs == true and options.toggleKey == "PADSOCIAL" and options.debug == false and options.glyphHide == "overlay")
 assert(#db.debugLog == 500 and db.debugLog[1] == "line 101", "debug log capped, newest kept")
 assert(db.faceEntries["054c/0ce6"].bottom.kind == "spell" and db.onboarded.playstation, "other units' keys untouched")
 
 local ds = devices["054c/0ce6"]
 assert(W.same(ds.raw, { L1 = { button = 9 }, R2 = { axis = "RTrigger" } }), "bad raw sources dropped")
-assert(next(ds.roles) == nil and ds.face.bottom == "interact" and ds.detect == nil and ds.junk == nil)
+assert(ds.roles == nil and ds.face == nil and ds.detect == nil and ds.junk == nil, "the layout moved to the profile")
+-- v3: every pad its own profile under its device key; the bad duplicate role is dropped, the good face kept.
+local p = profiles["054c/0ce6"]
+assert(next(p.roles) == nil and p.face.bottom == "interact" and p.name == "Profile 1", "a repaired layout becomes the profile's")
+assert(db.deviceProfile["054c/0ce6"].id == "054c/0ce6" and db.deviceProfile["054c/0ce6"].at == 0, "the addon's own pick")
 assert(devices["bad key"] == nil and devices["045e/0b12"] == nil)
 assert(devices["2dc8/6001"].confirmed == true, "v2 migration: learned before v2 counts as confirmed")
 assert(devices["2dc8/6002"].confirmed == nil, "default raw: still needs setup")
-assert(devices["057e/2009"].raw.L1.button == 9 and devices["057e/2009"].roles.L1 == "rightmod" and next(devices["057e/2009"].face) == nil)
+assert(devices["057e/2009"].raw.L1.button == 9 and profiles["057e/2009"].roles.L1 == "rightmod" and next(profiles["057e/2009"].face) == nil)
+assert(profiles["057e/2009"].name == "Profile 2" and profiles["2dc8/6002"].name == "Profile 5" and profiles["045e/0b12"] == nil and profiles["bad key"] == nil, "named in key order; dropped pads get none")
 assert(devices["28de/11ff"].detect.buttons.PAD1 == 0 and devices["28de/11ff"].detect.labelStyle == nil)
 assert(W.said("repaired %d+ damaged saved settings"))
 assert(W.ns.Device.Current().key == "054c/0ce6" and W.ns.Remap.State() == "off", "the repaired db runs")
@@ -51,12 +56,16 @@ assert(W.ns.Device.Current().key == "054c/0ce6" and W.ns.Remap.State() == "off",
 -- Fresh install: nothing to repair, the current version, no line.
 local fresh = new(nil)
 fresh.login()
-assert(fresh.ns.db.version == 2 and not fresh.said("repaired") and next(fresh.ns.db.devices["054c/0ce6"].roles) == nil)
+local fdb = fresh.ns.db
+assert(fdb.version == 3 and not fresh.said("repaired") and fdb.devices["054c/0ce6"].roles == nil)
+-- The first controller ever: a Default profile, no question.
+local pick = fdb.deviceProfile["054c/0ce6"]
+assert(pick and pick.id == "p1" and pick.at == 0 and fdb.profiles.p1.name == "Default" and not fresh.ns.Profile.Pending(), "first controller: Default, no question")
 
 -- Not a table at all.
 local junk = new("garbage")
 junk.login()
-assert(type(junk.ns.db.devices) == "table" and junk.ns.db.version == 2)
+assert(type(junk.ns.db.devices) == "table" and junk.ns.db.version == 3)
 
 -- Saved by a newer the addon: kept as it is, no migration down.
 local newer = new({ version = 9, options = {}, devices = {} })
@@ -67,7 +76,7 @@ assert(newer.ns.db.version == 9 and newer.said("newer version of Controller Twea
 for _, version in ipairs({ 0, -3, 1.5, 0 / 0, math.huge }) do
 	local odd = new({ version = version, options = {}, devices = { ["2dc8/6001"] = { raw = { L1 = { button = 4 }, R1 = { button = 10 }, L2 = { axis = "LTrigger" }, R2 = { axis = "RTrigger" } }, roles = {}, face = {} } } })
 	odd.login()
-	assert(odd.ns.db and odd.ns.db.version == 2 and odd.ns.db.devices["2dc8/6001"].confirmed, "version " .. tostring(version))
+	assert(odd.ns.db and odd.ns.db.version == 3 and odd.ns.db.devices["2dc8/6001"].confirmed and odd.ns.db.profiles["2dc8/6001"], "version " .. tostring(version))
 end
 
 -- The macro and character stores: wrong types and bad entries are dropped, good ones kept.
@@ -102,6 +111,20 @@ assert(ann.cells["054c/0ce6"].FT.T.id == "spell:133" and ann.cells["054c/0ce6"].
 -- Back paddle cells sit next to the face cells and are repaired the same way.
 assert(ann.cells["054c/0ce6"].P1.R.id == "face:jump" and ann.cells["054c/0ce6"].P1.L == nil and ann.cells["054c/0ce6"].P3 == nil)
 assert(ann.legacyFaceDone == nil and ann.routedUnderDone == true and ann.macroPrefixDone == nil and sdb.chars["Bob-Realm"] == nil and sdb.chars[7] == nil)
+-- Bindings of a pad with no devices entry: still a profile (lossless), but no controller pick.
+assert(sdb.profiles["054c/0ce6"] and sdb.deviceProfile["054c/0ce6"] == nil and ann.cells["054c/0ce6"].FT.T.id == "spell:133", "cells keep their key")
+
+-- The profile stores: bad ids, shapes and picks dropped; a tombstone stays one; a bad last-used id goes.
+local profs = new({ version = 3, options = {}, devices = {},
+	profiles = { p1 = { name = "Mine", roles = { L1 = "friendly" }, face = {} }, p2 = { gone = true, name = "x" }, p3 = { gone = "yes" }, ["bad"] = {}, p4 = "x", p5 = { name = "  ", roles = 3 } },
+	deviceProfile = { ["054c/0ce6"] = { id = "p1", at = 5 }, ["054c/0df2"] = { id = "nope" }, ["bad"] = { id = "p1", at = 0 } },
+	lastProfile = 7 })
+profs.login()
+local pdb = profs.ns.db
+assert(next(pdb.profiles.p1.roles) == nil and pdb.profiles.p1.name == "Mine", "a broken role set: native")
+assert(pdb.profiles.p2.gone == true and pdb.profiles.p2.name == nil and pdb.profiles.p3 == nil and pdb.profiles.bad == nil and pdb.profiles.p4 == nil)
+assert(pdb.profiles.p5.name == "Profile" and next(pdb.profiles.p5.roles) == nil, "an empty name gets one")
+assert(pdb.deviceProfile["054c/0ce6"].id == "p1" and pdb.deviceProfile["054c/0df2"] == nil and pdb.deviceProfile.bad == nil and pdb.lastProfile == "p1")
 assert(stores.said("repaired %d+ damaged saved settings"))
 
 -- An early GAME_PAD_* event before ADDON_LOADED doesn't touch the missing db.
@@ -157,7 +180,7 @@ assert(runs == 2)
 -- /fct help lists every user command.
 mig.slash("help")
 local help = mig.lines[#mig.lines]
-for _, name in ipairs({ "bindings", "rings", "setup", "detect", "family", "preset", "role", "face", "learn", "reset", "release", "status", "selftest", "ringlog", "debug", "help" }) do
+for _, name in ipairs({ "bindings", "rings", "setup", "detect", "family", "preset", "role", "face", "learn", "reset", "profile", "release", "status", "selftest", "ringlog", "debug", "help" }) do
 	assert(help:find("%f[%w]" .. name .. "%f[%W]"), "help names " .. name)
 end
 
