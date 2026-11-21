@@ -134,7 +134,7 @@ C_SpellBook = {
 	end,
 	IsSpellBookItemPassive = function() return false end,
 	IsSpellBookItemLowRank = function(slot) return book[slot].low end,
-	HasPetSpells = function() return 1 end,
+	HasPetSpells = function() return 1, "DEMON" end,
 }
 C_MountJournal = {
 	GetMountIDs = function() return { 7, 8, 9 } end,

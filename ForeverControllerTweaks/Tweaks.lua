@@ -1264,7 +1264,8 @@ local function update()
 		place(stack, stackable and row, "BOTTOMRIGHT", "BOTTOMRIGHT", -2, 2)
 	end)
 
-	place(buttons.learn, on("learnAll") and ClassTrainerTrainButton, "RIGHT", "LEFT", -4, 0)
+	-- Beside Blizzard's Train button, which the Gamepad UI hides (its footer trains), so the trainer window decides.
+	place(buttons.learn, on("learnAll") and ClassTrainerTrainButton, "RIGHT", "LEFT", -4, 0, ClassTrainerFrame)
 	-- Blizzard's own Open All spot: that button is hidden in the Gamepad UI (its footer has Open All instead).
 	place(buttons.mail, on("openMail") and InboxFrame and InboxFrame.OpenAllMail, "CENTER", "CENTER", 0, 0, InboxFrame)
 end

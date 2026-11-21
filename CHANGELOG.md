@@ -1,5 +1,13 @@
 # Changelog
 
+## 1.5.3 — 2026-11-21
+
+### Fixed: error with a pet
+- Opening the action picker (choosing an action for a button) on a character with a pet, such as a Warlock with an Imp, showed a Lua error and the picker stayed closed. The pet's spells now list normally.
+
+### Fixed: Learn all never showed on the trainer
+- With the Gamepad UI on, the game hides the trainer's own Train button, and **Learn all** (Tweaks → Trainer: Learn all) only showed while that button did. It now shows whenever the trainer window is open.
+
 ## 1.5.2 — 2026-11-21
 
 ### Fixed: a new character got another character's bindings

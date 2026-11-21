@@ -258,7 +258,8 @@ local function spellEntries(add)
 	local api = C_SpellBook
 	if not (api and api.GetNumSpellBookSkillLines) then return end
 	local petBank = Enum.SpellBookSpellBank and Enum.SpellBookSpellBank.Pet
-	for slot = 1, petBank and tonumber(call(api.HasPetSpells)) or 0 do
+	-- HasPetSpells also returns the pet type ("DEMON"), which tonumber would take as its base.
+	for slot = 1, petBank and tonumber((call(api.HasPetSpells))) or 0 do
 		local item = call(api.GetSpellBookItemInfo, slot, petBank)
 		if item and item.spellID and not call(api.IsSpellBookItemPassive, slot, petBank) then
 			local name = item.name or call(C_Spell.GetSpellName, item.spellID)

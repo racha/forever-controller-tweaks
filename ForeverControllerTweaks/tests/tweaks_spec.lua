@@ -154,8 +154,10 @@ function BuyTrainerService(i)
 	services[i].kind = "used"
 	money = money - services[i].cost
 end
+-- Blizzard's Train button is hidden in the Gamepad UI (its footer trains); the trainer window shows.
 local trainSpec = { visible = false }
-ClassTrainerTrainButton = blizz(trainSpec)
+ClassTrainerTrainButton = blizz({ visible = false })
+ClassTrainerFrame = blizz(trainSpec)
 
 local mails = {}
 function GetInboxNumItems() return #mails end
@@ -707,7 +709,7 @@ for _, f in ipairs(W.frames) do if f.text == "Learn all" then learn = f end end
 check(learn and not learn.shown, "Learn all: hidden while no trainer shows")
 trainSpec.visible = true
 W.advance(0.3)
-check(learn.shown and learn.rel == ClassTrainerTrainButton and learn.point == "RIGHT", "beside the Train button")
+check(learn.shown and learn.rel == ClassTrainerTrainButton and learn.point == "RIGHT", "beside the (hidden) Train button while the trainer shows")
 services = { { kind = "available", cost = 100 }, { kind = "unavailable", cost = 1 }, { kind = "used", cost = 1 }, { kind = "available", cost = 300 }, { kind = "available", cost = 5000 } }
 money = 500
 W.fire("TRAINER_SHOW")
