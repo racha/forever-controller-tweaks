@@ -57,8 +57,10 @@ local BAR_RETRIES = 10
 -- place of the top bar. Targeting bars latch with the modifier-toggle option and follow Blizzard's own rules when one
 -- of two held modifiers is let go (HoldBindings.lua:87-96, 127-200), and a bar shows exactly while it is active
 -- (StaticOverrideActionBar ActivateOverrideBar), so the shown bar decides, not the held buttons.
--- An override bar replaces its layer only on its page; restricted code can't read the page, but the bar's
--- (protected) button is visible exactly when Blizzard shows that bar in place of the layer's bar.
+-- An override bar takes its layer's presses as Blizzard decides (IsBarActivelyOverridingActionBar): while its condition
+-- holds and on its page, however it is drawn. Its visibility lags or differs (compact layout, hidden empty bars, the
+-- frame after a shapeshift), and a hidden stance bar sent the press to the normal bar, casting out of form. A page
+-- change re-IDs every pageable button to its storage slot on that page, so the layer's own button tells the page.
 local ROUTER_SNIPPET = [[
 	local name, layer, slot
 	if down then
@@ -84,9 +86,11 @@ local ROUTER_SNIPPET = [[
 		end
 		name = self:GetAttribute("ps-" .. layer)
 		for _, kind in ipairs(OVERRIDE_KINDS) do
-			if control:GetAttribute("state-" .. kind) == "on" and self:GetAttribute("ps-" .. kind .. "layer") == layer then
-				local button = self:GetFrameRef(kind)
-				if button and button:IsVisible() then
+			local button = self:GetAttribute("ps-" .. kind .. "layer") == layer and SecureCmdOptionParse(self:GetAttribute("ps-" .. kind .. "if")) and self:GetFrameRef(kind)
+			if button then
+				-- No page to compare (the special page, a reserved slot): the bar's visibility, as before.
+				local page, normal = self:GetAttribute("ps-" .. kind .. "page"), self:GetFrameRef(kind .. "page")
+				if page and normal and normal:GetID() == page or not page and button:IsVisible() then
 					name, layer = button:GetName(), kind
 					break
 				end
@@ -642,8 +646,9 @@ local function setup()
 
 	header:Execute("OVERRIDE_KINDS = newtable('pet', 'stance'); TARGET_KINDS = newtable('shortcuts', 'friendly', 'hostile')")
 	header:SetAttribute("_onstate-face", ONSTATE_SNIPPET)
-	for _, override in ipairs(OVERRIDES) do RegisterStateDriver(header, override.kind, override.condition .. " on; off") end
 	for i, router in ipairs(routers) do
+		-- Read at the press: a state driver lags a shapeshift by up to a throttle.
+		for _, override in ipairs(OVERRIDES) do router:SetAttribute("ps-" .. override.kind .. "if", override.condition .. " on") end
 		router:SetAttribute("ps-pos", CODE_POS[CODES[i]] or CODES[i])
 		-- A dynamic ring aims with the stick of the hand that isn't on the button (Rings.lua); a paddle, like a
 		-- D-pad button, with the right one; a stick press with the other stick.
@@ -771,7 +776,8 @@ local function aimCatcher(catcher, route, actionBars)
 	catcher.shadow = how == "action" and value or nil
 end
 
--- The layer ("top", "left", "right", "bottom") an override bar replaces per its CVar, false for None, nil when unknown.
+-- The layer ("top", "left", "right", "bottom") an override bar replaces per its CVar, false for None, nil when unknown;
+-- then its page, nil for the special page.
 local function overrideLayer(cvar)
 	local enum, value = Enum[cvar], tonumber(GetCVar(cvar))
 	if not (enum and value) then return nil end
@@ -780,9 +786,20 @@ local function overrideLayer(cvar)
 		if v == value then
 			if name == "None" then return false end
 			local where = name:match("(%u%l+)Bar$")
-			return where and where:lower()
+			return where and where:lower(), tonumber(name:match("^Page(%d+)"))
 		end
 	end
+end
+
+-- The storage slot a pageable button holds on this page, as Blizzard's page change sets its ID.
+local function storageId(page, normal)
+	local util = GamepadActionBarBindingUtil
+	local get = util and util.GetGamepadStorageSlotIndexFromPageAndPageUnitSlotID
+	local unit = get and normal.GetGamepadPageUnitSlotID and normal:GetGamepadPageUnitSlotID()
+	if not unit then return end
+
+	local ok, id = pcall(get, page, unit)
+	return ok and id or nil
 end
 
 local function sameFace(face)
@@ -853,12 +870,16 @@ local function aim(router, actionBars, code, action, routes, mods, unresolved)
 	for role, index in pairs(mods) do router:SetAttribute("ps-i" .. role, index) end
 
 	for _, override in ipairs(slot and OVERRIDES or {}) do
-		local kind, layer = override.kind, overrideLayer(override.cvar)
+		local kind, layer, page = override.kind, overrideLayer(override.cvar)
 		local target = layer and button(actionBars, override.bar, slot)
 		if layer and not (target and target:IsProtected()) then layer = nil end
 		if layer == nil then unresolved[kind] = true end
 		router:SetAttribute("ps-" .. kind .. "layer", layer or nil)
 		if layer then SecureHandlerSetFrameRef(router, kind, target) end
+		local normal = layer and button(actionBars, layer == "top" and "topBar" or BARS[layer], slot)
+		local id = page and normal and storageId(page, normal)
+		router:SetAttribute("ps-" .. kind .. "page", id or nil)
+		if id then SecureHandlerSetFrameRef(router, kind .. "page", normal) end
 	end
 	return slot
 end

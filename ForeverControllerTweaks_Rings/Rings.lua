@@ -50,6 +50,9 @@
 -- can), returning false so a kept pick is dropped too; a tapped slot does the same check.
 -- Stick keys: the game sends a stick's directions as keys (PADRSTICKUP...) only while the CVar GamePadStickAxisButtons
 -- is on, so a held ring switches it on while it is open (below). Without the keys it fires on the button's release or A.
+-- That CVar covers both sticks: the free frame (ForeverControllerTweaksRingFree, its _bind(side) run from _open for the
+-- other stick and from _close for the one that aimed) binds their keys to movement or the camera, and the free watcher
+-- lets them go after the close (FREE, below).
 local ns = ForeverControllerTweaks
 local Rings = {}
 ns.Rings = Rings
@@ -88,6 +91,19 @@ for side, list in pairs(KEYS) do
 	table.sort(list)
 end
 Rings.KEYS, Rings.MODS = KEYS, MODS
+-- The free stick (the one a held ring doesn't aim with): GamePadStickAxisButtons is one CVar for both sticks, so while a
+-- ring aims the other stick sends keys too, which nothing binds, and the character stops (or the camera). Its keys go
+-- to movement (left, Tweaks ringMove) or the camera (right, ringTurn), each on unless turned off.
+local FREE = { left = { UP = "MOVEFORWARD", DOWN = "MOVEBACKWARD", LEFT = "STRAFELEFT", RIGHT = "STRAFERIGHT" }, right = { UP = "PITCHUP", DOWN = "PITCHDOWN", LEFT = "TURNLEFT", RIGHT = "TURNRIGHT" } }
+local FREE_SETTING = { left = "ringMove", right = "ringTurn" }
+local FREE_KEYS = {}
+for side, commands in pairs(FREE) do
+	local list = {}
+	for way in pairs(commands) do list[#list + 1] = "PAD" .. side:sub(1, 1):upper() .. "STICK" .. way end
+	table.sort(list)
+	FREE_KEYS[side] = list
+end
+Rings.FREE, Rings.FREE_KEYS, Rings.FREE_SETTING = FREE, FREE_KEYS, FREE_SETTING
 -- The native radial's geometry (design/rings.md 10.1, UI units at scale 1): wheel radius, slot icon centre radius,
 -- icon size, highlight centre radius, a slot button's square (the icon and 12 round it). Compact: the radial flyout's
 -- offsetRadius (FlyoutRadial.lua CIRCLE_STYLE_PROPERTIES) and a button square round its 36 icon that stays clear of
@@ -675,6 +691,7 @@ local OPEN = ([[
 		local key = self:GetAttribute("ps-bind" .. side .. k)
 		for m = 1, key ~= own and %d or 0 do self:SetBindingClick(true, self:GetAttribute("ps-mod" .. m) .. key, "ForeverControllerTweaksRingKey", key) end
 	end
+	if mode == "hold" then self:GetFrameRef("free"):RunAttribute("_bind", side == "left" and "right" or "left") end
 	local compact = self:GetAttribute("r" .. id .. "y") == "compact"
 	local r, hit = compact and %d or %d, compact and %d or %d
 	-- The routed cell that opened a held ring: its router has the ring on the layer it is pressing (ps-curlayer, set
@@ -725,14 +742,18 @@ local OPEN = ([[
 	self:Show()
 ]]):format(#KEYS.right, #MODS, Rings.GEO.COMPACT_R, Rings.GEO.SLOT_R, Rings.GEO.COMPACT_HIT, Rings.GEO.HIT, Rings.GEO.FLY, 2 * Rings.GEO.WHEEL, Rings.GEO.FLY, 2 * Rings.GEO.WHEEL + 1, MAX_SLOTS)
 
--- Closed first, then the keys given back: a key event the unbinding sets off finds no ring.
+-- Closed first, then the keys given back: a key event the unbinding sets off finds no ring. The CVar stays on after a
+-- held ring (a frame, the free watcher, or to the fight's end), so the stick that aimed gets its free binding too: else
+-- its keys go unbound and it stops moving or turning until then.
 local CLOSE = [[
+	local aimed = self:GetAttribute("ps-mode") == "hold" and self:GetAttribute("ps-aimside")
 	self:SetAttribute("ps-ring", nil)
 	self:SetAttribute("ps-mode", nil)
 	self:SetAttribute("ps-pick", nil)
 	self:SetAttribute("ps-stale", nil)
 	self:SetAttribute("ps-trace", "close")
 	self:ClearBindings()
+	if aimed then self:GetFrameRef("free"):RunAttribute("_bind", aimed) end
 	self:Hide()
 ]]
 
@@ -858,6 +879,21 @@ local KEY = ([[
 	self:SetAttribute("ps-trace", "fire key slot " .. pick)
 ]]):format(LET_GO * LET_GO, RIM * RIM)
 
+-- The free frame's: one stick's keys to movement or the camera, when its setting is on (ps-on-<side>). Its own owner,
+-- so the ring's ClearBindings on every close and open leaves them: a key pushed while the ring was open gets its
+-- release through the same binding (a MOVEFORWARD without its key-up keeps running). Bound once and kept until the
+-- free watcher (below) sees the keys up, out of combat. Not priority: where a ring aims with a stick still bound from
+-- the last one, the ring's priority keys win.
+local FREE_BIND = ([[
+	local side = ...
+	if not (side and self:GetAttribute("ps-on-" .. side)) or self:GetAttribute("ps-bound-" .. side) then return end
+	self:SetAttribute("ps-bound-" .. side, true)
+	for k = 1, %d do
+		local key, command = self:GetAttribute("ps-key" .. side .. k), self:GetAttribute("ps-cmd" .. side .. k)
+		for m = 1, %d do self:SetBinding(false, self:GetAttribute("ps-mod" .. m) .. key, command) end
+	end
+]]):format(#FREE_KEYS.left, #MODS)
+
 local TOGGLE = [[
 	local id = ...
 	if self:IsShown() and self:GetAttribute("ps-ring") == id then return self:RunAttribute("_close") end
@@ -904,6 +940,8 @@ local keyButton = CreateFrame("Button", "ForeverControllerTweaksRingKey", UIPare
 keyButton:SetSize(1, 1)
 keyButton:EnableMouse(false)
 keyButton:RegisterForClicks("AnyDown", "AnyUp")
+-- The free stick's bindings (FREE_BIND): a protected frame of its own, never shown.
+local free = CreateFrame("Frame", "ForeverControllerTweaksRingFree", UIParent, "SecureHandlerBaseTemplate")
 local slots = {}
 for i = 1, MAX_SLOTS do
 	local slot = CreateFrame("Button", "ForeverControllerTweaksRingSlot" .. i, frame, "SecureActionButtonTemplate")
@@ -938,7 +976,18 @@ local function setup()
 	frame:SetAttribute("_used", USED)
 	frame:SetAttribute("ps-keyn", #KEYS.right)
 	frame:SetAttribute("_toggle", TOGGLE)
-	for m, prefix in ipairs(MODS) do frame:SetAttribute("ps-mod" .. m, prefix) end
+	for m, prefix in ipairs(MODS) do
+		frame:SetAttribute("ps-mod" .. m, prefix)
+		free:SetAttribute("ps-mod" .. m, prefix)
+	end
+	free:SetAttribute("_bind", FREE_BIND)
+	for side, list in pairs(FREE_KEYS) do
+		for k, key in ipairs(list) do
+			free:SetAttribute("ps-key" .. side .. k, key)
+			free:SetAttribute("ps-cmd" .. side .. k, FREE[side][key:match("STICK(%u+)$")])
+		end
+	end
+	SecureHandlerSetFrameRef(frame, "free", free)
 	for side, list in pairs(KEYS) do
 		for k, key in ipairs(list) do
 			frame:SetAttribute("ps-bind" .. side .. k, key)
@@ -1068,6 +1117,7 @@ local function applyNow()
 	local left, right = stickIndexes()
 	frame:SetAttribute("ps-lstick", left)
 	frame:SetAttribute("ps-rstick", right)
+	for side, key in pairs(FREE_SETTING) do free:SetAttribute("ps-on-" .. side, ns.Tweaks and ns.Tweaks.Get(key) or nil) end
 	-- A ring that is no more can't stay open.
 	local open = frame:GetAttribute("ps-ring")
 	if open and not (Rings.Get(open) or healers[open]) then frame:Execute(CLOSE) end
@@ -1092,6 +1142,7 @@ ns.On("FCT_READY", function()
 end)
 ns.On("PLAYER_ENTERING_WORLD", apply)
 ns.On("PLAYER_REGEN_ENABLED", function() if pending then apply() end end)
+ns.On("FCT_TWEAKS_CHANGED", function(key) if key == FREE_SETTING.left or key == FREE_SETTING.right then apply() end end)
 -- Spell ranks, macro bodies and set names change what a slot fires; one apply per frame.
 local queued
 ns.On("FCT_CATALOG_CHANGED", function(event)
@@ -1168,6 +1219,47 @@ function Rings.HoldStick(side, index)
 end
 
 ---------------------------------------------------------------------------------------------------------------------
+-- Free watcher: after a held ring closes, the free stick's bindings stay until every bound key reads up and that stick
+-- is back within RECENTRE (the stick's position backs IsKeyDown, unproven on a stick key), then they are cleared and
+-- the CVar is put back, in that order: with the CVar off a stick still pushed may never send its key-up. Out of combat
+-- only (ClearOverrideBindings is protected; hidden in combat, PLAYER_REGEN_ENABLED shows it again): in combat they stay
+-- bound to the fight's end, while the CVar is still on and every push gets its release. Failsafe, HOLD_MAX after the
+-- close: a key still down with its stick centred (an up that never came), or a stick that never reads centred with its
+-- keys up, is let go anyway. Insecure code never calls a movement function.
+-- ponytail: a ring that aims with a stick still bound from the last ring (Right, then Left while walking) takes its
+-- keys while one may be down; whether that key's up still reaches MOVEFORWARD is the game's routing, checked in game.
+
+local watch = CreateFrame("Frame", "ForeverControllerTweaksRingFreeWatch", UIParent)
+watch:Hide()
+
+local function freeBound() return free:GetAttribute("ps-bound-left") or free:GetAttribute("ps-bound-right") end
+
+local function keyDown(key)
+	local ok, down = pcall(IsKeyDown, key)
+	return ok and down
+end
+
+-- Whether every bound free stick is let go; late: HOLD_MAX has passed since the close.
+local function freeLetGo(late)
+	for side, list in pairs(FREE_KEYS) do
+		if free:GetAttribute("ps-bound-" .. side) then
+			local down = false
+			for _, key in ipairs(list) do down = down or keyDown(key) end
+			local centred = stickOffset(frame:GetAttribute("ps-" .. side:sub(1, 1) .. "stick") or (side == "left" and 1 or 2)) <= RECENTRE * RECENTRE
+			if not (down and centred and late or not down and (centred or late)) then return false end
+		end
+	end
+	return true
+end
+
+-- Out of combat: watches from now, HOLD_MAX from here. In combat the bindings simply stay.
+local function watchFree()
+	if InCombatLockdown() then return end
+	watch.left = HOLD_MAX
+	watch:Show()
+end
+
+---------------------------------------------------------------------------------------------------------------------
 -- Stick keys: GamePadStickAxisButtons on while a held ring is open (touch rings don't aim), as Improved Forever's ring
 -- does (ImprovedForever_Wheel/Ring.lua, MIT, markg). Driven by the ring frame's ps-mode, not its OnShow: a held ring
 -- can open over a touch ring already up, and a touch ring over a held one.
@@ -1198,8 +1290,9 @@ local function setTemp()
 	return false
 end
 
--- Remap's failsafe asks this: held while the ring aims, until its restore has run (in combat Remap can't apply anyway).
-local function stillHeld() return frame:GetAttribute("ps-mode") == "hold" or restoring or InCombatLockdown() end
+-- Remap's failsafe asks this: held while the ring aims, until its restore has run (in combat Remap can't apply anyway),
+-- the free stick's keys waited for included.
+local function stillHeld() return frame:GetAttribute("ps-mode") == "hold" or restoring or InCombatLockdown() or freeBound() end
 
 -- A held button our controller config moves off its native key (L1 as the right modifier), by its physical name.
 local function movedHeld()
@@ -1230,6 +1323,8 @@ end
 local function restoreAxis()
 	restoring = nil
 	if frame:GetAttribute("ps-mode") == "hold" then return end
+	-- The free stick's keys first: the watcher calls back here once they are up.
+	if freeBound() then return watchFree() end
 	local db = ns.db
 	local saved = db and db.ringAxisSaved
 	-- Remap stays held while the keys are still on.
@@ -1246,6 +1341,20 @@ local function restoreAxis()
 	-- After the write: Remap's settle starts from it.
 	ns.Remap.Hold(false)
 end
+
+-- A ring opened again stops it (its close starts it anew), as does a fight (its end starts it anew).
+watch:SetScript("OnUpdate", function(self, elapsed)
+	if frame:GetAttribute("ps-mode") == "hold" or InCombatLockdown() then return self:Hide() end
+	self.left = self.left - elapsed
+	local late = self.left <= 0
+	if not freeLetGo(late) then return end
+	self:Hide()
+	ClearOverrideBindings(free)
+	free:SetAttribute("ps-bound-left", nil)
+	free:SetAttribute("ps-bound-right", nil)
+	ns.debug("rings: free stick let go%s", late and " (failsafe)" or "")
+	restoreAxis()
+end)
 
 frame:HookScript("OnAttributeChanged", function(_, name, value)
 	if name == "ps-ring" then return ns.Fire("FCT_RING_MARKS") end

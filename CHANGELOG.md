@@ -1,5 +1,18 @@
 # Changelog
 
+## 1.5.5-beta.1 — 2026-11-25
+
+### Fixed: a ring stopped your movement
+- While a held ring was open, the stick you don't aim with did nothing: you stopped running (unless Auto Run was on), or the camera froze. The game's stick-as-buttons setting that rings need covers both sticks.
+- Now that stick keeps working. A ring that aims with the right stick: the **left stick moves you**, full speed in 8 directions. A ring that aims with the left stick: the **right stick turns and tilts the camera**, at a fixed speed. The ring still aims and fires as before. Healer rings too; touch rings don't change.
+- Close the ring while still running and you keep running until you let the stick go; you never keep running after that.
+- After a ring is used in combat, both sticks keep working this way until the fight ends: the left stick moves you (8 directions, full speed) and the right stick turns the camera (a fixed speed). After the fight they are analog again.
+- Each stick has its own setting in Tweaks → Controller: **Ring open: left stick moves** and **Ring open: right stick turns**. Both are on; turn one off to get the old behaviour for that stick.
+
+### Fixed: a shapeshift form cast the normal bar's spell
+- In a form that swaps a bar (a Druid's Cat or Bear Form, a Rogue's Stealth, a Warrior's stances), a face button with a ring or another action on that bar's layer sometimes cast the normal bar's spell instead of the form's, which knocked a Druid out of form. Rebinding a spell only fixed it for a while.
+- The button now follows the game's own rule: while the form's bar is up and you are on its page, the press goes to the form's bar, even in the instant after you shift or while the bar isn't drawn yet. On other pages, and out of form, it goes to your normal bar or your ring as before.
+
 ## 1.5.4 — 2026-11-21
 
 ### Changed: profiles belong to the character, controllers don't matter

@@ -62,7 +62,7 @@ local function frame(name, template, parent)
 		_G[name] = f
 		frames[name] = f
 	end
-	f.env = name == "ForeverControllerTweaksRing" and strictEnv() or renv(f)
+	f.env = (name == "ForeverControllerTweaksRing" or name == "ForeverControllerTweaksRingFree") and strictEnv() or renv(f)
 	return f
 end
 function Frame:CreateTexture() return frame(nil, nil, self) end
@@ -116,6 +116,14 @@ function Frame:ClearBindings()
 	end
 end
 function Frame:SetBindingClick(priority, key, name, button) (priority and W.prio or W.bindings)[key] = { owner = self, click = name .. ":" .. button } end
+function Frame:SetBinding(priority, key, command)
+	if W.combat and not W.secure then error("ADDON_ACTION_BLOCKED SetBinding") end
+	(priority and W.prio or W.bindings)[key] = { owner = self, command = command }
+end
+function ClearOverrideBindings(f)
+	if W.combat then error("ADDON_ACTION_BLOCKED ClearOverrideBindings") end
+	f:ClearBindings()
+end
 
 -- A click as the secure button runs it: the wrapped pre-snippet in its header's environment, then (when a message
 -- came back) the post-snippet. Returns what the button then fires: "type value" or nil.
@@ -914,6 +922,164 @@ ns.Fire("FCT_ACTIVE_CHANGED")
 failApply()
 check(failures() == 2, "failed: after an apply that works, the next failure is reported")
 ns.db.options.debug = false
+
+-- The free stick (Tweaks ringMove / ringTurn, on by default): while a held ring aims with one stick, the other's keys
+-- (GamePadStickAxisButtons covers both) move the character or turn the camera, under every modifier. Closed with that
+-- stick still pushed, its bindings stay until its keys read up and it is centred, and only then is the CVar put back;
+-- in combat they stay until the fight ends.
+local tweaks = { ringMove = true, ringTurn = true }
+ns.Tweaks = { Get = function(key) return tweaks[key] end }
+local free = frames.ForeverControllerTweaksRingFree
+local watch = frames.ForeverControllerTweaksRingFreeWatch
+local function command(key) local b = W.prio[key] or W.bindings[key] return b and b.command end
+local function freeCount()
+	local n = 0
+	for _, b in pairs(W.bindings) do if b.owner == free then n = n + 1 end end
+	return n
+end
+local downKeys = {}
+IsKeyDown = function(k) return downKeys[k] or false end
+local function setTweak(key, value)
+	tweaks[key] = value
+	ns.Fire("FCT_TWEAKS_CHANGED", key)
+end
+setTweak("ringMove", true)
+check(free.protected and free.attrs["ps-on-left"] == true and free.attrs["ps-on-right"] == true, "free: both settings written for the snippets")
+W.cvars[AXIS], W.writes = "0", {}
+nextFrame()
+open()
+check(command("PADLSTICKUP") == "MOVEFORWARD" and command("PADLSTICKDOWN") == "MOVEBACKWARD" and command("PADLSTICKLEFT") == "STRAFELEFT" and command("PADLSTICKRIGHT") == "STRAFERIGHT", "free: a right-stick ring, the left stick moves")
+check(command("ALT-CTRL-SHIFT-PADLSTICKUP") == "MOVEFORWARD" and command("SHIFT-PADLSTICKLEFT") == "STRAFELEFT" and freeCount() == 4 * 8, "free: under every modifier prefix, nothing else")
+check(not W.prio.PADLSTICKUP and W.bindings.PADLSTICKUP.owner == free and W.prio.PADRSTICKRIGHT.click == "ForeverControllerTweaksRingKey:PADRSTICKRIGHT" and not command("PADRSTICKLEFT"), "free: not priority, the right stick still aims the ring, no camera binding")
+aim(90)
+local flicked = press("PADRSTICKRIGHT", true) == nil
+aim(90, 0.3)
+check(flicked and press("PADRSTICKRIGHT", false) == "spell 639" and not ring.shown, "free: the ring still aims and fires on the right stick")
+nextFrame()
+check(watch.shown and freeCount() == 64 and W.cvars[AXIS] == "1", "free: closed, the CVar waits for the watch")
+check(command("PADLSTICKUP") == "MOVEFORWARD" and command("PADRSTICKLEFT") == "TURNLEFT" and command("ALT-PADRSTICKUP") == "PITCHUP" and not next(W.prio), "free: after the close both sticks work: the left moves, the right that aimed turns the camera")
+aim(0, 0)
+watch.scripts.OnUpdate(watch, 1 / 30)
+check(freeCount() == 0 and not watch.shown and W.cvars[AXIS] == "0" and lastHold() == false, "free: keys up, stick centred: cleared, the CVar put back, Remap let go")
+-- Closed while walking: everything waits for the stick.
+open()
+W.sticks[1], downKeys.PADLSTICKUP = { x = 0, y = 1 }, true
+press("PAD2", true)
+nextFrame()
+local _, _, stillOpen = lastHold()
+check(not ring.shown and freeCount() == 64 and command("PADLSTICKUP") == "MOVEFORWARD" and W.cvars[AXIS] == "1" and watch.shown and lastHold() == true and stillOpen(), "free: closed walking: still bound, the CVar still on, Remap held")
+downKeys.PADLSTICKUP = nil
+watch.scripts.OnUpdate(watch, 0.5)
+check(freeCount() == 64 and W.cvars[AXIS] == "1", "free: key up, the stick still reads pushed, within the second: kept")
+W.sticks[1] = { x = 0.1, y = 0 }
+watch.scripts.OnUpdate(watch, 1 / 30)
+check(freeCount() == 0 and W.cvars[AXIS] == "0" and lastHold() == false and not watch.shown, "free: let go: cleared first, then the CVar")
+-- Still walking past HOLD_MAX keeps it all; a stick that never reads centred with its keys up is let go after it.
+open()
+W.sticks[1], downKeys.PADLSTICKUP = { x = 0, y = 1 }, true
+press("PAD2", true)
+nextFrame()
+watch.scripts.OnUpdate(watch, 0.6)
+watch.scripts.OnUpdate(watch, 0.6)
+check(freeCount() == 64 and W.cvars[AXIS] == "1", "free: still walking past the second: kept")
+downKeys.PADLSTICKUP, W.sticks[1] = nil, { x = 0, y = 0.3 }
+watch.scripts.OnUpdate(watch, 1 / 30)
+check(freeCount() == 0 and W.cvars[AXIS] == "0", "failsafe: keys up, a stick that rests off-centre: let go")
+W.sticks[1] = { x = 0, y = 0 }
+-- Failsafe: a key that still reads down with the stick centred is let go HOLD_MAX after the close.
+open()
+downKeys.PADLSTICKLEFT = true
+press("PAD2", true)
+nextFrame()
+watch.scripts.OnUpdate(watch, 0.5)
+check(freeCount() == 64 and W.cvars[AXIS] == "1", "failsafe: a key reads down, centred, within the second: kept")
+watch.scripts.OnUpdate(watch, 0.6)
+check(freeCount() == 0 and W.cvars[AXIS] == "0" and not watch.shown, "failsafe: after the second, cleared and put back")
+downKeys = {}
+-- Opened again while still walking: the bindings stay, the watch restarts on the next close.
+open()
+downKeys.PADLSTICKUP = true
+press("PAD2", true)
+nextFrame()
+open()
+watch.scripts.OnUpdate(watch, 1 / 30)
+check(ring.shown and not watch.shown and command("PADLSTICKUP") == "MOVEFORWARD" and freeCount() == 64, "free: opened again: kept, the watch stops")
+check(W.prio.PADRSTICKRIGHT.click == "ForeverControllerTweaksRingKey:PADRSTICKRIGHT" and W.bindings.PADRSTICKRIGHT.command == "TURNRIGHT", "free: the ring's priority keys win over the right stick still bound to the camera")
+downKeys = {}
+press("PAD2", true)
+nextFrame()
+check(watch.shown and watch.left == 1, "free: the next close watches again, a fresh second")
+watch.scripts.OnUpdate(watch, 1 / 30)
+check(freeCount() == 0 and W.cvars[AXIS] == "0", "free: then let go")
+-- In combat: kept bound to the fight's end, the CVar with them; then the same watch.
+W.combat = true
+open()
+downKeys.PADLSTICKUP = true
+press("PAD2", true)
+nextFrame()
+check(freeCount() == 64 and W.cvars[AXIS] == "1" and not watch.shown, "combat: closed walking: bound, the CVar on, no watch")
+downKeys.PADLSTICKUP = nil
+W.combat = false
+ns.Fire("PLAYER_REGEN_ENABLED")
+check(watch.shown and freeCount() == 64, "combat: the fight over, the watch starts")
+watch.scripts.OnUpdate(watch, 1 / 30)
+check(freeCount() == 0 and W.cvars[AXIS] == "0" and lastHold() == false, "combat: then cleared and put back")
+-- A left-stick ring: the right stick turns and pitches the camera; the left stick aims.
+assert(Rings.SetStick(heals.id, "left"))
+open()
+check(command("PADRSTICKLEFT") == "TURNLEFT" and command("PADRSTICKRIGHT") == "TURNRIGHT" and command("PADRSTICKUP") == "PITCHUP" and command("CTRL-PADRSTICKDOWN") == "PITCHDOWN", "free: a left-stick ring, the right stick turns the camera")
+check(W.prio.PADLSTICKUP.click == "ForeverControllerTweaksRingKey:PADLSTICKUP" and not W.bindings.PADLSTICKUP and freeCount() == 32, "free: the left stick aims, nothing moves")
+press("PAD2", true)
+nextFrame()
+watch.scripts.OnUpdate(watch, 1 / 30)
+check(freeCount() == 0 and W.cvars[AXIS] == "0", "free: closed, cleared")
+assert(Rings.SetStick(heals.id, "right"))
+-- Each setting off: that stick does nothing, as before.
+setTweak("ringTurn", false)
+open()
+press("PAD2", true)
+nextFrame()
+check(freeCount() == 32 and command("PADLSTICKUP") == "MOVEFORWARD" and not command("PADRSTICKLEFT"), "free: Right stick turns off: after a right ring closes the right stick stays unbound")
+watch.scripts.OnUpdate(watch, 1 / 30)
+check(freeCount() == 0 and W.cvars[AXIS] == "0", "free: then let go as before")
+setTweak("ringTurn", true)
+-- A left ring closes: the left stick that aimed moves you again.
+assert(Rings.SetStick(heals.id, "left"))
+W.combat = true
+open()
+press("PAD2", true)
+nextFrame()
+check(command("PADLSTICKUP") == "MOVEFORWARD" and command("PADRSTICKLEFT") == "TURNLEFT" and freeCount() == 64 and W.cvars[AXIS] == "1", "combat: after a left ring closes, the left stick moves you and the right still turns")
+W.combat = false
+ns.Fire("PLAYER_REGEN_ENABLED")
+watch.scripts.OnUpdate(watch, 1 / 30)
+check(freeCount() == 0 and W.cvars[AXIS] == "0", "combat: after the fight, let go and put back")
+assert(Rings.SetStick(heals.id, "right"))
+setTweak("ringMove", false)
+open()
+check(free.attrs["ps-on-left"] == nil and freeCount() == 0 and not command("PADLSTICKUP"), "free: Left stick moves off: nothing bound")
+press("PAD2", true)
+nextFrame()
+check(freeCount() == 32 and command("PADRSTICKLEFT") == "TURNLEFT" and not command("PADLSTICKUP"), "free: Left stick moves off: after the close only the right stick that aimed turns the camera")
+watch.scripts.OnUpdate(watch, 1 / 30)
+assert(Rings.SetStick(heals.id, "left"))
+setTweak("ringTurn", false)
+open()
+check(freeCount() == 0 and not command("PADRSTICKLEFT"), "free: Right stick turns off: nothing bound")
+press("PAD2", true)
+nextFrame()
+check(W.cvars[AXIS] == "0" and lastHold() == false, "free: off, the CVar put back next frame as before")
+assert(Rings.SetStick(heals.id, "right"))
+setTweak("ringMove", true)
+setTweak("ringTurn", true)
+-- A touch ring aims with no stick: nothing bound.
+secure(ring.RunAttribute, ring, "_open", heals.id, "touch")
+check(ring.shown and freeCount() == 0, "free: a touch ring binds nothing")
+secure(ring.RunAttribute, ring, "_close")
+nextFrame()
+ns.Tweaks, IsKeyDown = nil, function() return false end
+setTweak("ringMove", true)
+aim(0, 0)
 
 -- The Stick setting: stored per ring for the snippets; Left aims with the left stick wherever the ring opens, Dynamic
 -- with the left on a face button and the right on a D-pad button. The release reads that stick only.

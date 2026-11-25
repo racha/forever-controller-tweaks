@@ -110,6 +110,7 @@ local function evalConditions(values)
 		for c in conds:gmatch("%[([^%]]*)%]") do if W.conds[c] then return value end end
 	end
 end
+function SecureCmdOptionParse(values) return evalConditions(values) end
 local drivers = {}
 function RegisterStateDriver(f, state, values)
 	if W.combat then error("ADDON_ACTION_BLOCKED RegisterStateDriver") end
@@ -252,6 +253,17 @@ local actionBars = {
 	shortcutsBar = bar("ShortcutsActionBar", false), stanceBar = bar("TopCenteredAnchorStanceBar", false), possessBar = bar("TopCenteredAnchorPossessBar", false),
 }
 GamepadMainActionBarFrame = { PageUnit = { actionBars = actionBars } }
+-- The pageable bars: Blizzard's page change sets each button's ID to its storage slot on that page (nil: unset).
+local PAGE_UTIL = { GetGamepadStorageSlotIndexFromPageAndPageUnitSlotID = function(page, id) return 181 + (page - 1) * 32 + id end }
+for index, key in ipairs({ "topBar", "leftBar", "rightBar", "bottomBar" }) do
+	for i, b in ipairs(actionBars[key].actionButtons) do
+		local unit = (index - 1) * 8 + i
+		function b.GetGamepadPageUnitSlotID() return unit end
+	end
+end
+local function onPage(key, page)
+	for _, b in ipairs(actionBars[key].actionButtons) do b.id = page and PAGE_UTIL.GetGamepadStorageSlotIndexFromPageAndPageUnitSlotID(page, b.GetGamepadPageUnitSlotID()) end
+end
 
 local function loadAddonFile(file) assert(loadfile(dir .. "/" .. file))("ForeverControllerTweaks", ns) end
 loadAddonFile("Core.lua")
@@ -354,14 +366,18 @@ cond("vehicleui", false)
 check(press("PAD1", false) == false, "release after a state change is dropped")
 W.combat = false
 
--- Stance bar on page 1 left: L2 + A goes to the stance bar only while Blizzard shows it.
+-- Stance bar on page 1 left: L2 + A goes to the stance bar while [bonusbar] holds and the bars are on page 1, however
+-- Blizzard draws it (compact layout, hidden empty bars, the frame after a shapeshift), as Blizzard's binding does.
+GamepadActionBarBindingUtil = PAGE_UTIL
+onPage("leftBar", 1)
 W.cvars.GamepadStanceBarOverride = "2"
 ns.Fire("GAMEPAD_STANCE_BAR_OVERRIDE_CHANGED")
 W.combat = true
 hold("PADLTRIGGER")
 check(press("PAD1", true):find("LeftCenteredAnchorLeftBar", 1, true), "no bonus bar: left bar")
-cond("bonusbar", true)
-check(press("PAD1", true):find("LeftCenteredAnchorLeftBar", 1, true), "stance hidden (other page): left bar")
+-- The condition is read at the press: no state driver to lag the shapeshift.
+W.conds.bonusbar = true
+check(press("PAD1", true) == "/click " .. name("TopCenteredAnchorStanceBar", 8) .. " LeftButton 1", "in form, stance bar not shown yet: stance 8")
 actionBars.stanceBar.shown = true
 check(press("PAD1", true) == "/click " .. name("TopCenteredAnchorStanceBar", 8) .. " LeftButton 1", "stance shown: stance 8")
 hold()
@@ -369,9 +385,66 @@ check(press("PAD1", false) == "/click " .. name("TopCenteredAnchorStanceBar", 8)
 check(press("PAD1", true):find(name(TOP, 5), 1, true), "unmodified still interact")
 hold("PADRTRIGGER")
 check(press("PAD1", true):find("RightCenteredAnchorRightBar", 1, true), "stance on left leaves the right layer")
+-- A page change in form: the stance bar replaces the left bar on page 1 only, even while it is still drawn.
+onPage("leftBar", 2)
+hold("PADLTRIGGER")
+check(press("PAD1", true):find("LeftCenteredAnchorLeftBar", 1, true), "page 2 in form: the left bar")
+onPage("leftBar", 1)
+check(press("PAD1", true) == "/click " .. name("TopCenteredAnchorStanceBar", 8) .. " LeftButton 1", "back on page 1: stance 8")
+W.conds.bonusbar = nil
+check(press("PAD1", true):find("LeftCenteredAnchorLeftBar", 1, true), "out of form, bar still drawn: left bar")
 actionBars.stanceBar.shown = false
-cond("bonusbar", false)
+-- Without a page to compare (no storage util), the bar's visibility decides, as before.
 W.combat = false
+GamepadActionBarBindingUtil = nil
+ns.Fire("GAMEPAD_STANCE_BAR_OVERRIDE_CHANGED")
+W.combat = true
+W.conds.bonusbar = true
+check(press("PAD1", true):find("LeftCenteredAnchorLeftBar", 1, true), "no page, stance hidden: left bar")
+actionBars.stanceBar.shown = true
+check(press("PAD1", true) == "/click " .. name("TopCenteredAnchorStanceBar", 8) .. " LeftButton 1", "no page, stance shown: stance 8")
+actionBars.stanceBar.shown = false
+W.conds.bonusbar = nil
+hold()
+onPage("leftBar", nil)
+W.combat = false
+
+-- The reported druid case: a ring on RT + A, stance bar on page 1 right (the default). In form the stance slot fires,
+-- never the right bar's spell; out of form, or on another page, the ring opens.
+local opened = {}
+local ringFrame = frame("FCTTestRings", "SecureHandlerBaseTemplate")
+function ringFrame:RunAttribute(what, ...) opened[#opened + 1] = what .. ":" .. tostring((...)) end
+ns.Rings = { Get = function(id) return id == 1 and {} end, Frame = function() return ringFrame end, HealerRing = function() end }
+local annCells = ns.db.chars["Player-0-Ann"]
+annCells.cells = annCells.cells or {}
+annCells.cells["054c/0ce6"] = annCells.cells["054c/0ce6"] or {}
+annCells.cells["054c/0ce6"].FB = { R = { id = "ring:1", name = "Seals", kind = "ring" } }
+GamepadActionBarBindingUtil = PAGE_UTIL
+onPage("rightBar", 1)
+W.cvars.GamepadStanceBarOverride = "3"
+ns.Fire("FCT_LAYOUT_CHANGED", "layout")
+W.combat = true
+hold("PADRTRIGGER")
+press("PAD1", true)
+check(opened[1] == "_open:1", "out of form: RT + A opens the ring")
+press("PAD1", false)
+W.conds.bonusbar = true
+check(press("PAD1", true) == "/click " .. name("TopCenteredAnchorStanceBar", 8) .. " LeftButton 1", "in form, stance bar hidden: stance 8, not the ring or the right bar")
+check(press("PAD1", false) == "/click " .. name("TopCenteredAnchorStanceBar", 8) .. " LeftButton", "in form: release on stance 8")
+onPage("rightBar", 2)
+opened = {}
+press("PAD1", true)
+check(opened[1] == "_open:1", "in form on page 2: the ring")
+press("PAD1", false)
+W.conds.bonusbar = nil
+hold()
+W.combat = false
+onPage("rightBar", nil)
+annCells.cells["054c/0ce6"].FB = nil
+ns.Rings = nil
+GamepadActionBarBindingUtil = nil
+W.cvars.GamepadStanceBarOverride = "2"
+ns.Fire("FCT_LAYOUT_CHANGED", "layout")
 
 -- Unresolvable stance bar (unprotected button): face keys native while [bonusbar].
 for _, b in ipairs(actionBars.stanceBar.actionButtons) do b.protected = false end

@@ -1,5 +1,5 @@
 -- Forever Controller Tweaks "Tweaks": small account-wide conveniences, each off until turned on in the Tweaks tab, but
--- the sort bags key (on, L3, by default).
+-- the sort bags key (on, L3, by default) and the ring free stick (Ring open: left stick moves / right stick turns, on).
 -- Saved in ns.db.tweaks (one boolean per key, repaired on load). Like the rest of the addon they act only while the
 -- Gamepad UI is on.
 -- Taint: no StaticPopup, ShowUIPanel/HideUIPanel, FrameControlsManager, SmartNavigation, InputBindingManager or menu
@@ -8,10 +8,12 @@
 -- Popups Blizzard shows for an invite, duel, resurrect or summon are left alone: duel and resurrect ones hide
 -- themselves on DUEL_FINISHED / PLAYER_ALIVE, a summon's on CANCEL_SUMMON, an invite's on PARTY_INVITE_CANCEL.
 --   Tweaks.KEYS                    the on/off setting keys in tab order.
+--   Tweaks.ON_KEYS                 the on/off keys that start on (the ring free stick).
 --   Tweaks.CHOICES                 the choice settings: key -> its options, the first the default.
 --   Tweaks.Repair(saved)           a clean settings table: every key a boolean (false unless saved true), every choice
 --                                  one of its options.
---   Tweaks.Get(key) / Set(key, v)  the saved value; Set also redraws the window buttons and the light bar.
+--   Tweaks.Get(key) / Set(key, v)  the saved value; Set also redraws the window buttons and the light bar, and fires
+--                                  FCT_TWEAKS_CHANGED(key).
 --   Tweaks.LIGHT                   the Custom light colours: id -> { r, g, b }.
 --   Tweaks.NUMBERS                 the number settings: key -> { min, max, step, default }.
 --   Tweaks.Rumble(event[, test])   the event's group pattern (Tweaks.RUMBLE_GROUP_OF) while Rumble on events is on.
@@ -33,6 +35,9 @@ Tweaks.KEYS = {
 	"fastLoot", "passUnusable", "upgradeArrows", "wearRewards",
 	"whisperAlert",
 }
+-- On/off settings that start on: nil (never set) means on, so Repair keeps only a saved false. The free stick while a
+-- held ring is open (Rings.lua): the left stick moves, the right stick turns the camera.
+Tweaks.ON_KEYS = { "ringMove", "ringTurn" }
 -- cameraZoom: yards, nil until the player moves it; its slider stops at the game's own limit (Tweaks.CameraMax).
 Tweaks.NUMBERS = { rumbleStrength = { 0.1, 1, 0.1, 0.6 }, cameraZoom = { 0, 100, 1, nil } }
 Tweaks.CHOICES = {
@@ -80,6 +85,7 @@ function Tweaks.Repair(saved)
 	saved = type(saved) == "table" and saved or {}
 	local out = {}
 	for _, key in ipairs(Tweaks.KEYS) do out[key] = saved[key] == true end
+	for _, key in ipairs(Tweaks.ON_KEYS) do out[key] = saved[key] ~= false end
 	for key, options in pairs(Tweaks.CHOICES) do
 		local value = RETIRED[key] and RETIRED[key][saved[key]] or saved[key]
 		out[key] = options[1]
@@ -1384,6 +1390,7 @@ function Tweaks.Set(key, value)
 	if key == "cameraZoom" and Tweaks.ZoomTo then Tweaks.ZoomTo(ns.db.tweaks.cameraZoom) end
 	Tweaks.Refresh()
 	Tweaks.Light()
+	ns.Fire("FCT_TWEAKS_CHANGED", key)
 end
 
 ns.On("FCT_READY", function()

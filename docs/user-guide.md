@@ -202,7 +202,7 @@ Radial menus of actions you build yourself. Open the **Rings** tab, or `/fct rin
   - **Toggle:** **Cross** uses the lit slot. Letting go of the button while aiming uses the slot; with nothing aimed the ring stays open, so you can still aim. **Circle**, a stick press or the ring's button again closes it without using anything.
   - **Hold:** let go of the button to use the slot you aim at. With nothing aimed, the ring just closes.
   - If the stick was already pushed when the ring opened, that slot isn't used until you centre the stick or move it off that slot.
-- While a ring is open the addon turns on the game's stick-as-buttons setting (`GamePadStickAxisButtons`) and puts your own value back when it closes. The other stick keeps moving or looking, and the aiming stick is held back after release until it's centred, while you cast or channel what it fired, or for a second at most. Works in combat.
+- While a ring is open the addon turns on the game's stick-as-buttons setting (`GamePadStickAxisButtons`) and puts your own value back when it closes. That setting covers both sticks, so the addon binds the other one: aiming with the right stick, the left stick moves you (full speed, 8 directions); aiming with the left stick, the right stick turns and tilts the camera (a fixed speed). Turn either off in Tweaks → Controller. If you close the ring still moving, you keep moving until you let that stick go; the setting is put back after that. In combat it stays on until the fight ends, and both sticks keep moving and turning this way (each with its setting) until then. The aiming stick is held back after release until it's centred, while you cast or channel what it fired, or for a second at most. Works in combat.
 - **Arrow on ring buttons:** every button that opens a ring wears the game's small flyout arrow at its top edge (on the crossbar, in Bindings and on touch buttons); it hides while that ring is open. On by default; untick **Arrow on ring buttons** at the foot of the ring list to turn it off for all your characters.
 - **On a touch button:** a tap opens the ring, a tap on a slot uses it, a tap outside closes it.
 - Slots show cooldowns, charges, range and whether they're usable. Rings are shared by all your characters and use no hidden action slots.
@@ -271,6 +271,8 @@ Small conveniences, on the **Tweaks** tab (the one before Settings). **Each one 
 - **Battery on the minimap:** a round button on the minimap's ring, next to the others, with the controller's charge. Hidden for pads that don't report one.
 - **Rare nearby alert:** a line on screen and a rumble when a rare is near. Once per rare, never in a fight, on a flight or while dead.
 - **Light bar:** **Game default**, **Class colour** or **Custom**, with **Colour** picking one of 10 colours. **Combat flash** turns the light red while you're in combat. For pads with a light bar, such as the DualSense; Steam may take the light over.
+- **Ring open: left stick moves:** while a ring aims with the right stick, the left stick keeps moving you (full speed, 8 directions). On by default.
+- **Ring open: right stick turns:** while a ring aims with the left stick, the right stick turns and tilts the camera at a fixed speed. On by default.
 
 ### Camera
 

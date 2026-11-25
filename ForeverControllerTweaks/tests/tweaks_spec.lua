@@ -239,6 +239,14 @@ for event, group in pairs(Tweaks.RUMBLE_GROUP_OF) do check(Tweaks.RUMBLE_GROUP_D
 check(Tweaks.Repair(nil).sellJunk == false and Tweaks.Repair("x").acceptRes == false, "a missing or broken table repairs to all off")
 Tweaks.Set("repair", false)
 for _, key in ipairs(Tweaks.KEYS) do check(Tweaks.Get(key) == false, key .. " is off by default") end
+-- The ring free stick starts on: nil (never set) is on, only a saved false is off; Set fires FCT_TWEAKS_CHANGED.
+for _, key in ipairs(Tweaks.ON_KEYS) do check(Tweaks.Get(key) == true and Tweaks.Repair(nil)[key] == true and Tweaks.Repair({ [key] = "x" })[key] == true and Tweaks.Repair({ [key] = false })[key] == false, key .. " is on by default, a saved false kept") end
+local tweakChanged
+ns.On("FCT_TWEAKS_CHANGED", function(key) tweakChanged = key end)
+Tweaks.Set("ringMove", false)
+check(Tweaks.Get("ringMove") == false and Tweaks.Repair(ns.db.tweaks).ringMove == false and tweakChanged == "ringMove", "ringMove off: saved false, kept by the repair, the change fired")
+Tweaks.Set("ringMove", true)
+check(Tweaks.Get("ringMove") == true and tweakChanged == "ringMove", "ringMove back on")
 
 -- Off by default: every event leaves the game alone.
 local function everything()
@@ -267,7 +275,7 @@ UI.TweaksTab.Open()
 local w = UI.Current()
 local ST = UI.TweaksTab.T
 check(w and w.tabs.index == #UI.TABS - 1, "the tab opens as its own side tab")
-check(#w.nodes == 34, "thirty-four rows: " .. #w.nodes)
+check(#w.nodes == 36, "thirty-six rows: " .. #w.nodes)
 local headers = {}
 for _, f in ipairs(W.frames) do if f.parent == w and f.text and type(f.text) == "table" and f.text.text then headers[f.text.text] = true end end
 check(headers[ST.BAGS] and headers[ST.NPCS] and headers[ST.RUMBLE] and headers[ST.CONTROLLER] and headers[ST.GEAR] and headers[ST.SOCIAL] and headers[ST.CAMERA], "seven section headers")
@@ -297,7 +305,7 @@ check(walk(10) == "rumble,rumbleStrength,rumble:group,rumble:whisper,rumble:trad
 focusKey("rumble")
 press("PADDRIGHT")
 check(focused() == "battery", "right goes to the Controller column: " .. focused())
-check(walk(6) == "battery,batteryIcon,rareAlert,lightBar,lightColor,combatFlash", "Controller column order (Sync between machines moved to Settings)")
+check(walk(8) == "battery,batteryIcon,rareAlert,lightBar,lightColor,combatFlash,ringMove,ringTurn", "Controller column order (Sync between machines moved to Settings), the ring free stick last")
 focusKey("battery")
 press("PADDRIGHT")
 check(focused() == "fastLoot", "right again goes to the last column: " .. focused())

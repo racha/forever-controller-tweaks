@@ -402,6 +402,21 @@ Back up `WTF/Account/<ACCOUNT>/SavedVariables/ForeverControllerTweaks.lua` first
 2. Click the minimap a few times (or ping) and wait a second: it is still on top.
 3. With other addons' round minimap buttons on the left: it sits one step below the lowest, on their circle.
 
+## R. 1.5.5
+
+### R1. The free stick while a ring is open
+
+`/console taintLog 2`, `/fct debug` on. Tweaks → Controller: **Ring open: left stick moves** and **Ring open: right stick turns** are both ticked on a fresh update. Use the Paladin with a Hold ring on a D-pad cell (Stick: Right) and a ring with Stick: Left.
+
+1. **Left stick moves.** Run at something with the left stick, then hold the right-stick ring's button. You keep running. While it's open: forward, back, strafe left and right, and the four diagonals (two directions at once) all move you, at full speed. The right stick still aims; flick and let go fires the slot.
+2. **Let go while running.** Close the ring (fire a slot, or B) with the left stick still pushed: you keep running, and stop the moment you let the stick go. Do it 10 times, each way (forward, back, strafe, diagonal): you never keep running or strafing after letting go. Then the left stick walks at analog speed again (half-push walks slowly).
+3. **Right stick turns.** Hold the left-stick ring's button: the right stick turns the camera left and right and tilts it up and down, at a fixed speed. The left stick aims. Close it with the right stick pushed: the camera stops turning when you let go.
+4. **In combat.** Repeat 1 to 3 in a fight. After either ring closes, **both** sticks keep working until the fight ends: the left stick moves you (8 directions, full speed) and the right stick turns and tilts the camera (fixed speed), including the stick that just aimed. After the fight both are analog again. Never stuck running or turning.
+5. **Settings off.** Untick **Ring open: left stick moves**: with the right-stick ring open the left stick does nothing (the old behaviour), and after a left-stick ring closes in combat the left stick doesn't move you until the fight ends; the right-stick setting still works. Untick **Ring open: right stick turns**: with the left-stick ring open the right stick does nothing. Tick both again.
+6. **Both rings in a row.** Open the right-stick ring, close it, keep running with the left stick, then open the left-stick ring. Note whether the character keeps running forward on its own while that ring is open, and whether it stops after closing it and letting the left stick go. 📸 `/fct ringlog` if it doesn't.
+7. **Healer ring and touch ring.** A healer ring on a D-pad cell: the left stick moves you while it's open. A touch ring: the sticks work as with no ring.
+8. Throughout: `taint.log` has no ForeverControllerTweaks line, no "blocked" chat line, and after `/reload` with the stick pushed nothing stays held.
+
 ## Reporting results
 
 In a pull request or issue, list the parts you ran and the controllers you used, and say whether `taint.log` was clean. Attach screenshots of anything that looks wrong, with character names and chat cropped out.
