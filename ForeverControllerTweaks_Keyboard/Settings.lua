@@ -1,8 +1,8 @@
 -- Forever Controller Tweaks "Keyboard" side tab (design/keyboard.md section 7, artboards 7a-c), in the Touch tab's
 -- language: the hint and Quick messages (top right) in the header, a preview of the disc at the current layout and
 -- scale on the left, the settings on the right, one value per row (On, Open, Layout, Scale, Word suggestions): up/down
--- move between rows, left/right only change the focused one. The buttons are always the
--- defaults and the placement always Auto. Quick messages opens a page of the player's own lines per situation, typed
+-- move between rows, A opens a dropdown's list or grabs the slider (then left/right change it). The buttons are always
+-- the defaults and the placement always Auto. Quick messages opens a page of the player's own lines per situation, typed
 -- in our own box with the keyboard. Saves to ForeverControllerTweaksDB.keyboard through K.Settings.
 local ns = ForeverControllerTweaks
 local UI, K = ns.UI, ns.Keyboard
@@ -15,7 +15,7 @@ local T = {
 	TAB = "Keyboard", TITLE = "Controller Tweaks · Keyboard", ON = "On", OPEN = "Open",
 	HINT = "An on-screen keyboard for chat and text boxes, while the Gamepad UI is on.", SECTION = "Keyboard",
 	LAYOUT = "Layout", SCALE = "Scale", SUGGEST = "Word suggestions", RESET = "Reset keyboard to defaults",
-	RESET_TEXT = "Reset the keyboard's settings to the defaults?", SCALE_TIP = "D-pad left and right change it. On a phone, 1.25 reads best.",
+	RESET_TEXT = "Reset the keyboard's settings to the defaults?", SCALE_TIP = "Press A, then D-pad left and right change it. On a phone, 1.25 reads best.",
 	QUICK = "Quick messages", QUICK_TIP = "Your own lines for each situation. They come first in its suggestions.",
 	QUICK_TITLE = "Controller Tweaks · Keyboard · Quick messages", SITUATION = "Situation", YOURS = "Yours", RESTORE = "Restore hidden built-in lines (%d)",
 	ADD = "Add a line", EDIT = "Edit", DELETE = "Delete", MOVE = "Move", DONE = "Done", NONE = "None",
@@ -96,11 +96,6 @@ local function control(row, widget)
 	return widget
 end
 
--- A choice's dropdown text, its steppers grey at the ends.
-local function showChoice(drop, options, value)
-	for i, option in ipairs(options) do if option == value then drop:Set(T.CHOICES[option], i == 1, i == #options) end end
-end
-
 -- The preview: the disc, rim, hub and the lower-case clusters at the current layout and scale (fit to the inset).
 local function buildPreview()
 	preview = CreateFrame("Frame", nil, window)
@@ -153,13 +148,20 @@ local function drawPreview(s)
 	end
 end
 
--- One step through a choice's options; false past an end (nothing changes), round with wrap (A).
-local function stepChoice(key, options, step, wrap)
-	local index = 1
-	for i, option in ipairs(options) do if option == settings()[key] then index = i end end
-	local option = options[wrap and (index + step - 1) % #options + 1 or index + step]
-	if not option then return false end
-	set(key, option)
+-- One step through a choice's options; false past an end (nothing changes), round with wrap (a click on the value).
+-- A choice's dropdown list: its options' labels with the saved one current; a pick saves it.
+local function choiceOf(key, options)
+	return {
+		options = function()
+			local labels, value, current = {}, settings()[key], nil
+			for i, option in ipairs(options) do
+				labels[i] = T.CHOICES[option]
+				if option == value then current = i end
+			end
+			return labels, current
+		end,
+		pick = function(index) set(key, options[index]) end,
+	}
 end
 
 local function toggle(key) set(key, not settings()[key]) end
@@ -185,27 +187,25 @@ local function refresh()
 	local s = settings()
 	if not s then return end
 	onRow.control:Set(s.enabled)
-	showChoice(openRow.control, OPEN, s.open)
-	showChoice(layoutRow.control, LAYOUT, s.layout)
+	openRow.control:Set(T.CHOICES[s.open])
+	layoutRow.control:Set(T.CHOICES[s.layout])
 	suggestRow.control:Set(s.suggestions)
 	scaleRow.control:Set(s.scale, string.format("%.2f", s.scale))
 	drawPreview(s)
-	local function stepOpen(step, wrap) return stepChoice("open", OPEN, step, wrap) end
-	local function stepLayout(step, wrap) return stepChoice("layout", LAYOUT, step, wrap) end
 	local nodes = {
 		UI.Node(window, quickButton, function() S.OpenQuick() end, { cursorX = 0, tip = { title = T.QUICK, lines = { T.QUICK_TIP }, side = "left" } }),
-		UI.Node(window, onRow, function() toggle("enabled") end, { cursorX = 0, noSide = true, onFocus = function(on) onRow.wash:SetShown(on) end }),
-		UI.Node(window, openRow, function() stepOpen(1, true) end, {
-			cursorX = 0, noSide = true, onDir = stepOpen, onFocus = function(on) openRow.wash:SetShown(on) openRow.control:SetFocused(on) end,
+		UI.Node(window, onRow, function() toggle("enabled") end, { cursorX = 0, onFocus = function(on) onRow.wash:SetShown(on) end }),
+		UI.Node(window, openRow, function() openRow.control:Open() end, {
+			cursorX = 0, choice = true, onFocus = function(on) openRow.wash:SetShown(on) openRow.control:SetFocused(on) end,
 		}),
-		UI.Node(window, layoutRow, function() stepLayout(1, true) end, {
-			cursorX = 0, noSide = true, onDir = stepLayout, onFocus = function(on) layoutRow.wash:SetShown(on) layoutRow.control:SetFocused(on) end,
+		UI.Node(window, layoutRow, function() layoutRow.control:Open() end, {
+			cursorX = 0, choice = true, onFocus = function(on) layoutRow.wash:SetShown(on) layoutRow.control:SetFocused(on) end,
 		}),
-		UI.Node(window, scaleRow, function() end, {
-			cursorX = 0, noSide = true, onDir = stepScale, onFocus = function(on) scaleRow.wash:SetShown(on) end,
+		UI.Node(window, scaleRow, nil, {
+			cursorX = 0, onDir = stepScale, onFocus = function(on) scaleRow.wash:SetShown(on) end,
 			tip = { title = T.SCALE, lines = { T.SCALE_TIP }, side = "left" },
 		}),
-		UI.Node(window, suggestRow, function() toggle("suggestions") end, { cursorX = 0, noSide = true, onFocus = function(on) suggestRow.wash:SetShown(on) end }),
+		UI.Node(window, suggestRow, function() toggle("suggestions") end, { cursorX = 0, onFocus = function(on) suggestRow.wash:SetShown(on) end }),
 		UI.Node(window, resetButton, reset, { cursorX = 0 }),
 	}
 	window:SetNodes(nodes)
@@ -224,7 +224,7 @@ local function build()
 	UI.At(quickButton, window, RIGHT_X + RIGHT_W - QUICK_W, 27)
 	quickButton:SetText(T.QUICK)
 	quickButton:SetScript("OnClick", function() S.OpenQuick() end)
-	UI.Text(window, "GameFontDisableSmall", 24, 33, T.HINT)
+	UI.Text(window, "GameFontDisableSmall", UI.PORTRAIT_CLEAR, 33, T.HINT)
 	UI.Inset(window, LEFT_X, RIGHT_Y, LEFT_W, RIGHT_H)
 	UI.Inset(window, RIGHT_X, RIGHT_Y, RIGHT_W, RIGHT_H)
 	buildPreview()
@@ -234,10 +234,10 @@ local function build()
 	onRow = newRow(y, T.ON)
 	control(onRow, UI.Checkbox(onRow, function() toggle("enabled") end))
 	openRow = newRow(y + ROW_PITCH, T.OPEN)
-	control(openRow, UI.Dropdown(openRow, CHOICE_W, function(step, wrap) stepChoice("open", OPEN, step, wrap) end))
+	control(openRow, UI.Dropdown(openRow, CHOICE_W, choiceOf("open", OPEN)))
 	y = y + 2 * ROW_PITCH
 	layoutRow = newRow(y, T.LAYOUT)
-	control(layoutRow, UI.Dropdown(layoutRow, CHOICE_W, function(step, wrap) stepChoice("layout", LAYOUT, step, wrap) end))
+	control(layoutRow, UI.Dropdown(layoutRow, CHOICE_W, choiceOf("layout", LAYOUT)))
 	scaleRow = newRow(y + ROW_PITCH, T.SCALE)
 	control(scaleRow, UI.Slider(scaleRow, SLIDER_W, SCALE_MIN, SCALE_MAX, SCALE_STEP, stepScale, function(value) set("scale", value) end))
 	suggestRow = newRow(y + 2 * ROW_PITCH, T.SUGGEST)
@@ -528,7 +528,7 @@ local function buildQuick()
 	quick = UI.NewWindow(geo.WIDTH, geo.HEIGHT)
 	quick.tabs = UI.SideTabs(quick, UI.TABS, index)
 	quick:SetTitle(T.QUICK_TITLE)
-	UI.Text(quick, "GameFontDisableSmall", 24, 33, T.QUICK_HINT)
+	UI.Text(quick, "GameFontDisableSmall", UI.PORTRAIT_CLEAR, 33, T.QUICK_HINT)
 	UI.Inset(quick, Q_LEFT_X, RIGHT_Y, Q_LEFT_W, RIGHT_H)
 	UI.Inset(quick, Q_RIGHT_X, RIGHT_Y, Q_RIGHT_W, RIGHT_H)
 	UI.SectionHeader(quick, Q_LEFT_X + (Q_LEFT_W - 197) / 2, RIGHT_Y + 12, 197, T.SITUATION)

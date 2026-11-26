@@ -33,6 +33,9 @@
 -- absorbs and auras are secret: they go straight into widgets (StatusBar values, texture rotations, alphas and vertex
 -- colours), through curves where a shape is needed, never into a comparison or a sum. Only plain answers (does it
 -- exist, can it be helped, dead, class, role) steer the look; a secret one counts as unknown.
+-- The mouse (as the game's radial flyout): the slot under the pointer gets the aim's highlight and its tooltip (the
+-- spell, item or toy; a healer place its unit). On a held ring that is the ring's ps-hover, the slot its release would
+-- fire, below the stick's aim; on a touch ring the slot entered.
 local ns = ForeverControllerTweaks
 local Rings, UI = ns.Rings, ns.UI
 
@@ -719,6 +722,8 @@ display:SetFrameLevel(frame:GetFrameLevel() + 1)
 
 local views = {}
 local drawn, focused, dirty, rangeIn = {}, nil, false, 0
+-- The slot the mouse is on (Rings.lua ps-hover on a held ring, the entered slot on a touch ring).
+local hovered
 -- A healer ring: its places are redrawn when one of their events came (healDirty) and every HEAL_EVERY anyway.
 local healDirty, healIn = false, 0
 local healEvents = CreateFrame("Frame")
@@ -730,20 +735,40 @@ local function listenHealer(on)
 	end
 end
 
--- The aimed unit's own game tooltip, at the default place; hidden when nothing (or no one) is aimed. GameTooltip is
--- shared with Blizzard's secure code, so it is touched only while a healer ring shows one.
-local tipUnit
-local function healerTip(i)
-	local unit = i and Rings.HealerUnits[i]
-	if unit and unit == tipUnit and GameTooltip:IsOwned(display) then return end
-	if unit and plain(UnitExists(unit)) then
+-- The ring's game tooltip, at the default place, keyed by what it shows; nil key hides it. GameTooltip is shared with
+-- Blizzard's secure code, so it is touched only while the ring shows one.
+local tipKey
+local function tip(key, set)
+	if key and key == tipKey and GameTooltip:IsOwned(display) then return end
+	if key then
 		GameTooltip_SetDefaultAnchor(GameTooltip, display)
-		GameTooltip:SetUnit(unit)
-		tipUnit = unit
-	elseif tipUnit then
-		tipUnit = nil
+		set(GameTooltip)
+		tipKey = key
+	elseif tipKey then
+		tipKey = nil
 		if GameTooltip:IsOwned(display) then GameTooltip:Hide() end
 	end
+end
+
+-- The aimed unit's own tooltip; hidden when nothing (or no one) is aimed.
+local function healerTip(i)
+	local unit = i and Rings.HealerUnits[i]
+	if not (unit and plain(UnitExists(unit))) then return tip(nil) end
+	tip(unit, function(t) t:SetUnit(unit) end)
+end
+
+-- The hovered slot's action, as the flyout's buttons show it; macro text and game actions by name.
+local SET_TIP = { spell = "SetSpellByID", item = "SetItemByID" }
+local function actionTip(i)
+	local entry = i and views[i] and views[i].entry
+	if not entry then return tip(nil) end
+	local kind, id = source(entry)
+	local method = kind and id and SET_TIP[kind]
+	tip(i .. entry.id, function(t)
+		if method then return t[method](t, id) end
+		t:SetText(labelText(entry.name))
+		t:Show()
+	end)
 end
 
 -- Last target with nothing aimed (design/1.5.0.md 6.2): the remembered place lights with the aimed border and gets the
@@ -786,7 +811,7 @@ end
 local function draw(id, mode, side, layer, kind)
 	local ring = id and (Rings.Get(id) or Rings.Healer(id))
 	drawn = { id = id, mode = mode, side = side, layer = layer, kind = kind, ring = ring }
-	openMode = mode
+	openMode, hovered = mode, nil
 	local healer = ring and ring.healer
 	display.healer = healer
 	listenHealer(healer)
@@ -829,11 +854,11 @@ end)
 -- The close keeps ps-aim and ps-aimside: the stick that aimed is held off until it is back in the middle.
 display:SetScript("OnHide", function()
 	if openMode == "hold" then Rings.HoldStick(frame:GetAttribute("ps-aimside") or "right", frame:GetAttribute("ps-aim")) end
-	healerTip(nil)
+	tip(nil)
 	View.DrawHub(display, nil)
 	display.healer = nil
 	listenHealer(false)
-	drawn, focused, openMode = {}, nil, nil
+	drawn, focused, openMode, hovered = {}, nil, nil, nil
 	sound(SOUNDKIT.GAMEPAD_RADIAL_MENU_CLOSE)
 end)
 display:SetScript("OnUpdate", function(_, elapsed)
@@ -843,11 +868,13 @@ display:SetScript("OnUpdate", function(_, elapsed)
 	local ring = drawn.ring
 	if not ring then return end
 	-- Back in the middle, the pick the stick keys kept (Rings.lua _key) stays lit until it fires; the slot the stick
-	-- pointed at as the ring opened (ps-stale) isn't lit while _pick ignores it.
+	-- pointed at as the ring opened (ps-stale) isn't lit while _pick ignores it. With neither, the mouse's slot.
 	if mode == "hold" then
 		local live = stickSlot(ring.count)
-		focus(live ~= frame:GetAttribute("ps-stale") and live or frame:GetAttribute("ps-pick"))
+		hovered = frame:GetAttribute("ps-hover")
+		focus(live ~= frame:GetAttribute("ps-stale") and live or frame:GetAttribute("ps-pick") or hovered)
 	end
+	if not ring.healer then actionTip(focused == hovered and hovered or nil) end
 	if ring.healer then
 		healIn = healIn - elapsed
 		if healDirty or healIn <= 0 then
@@ -880,9 +907,18 @@ local function init()
 		views[i] = newSlot(button, display)
 		views[i].heal = newHealer(button)
 		showHealer(views[i].heal, false)
-		-- A finger on a touch ring: the slot under it is focused.
-		button:SetScript("OnEnter", function() if drawn.mode == "touch" then focus(i) end end)
-		button:SetScript("OnLeave", function() if focused == i then focus(nil) end end)
+		-- A finger (or the mouse) on a touch ring: the slot under it is focused. Hooked, not set: Rings.lua wraps these
+		-- scripts securely, and SetScript would replace the wrap.
+		button:HookScript("OnEnter", function()
+			if drawn.mode ~= "touch" then return end
+			hovered = i
+			focus(i)
+		end)
+		button:HookScript("OnLeave", function()
+			if drawn.mode ~= "touch" then return end
+			if hovered == i then hovered = nil end
+			if focused == i then focus(nil) end
+		end)
 	end
 end
 
@@ -894,3 +930,4 @@ ns.On("FCT_RINGS_CHANGED", function() drawn = {} end)
 -- For the specs.
 View.LabelOffset, View.LabelText = labelOffset, labelText
 View.NewSlot, View.DrawSlot = newSlot, drawSlot
+function View.Focused() return focused end

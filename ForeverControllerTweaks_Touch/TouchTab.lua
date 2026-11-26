@@ -3,9 +3,9 @@
 -- Bindings (top, left, right, bottom bar, under the same layer headers): A opens the action picker on a cell, X clears,
 -- Y undoes. The centre shows the screen with both bars at their real relative size, count and place (each side by
 -- its own settings), the held modifier's layer icons on them, and the focused row's gold line landing on its button.
--- Header: the slot counter and the hint. Under the preview, one value per row (up/down move, left/right only change
--- the focused one): On and Show (global), a "Settings for" dropdown (Left / Right bar) and that side's settings: the
--- numbers are sliders, Shape a dropdown and Empty buttons a checkbox.
+-- Header: the slot counter and the hint. Under the preview, one value per row (up/down move; A opens a dropdown's list
+-- or grabs a slider, then left/right change it): On and Show (global), a "Settings for" dropdown (Left / Right bar) and
+-- that side's settings: the numbers are sliders, Shape a dropdown and Empty buttons a checkbox.
 -- The On row is the list's way in from the bars' rows: left/right on it move the focus (a checkbox has no left/right).
 -- Everything goes through ns.Touch: Config (per side under sides.left / sides.right), Set / SetSide, LIMITS,
 -- Entry / SetEntry (per layer), SetHealer, Layer, SlotsUsed, Reset; FCT_LAYOUT_CHANGED "touch". Y on a cell: More with
@@ -222,8 +222,8 @@ local function setSetting(key, value)
 	return (ns.Touch.SetSide(settingSide, key, value)) and true or false
 end
 
--- One step of a setting on the chosen side (a choice: the option that way). False at its end (past Touch's limits,
--- the last option, or refused by Set, quietly): nothing changes.
+-- One step of a setting on the chosen side (Empty buttons: the other option, round). False at its end (past Touch's
+-- limits, or refused by Set, quietly): nothing changes.
 local function stepBy(spec, step, wrap)
 	local c = config()
 	if not c then return false end
@@ -264,6 +264,21 @@ local function settingRow(y, label)
 	return row
 end
 
+-- A dropdown's list: ids shown by their labels, current() the one marked; a pick hands its id to set.
+local function listChoice(ids, labels, current, set)
+	return {
+		options = function()
+			local texts, now, index = {}, current(), nil
+			for i, id in ipairs(ids) do
+				texts[i] = labels[id]
+				if id == now then index = i end
+			end
+			return texts, index
+		end,
+		pick = function(index) set(ids[index]) end,
+	}
+end
+
 local function newStepper(spec, i)
 	local stepper = settingRow(STEPPER_TOP + (i - 1) * STEPPER_PITCH, L.TOUCH_SETTINGS[spec[1]])
 	stepper.spec = spec
@@ -271,7 +286,11 @@ local function newStepper(spec, i)
 	if key == "showEmpty" then
 		stepper.control = UI.Checkbox(stepper, function() stepBy(spec, 1, true) end)
 	elseif spec.options then
-		stepper.control = UI.Dropdown(stepper, CHOICE_W, function(step, wrap) stepBy(spec, step, wrap) end)
+		local function current()
+			local c = config()
+			return c and sideConfig(c, settingSide)[key]
+		end
+		stepper.control = UI.Dropdown(stepper, CHOICE_W, listChoice(spec.options, L.TOUCH_CHOICES[key], current, function(value) setSetting(key, value) end))
 	else
 		local limit = ns.Touch.LIMITS[key]
 		stepper.control = UI.Slider(stepper, SLIDER_W, limit[1], limit[2], spec[2], function(step) stepBy(spec, step) end, function(value) setSetting(key, value) end)
@@ -280,30 +299,14 @@ local function newStepper(spec, i)
 	return stepper
 end
 
--- One step through Show's options or the sides; false past an end, round with wrap (A).
-local function stepList(list, current, step, wrap)
-	local index = 1
-	for i, id in ipairs(list) do if id == current then index = i end end
-	return list[wrap and (index + step - 1) % #list + 1 or index + step]
-end
-
-local function stepShow(step, wrap)
+local function currentShow()
 	local c = config()
-	local id = c and stepList(SHOW, c.show, step, wrap)
-	if not id then return false end
-	set("show", id)
+	return c and c.show
 end
 
-local function stepSide(step, wrap)
-	local id = stepList(SIDES, settingSide, step, wrap)
-	if not id then return false end
+local function pickSide(id)
 	settingSide = id
 	window:Refresh()
-end
-
--- A dropdown's text from a list, its steppers grey at the ends.
-local function showList(drop, list, current, labels)
-	for i, id in ipairs(list) do if id == current then drop:Set(labels[id], i == 1, i == #list) end end
 end
 
 -- "Free up slots": the player's own actions on keyboard bars 6-8 (Actions.ForeignShadowSlots) hold slots touch buttons
@@ -343,8 +346,8 @@ local function refresh()
 	if not c then return end
 	local B, geo = UI.Bindings, UI.Bindings.GEO
 	onRow.control:Set(c.enabled)
-	showList(showRow.control, SHOW, c.show, L.TOUCH_SHOW)
-	showList(sideRow.control, SIDES, settingSide, L.TOUCH_SIDE)
+	showRow.control:Set(L.TOUCH_SHOW[c.show])
+	sideRow.control:Set(L.TOUCH_SIDE[settingSide])
 	local used, total, full = slots()
 	counter:SetText(used and string.format(L.TOUCH_SLOTS, used, total) or "")
 	counter:SetFontObject(full and "GameFontRedSmall" or "GameFontHighlightSmall")
@@ -382,29 +385,31 @@ local function refresh()
 	nodes[#nodes + 1] = UI.Node(window, onRow, function() set("enabled", not c.enabled) end, {
 		cursorX = 0, onFocus = function(on) onRow.wash:SetShown(on) end, tip = { title = L.TOUCH_ON, lines = { L.TOUCH_ONOFF_TIP }, side = "right" },
 	})
-	nodes[#nodes + 1] = UI.Node(window, showRow, function() stepShow(1, true) end, {
-		cursorX = 0, noSide = true, onDir = stepShow, onFocus = function(on) showRow.wash:SetShown(on) showRow.control:SetFocused(on) end,
+	nodes[#nodes + 1] = UI.Node(window, showRow, function() showRow.control:Open() end, {
+		cursorX = 0, choice = true, onFocus = function(on) showRow.wash:SetShown(on) showRow.control:SetFocused(on) end,
 		tip = { title = L.TOUCH_SHOW_LABEL, lines = { L.TOUCH_SHOW_TIP }, side = "right" },
 	})
-	nodes[#nodes + 1] = UI.Node(window, sideRow, function() stepSide(1, true) end, {
-		cursorX = 0, noSide = true, onDir = stepSide, onFocus = function(on) sideRow.wash:SetShown(on) sideRow.control:SetFocused(on) end,
+	nodes[#nodes + 1] = UI.Node(window, sideRow, function() sideRow.control:Open() end, {
+		cursorX = 0, choice = true, onFocus = function(on) sideRow.wash:SetShown(on) sideRow.control:SetFocused(on) end,
 		tip = { title = L.TOUCH_SIDE_LABEL, lines = { L.TOUCH_SIDE_TIP }, side = "right" },
 	})
 	local s = sideConfig(c, settingSide)
 	for _, stepper in ipairs(steppers) do
 		local spec, control = stepper.spec, stepper.control
 		local key, choice = spec[1], spec.options
-		local tip = { title = L.TOUCH_SETTINGS[key], lines = { L.STEPPER_TIP }, actions = { { "PADDLEFT", "-" }, { "PADDRIGHT", "+" } }, side = "right" }
+		local toggle = key == "showEmpty"
+		local tip = { title = L.TOUCH_SETTINGS[key], lines = toggle and {} or { choice and L.CHOICE_TIP or L.STEPPER_TIP }, side = "right" }
 		if key == "showEmpty" then
 			control:Set(s[key])
 		elseif choice then
-			showList(control, choice, s[key], L.TOUCH_CHOICES[key])
+			control:Set(L.TOUCH_CHOICES[key][s[key]])
 		else
 			control:Set(s[key], valueText(key, s[key]))
 		end
-		if choice then tip.lines, tip.actions = { L.CHOICE_TIP }, nil end
-		nodes[#nodes + 1] = UI.Node(window, stepper, function() if choice then stepBy(spec, 1, true) end end, {
-			cursorX = 0, noSide = true, onDir = function(step) return stepBy(spec, step) end, tip = tip,
+		-- Empty buttons is a checkbox: A toggles it; Shape's A opens its list; the sliders change while A grabs them.
+		local select = toggle and function() stepBy(spec, 1, true) end or choice and function() control:Open() end or nil
+		nodes[#nodes + 1] = UI.Node(window, stepper, select, {
+			cursorX = 0, choice = not toggle and choice and true or nil, onDir = not choice and function(step) return stepBy(spec, step) end or nil, tip = tip,
 			onFocus = function(on)
 				stepper.wash:SetShown(on)
 				if control.SetFocused then control:SetFocused(on) end
@@ -454,8 +459,8 @@ local function build()
 	window:SetTitle(L.TOUCH_TITLE)
 	-- The header: the slot counter, the hint under it. Nothing near the right edge, where the side tabs and the close
 	-- button are.
-	counter = UI.Text(window, "GameFontHighlightSmall", 24, 32)
-	UI.Text(window, "GameFontDisableSmall", 24, 58, L.TOUCH_HINT)
+	counter = UI.Text(window, "GameFontHighlightSmall", UI.PORTRAIT_CLEAR, 32)
+	UI.Text(window, "GameFontDisableSmall", UI.PORTRAIT_CLEAR, 58, L.TOUCH_HINT)
 	window.counter = counter
 	freeButton = CreateFrame("Button", nil, window, "SharedButtonSmallTemplate")
 	freeButton:SetText(L.TOUCH_FREE)
@@ -480,10 +485,10 @@ local function build()
 	onRow.control = UI.Checkbox(onRow, function() local c = config() if c then set("enabled", not c.enabled) end end)
 	onRow.control:SetPoint("LEFT", onRow, "LEFT", CONTROL_X, 0)
 	showRow = settingRow(ON_TOP + STEPPER_PITCH, L.TOUCH_SHOW_LABEL)
-	showRow.control = UI.Dropdown(showRow, SIDE_W, stepShow)
+	showRow.control = UI.Dropdown(showRow, SIDE_W, listChoice(SHOW, L.TOUCH_SHOW, currentShow, function(id) set("show", id) end))
 	showRow.control:SetPoint("LEFT", showRow, "LEFT", CONTROL_X, 0)
 	sideRow = settingRow(SIDE_TOP, L.TOUCH_SIDE_LABEL)
-	sideRow.control = UI.Dropdown(sideRow, SIDE_W, stepSide)
+	sideRow.control = UI.Dropdown(sideRow, SIDE_W, listChoice(SIDES, L.TOUCH_SIDE, function() return settingSide end, pickSide))
 	sideRow.control:SetPoint("LEFT", sideRow, "LEFT", CONTROL_X, 0)
 	for i, spec in ipairs(SETTINGS) do steppers[i] = newStepper(spec, i) end
 
@@ -514,14 +519,10 @@ local function build()
 	end
 end
 
--- The footer for what is focused: a cell, a setting (left/right change it) or a header control.
+-- The footer for what is focused: a cell, a slider (its D-pad labels show while A grabs it) or another control.
 function T.Prompts(region)
 	local spec = region and region.spec
-	if spec then
-		local options, labels = spec.options, L.TOUCH_CHOICES[spec[1]]
-		local less, more = options and labels[options[1]] or L.STEP_LESS, options and labels[options[2]] or L.STEP_MORE
-		return { { "PADDLEFT", less }, { "PADDRIGHT", more }, { "PAD4", L.MORE }, UI.TabPrompt("touch", -1), { "PAD2", L.CLOSE } }
-	end
+	if spec and not spec.options then return { { "PADDLEFT", L.STEP_LESS }, { "PADDRIGHT", L.STEP_MORE }, { "PAD4", L.MORE }, UI.TabPrompt("touch", -1), { "PAD2", L.CLOSE } } end
 	if not (region and region.layer) then return { { "PAD1", L.SELECT }, { "PAD4", L.MORE }, UI.TabPrompt("touch", -1), { "PAD2", L.CLOSE } } end
 	return { { "PAD1", L.SELECT }, { "PAD3", L.CLEAR_SLOT }, { "PAD4", L.MORE }, UI.TabPrompt("touch", -1), { "PAD2", L.CLOSE } }
 end

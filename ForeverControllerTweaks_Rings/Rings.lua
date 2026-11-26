@@ -39,6 +39,8 @@
 --   _held()               how many of the aiming stick's direction keys are down, and their names;
 --   _last(id)             the slot a middle release fires with middle "last": the last one used, if it still fires
 --                         (a healer place only while its unit can be helped); nil otherwise;
+--   _hover()              the slot the mouse is on (ps-hover, below), as _pick answers: false on a healer place whose
+--                         unit can't be helped;
 --   _used(i)              a tapped slot of the open ring becomes its last (r<id>l, as every fire sets it);
 --   _toggle(id)           a touch tap: opens the ring, or closes it when it is the one open;
 --   _close()              hides it; _arm(ref, which, id, i) writes one slot's action on a button.
@@ -48,6 +50,12 @@
 -- binding's spell or item, slot i on unit HEALER_UNITS[i] (r<id>u<i>). _arm sets the button's unit (and drops the
 -- self/focus/mouseover cast checks there); _pick skips a slot whose unit is missing or can't be helped (dead allies
 -- can), returning false so a kept pick is dropped too; a tapped slot does the same check.
+-- The mouse, as on the game's radial flyout: in every mode a slot under the pointer lights (View.lua) and a left click
+-- fires it through its own secure click; any other button closes the ring. A held ring also takes the hovered slot as
+-- its aim: the button's release and A fire it when the stick aims at nothing (the stick wins). The slots' OnEnter and
+-- OnLeave are wrapped by the ring frame, so in combat too their snippets keep ps-hover (the slot's index) on the ring
+-- for _release and _key to read; nothing insecure decides what fires. The wrap runs them only for a pointer that moved
+-- (the motion argument), so a hidden cursor resting where a ring opens never aims.
 -- Stick keys: the game sends a stick's directions as keys (PADRSTICKUP...) only while the CVar GamePadStickAxisButtons
 -- is on, so a held ring switches it on while it is open (below). Without the keys it fires on the button's release or A.
 -- That CVar covers both sticks, but the other stick's keys are left unbound: an unbound stick key doesn't stop the
@@ -673,6 +681,7 @@ local OPEN = ([[
 	self:SetAttribute("ps-aimside", side)
 	self:SetAttribute("ps-aim", stick == "left" and self:GetAttribute("ps-lstick") or self:GetAttribute("ps-rstick"))
 	self:SetAttribute("ps-pick", nil)
+	self:SetAttribute("ps-hover", nil)
 	for k = 1, self:GetAttribute("ps-keyn") do
 		self:SetAttribute("ps-dn-" .. self:GetAttribute("ps-bindleft" .. k), nil)
 		self:SetAttribute("ps-dn-" .. self:GetAttribute("ps-bindright" .. k), nil)
@@ -738,6 +747,7 @@ local CLOSE = [[
 	self:SetAttribute("ps-ring", nil)
 	self:SetAttribute("ps-mode", nil)
 	self:SetAttribute("ps-pick", nil)
+	self:SetAttribute("ps-hover", nil)
 	self:SetAttribute("ps-stale", nil)
 	self:SetAttribute("ps-trace", "close")
 	self:ClearBindings()
@@ -785,7 +795,8 @@ local HELD = [[
 
 -- The button's release fires the slot aimed at, else a pick the stick keys kept (the button and the stick let go
 -- together, the release can read the stick already centred while its direction key is still down; that key's release
--- then finds the ring closed), and closes the ring. With nothing to fire a Hold ring closes, a Toggle ring stays open.
+-- then finds the ring closed), else on a Hold ring the slot the mouse is on, and closes the ring. With nothing to fire
+-- a Hold ring closes, a Toggle ring stays open (its release only opened it, the pointer may rest on a slot).
 local RELEASE = [[
 	local ref = ...
 	local button = ref and self:GetFrameRef(ref)
@@ -798,7 +809,8 @@ local RELEASE = [[
 	if pick == nil then pick = self:GetAttribute("ps-pick") end
 	local _, held = self:RunAttribute("_held")
 	local show = self:GetAttribute("r" .. id .. "h")
-	self:SetAttribute("ps-trace", format("release %s len=%.2f now=%s kept=%s down=%s show=%s", ref, len or -1, tostring(now), tostring(self:GetAttribute("ps-pick")), held, tostring(show)))
+	if pick == nil and show == "hold" then pick = self:RunAttribute("_hover") end
+	self:SetAttribute("ps-trace", format("release %s len=%.2f now=%s kept=%s mouse=%s down=%s show=%s", ref, len or -1, tostring(now), tostring(self:GetAttribute("ps-pick")), tostring(self:GetAttribute("ps-hover")), held, tostring(show)))
 	-- A Hold ring let go in the middle fires its last pick with middle "last"; a Toggle ring's release only opened it.
 	if pick == nil and show == "hold" then pick = self:RunAttribute("_last", id) end
 	if not pick and show ~= "hold" then return end
@@ -816,6 +828,14 @@ local LAST = [[
 	if not (i and self:GetAttribute("r" .. id .. "t" .. i)) then return nil end
 	local unit = self:GetAttribute("r" .. id .. "u" .. i)
 	if unit and not (UnitExists(unit) and PlayerCanAssist(unit)) then return nil end
+	return i
+]]
+
+local HOVER = [[
+	local id, i = self:GetAttribute("ps-ring"), self:GetAttribute("ps-hover")
+	if not (id and i) then return nil end
+	local unit = self:GetAttribute("r" .. id .. "u" .. i)
+	if unit and not (UnitExists(unit) and PlayerCanAssist(unit)) then return false end
 	return i
 ]]
 
@@ -848,6 +868,7 @@ local KEY = ([[
 		if down then return end
 		pick = self:RunAttribute("_pick")
 		if pick == nil then pick = self:GetAttribute("ps-pick") end
+		if pick == nil then pick = self:RunAttribute("_hover") end
 		if pick == nil then pick = self:RunAttribute("_last", id) end
 	else
 		local now, len = self:RunAttribute("_pick", down and not self:GetAttribute("ps-pick") and key or nil)
@@ -873,8 +894,13 @@ local TOGGLE = [[
 ]]
 
 -- The slots' and the catcher's taps: a slot fires its action (its own click), then the ring closes.
--- A healer slot whose unit can't be helped now is tapped in vain: nothing fires and the ring stays.
+-- A healer slot whose unit can't be helped now is tapped in vain: nothing fires and the ring stays. A right (or any
+-- other) mouse button only closes the ring.
 local SLOT_PRE = [[
+	if button ~= "LeftButton" then
+		self:GetFrameRef("ring"):RunAttribute("_close")
+		return false
+	end
 	local unit = self:GetAttribute("unit")
 	if unit and not (UnitExists(unit) and PlayerCanAssist(unit)) then return false end
 	return nil, "close"
@@ -888,6 +914,12 @@ local SLOT_POST = [[
 	local ring = self:GetFrameRef("ring")
 	ring:RunAttribute("_used", self:GetAttribute("ps-index"))
 	ring:RunAttribute("_close")
+]]
+-- The pointer moved onto or off a slot (the wrap runs these only for motion): ps-hover follows it.
+local SLOT_ENTER = [[self:GetFrameRef("ring"):SetAttribute("ps-hover", self:GetAttribute("ps-index"))]]
+local SLOT_LEAVE = [[
+	local ring = self:GetFrameRef("ring")
+	if ring:GetAttribute("ps-hover") == self:GetAttribute("ps-index") then ring:SetAttribute("ps-hover", nil) end
 ]]
 local CATCH = [[self:GetFrameRef("ring"):RunAttribute("_close")]]
 -- Vehicles, override and possess bars and pet battles take the routed keys away (Face.lua), so a release could be
@@ -944,6 +976,7 @@ local function setup()
 	frame:SetAttribute("_held", HELD)
 	frame:SetAttribute("_last", LAST)
 	frame:SetAttribute("_used", USED)
+	frame:SetAttribute("_hover", HOVER)
 	frame:SetAttribute("ps-keyn", #KEYS.right)
 	frame:SetAttribute("_toggle", TOGGLE)
 	for m, prefix in ipairs(MODS) do frame:SetAttribute("ps-mod" .. m, prefix) end
@@ -971,6 +1004,8 @@ local function setup()
 		SecureHandlerSetFrameRef(slot, "ring", frame)
 		slot:SetAttribute("ps-index", i)
 		frame:WrapScript(slot, "OnClick", SLOT_PRE, SLOT_POST)
+		frame:WrapScript(slot, "OnEnter", SLOT_ENTER)
+		frame:WrapScript(slot, "OnLeave", SLOT_LEAVE)
 	end
 	for n = MIN_SLOTS, MAX_SLOTS do
 		for i = 1, n do

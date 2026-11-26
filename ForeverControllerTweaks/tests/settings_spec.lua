@@ -106,7 +106,7 @@ local function footer()
 	return out
 end
 local prompts = footer()
-check(prompts.PAD1 == L.SELECT and prompts.PAD4 == L.MORE and prompts.PAD2 == L.CLOSE and prompts.PADLSHOULDER == UI.TABS[#UI.TABS - 1].prompt, "footer: Select, More, the tab before, Close")
+check(prompts.PAD1 == L.CHANGE and prompts.PAD4 == L.MORE and prompts.PAD2 == L.CLOSE and prompts.PADLSHOULDER == UI.TABS[#UI.TABS - 1].prompt, "footer on the profile row: Change, More, the tab before, Close")
 
 -- Sync between machines: the switch here, this computer only.
 local syncNode = node(L.SYNC_ON)
@@ -122,7 +122,7 @@ check(not node(L.SYNC_ON).region.control.check.shown, "turned off elsewhere: the
 ns.Sync.SetOn(true)
 W.advance(0.2)
 
--- New: an empty profile for this character, used at once; the stepper steps between profiles.
+-- New: an empty profile for this character, used at once; the profile row's list switches between profiles.
 node(ST.NEW).select()
 W.advance(0.2)
 local newId = P.CurrentId()
@@ -130,11 +130,29 @@ check(newId ~= DS and ann.profiles[newId].name == ST.NEW_NAME and not next(ann.p
 check(ns.Layout.Roles().L1 ~= "rightmod", "and its layout is the game's")
 w:Focus(node(ST.THIS))
 w:Pad("PADDLEFT")
+w:Pad("PADDRIGHT")
 W.advance(0.2)
-check(P.CurrentId() == DS and ns.Layout.Roles().L1 == "rightmod", "the stepper switches back, the layout follows")
-w:Pad("PADDLEFT")
+check(P.CurrentId() == newId and w.focus ~= node(ST.THIS), "left/right step nothing on the profile row, right moves to the next column")
+w:Focus(node(ST.THIS))
+w:Pad("PAD1")
+w.repeatKey, w.repeatDir = nil, nil
+local list
+for _, f in ipairs(W.frames) do if f.rows and f.catcher and f.bar then list = f end end
+local function listed()
+	local out = {}
+	for _, row in ipairs(list.rows) do if row.shown then out[#out + 1] = row.text.text .. (row.highlight.shown and "*" or "") end end
+	return table.concat(out, ",")
+end
+check(P.CurrentId() == newId and not w.editing and w.modal == UI.Choices, "A opens the profile list, switching nothing, grabbing nothing")
+check(listed() == "DualSense Wireless Controller,New profile*", "the list: this character's profiles, the focus on the current one: " .. listed())
+prompts = footer()
+check(prompts.PAD1 == L.SELECT and prompts.PAD2 == L.CLOSE, "list footer: A Select, B Close")
+w:Pad("PADDUP")
+w:Pad("PAD1")
+w.repeatKey, w.repeatDir = nil, nil
 W.advance(0.2)
-check(P.CurrentId() == DS and w.focus == node(ST.THIS), "past the first: nothing changes, the focus stays")
+check(P.CurrentId() == DS and ns.Layout.Roles().L1 == "rightmod" and w.focus == node(ST.THIS) and not list.shown, "picking a profile switches to it, the layout follows, the focus stays")
+check(node(ST.THIS).region.control.text.text == "DualSense Wireless Controller" and footer().PAD1 == L.CHANGE, "the row shows it, Change again")
 
 -- Rename: the name box, Enter keeps it; Copy copies this character's bindings.
 local box

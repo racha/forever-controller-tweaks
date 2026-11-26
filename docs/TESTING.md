@@ -149,7 +149,7 @@ Repeat part A, steps 1–3, and part C, step 3, on every controller you have: Xb
 
 Turn each tweak on in the **Tweaks** tab, try it, then turn it off again. Every one is off on a new install.
 
-1. **The tab:** four columns. Up / down move within a column. Left / right change a dropdown or slider, and at its end move to the next column. Triangle opens More. Tooltips stay beside their row.
+1. **The tab:** four columns. Up / down move within a column, left / right move between columns. Cross opens a dropdown's list or grabs a slider (then left / right change it). Triangle opens More. Tooltips stay beside their row.
 2. **Bags & vendors:** the Sort button at the right end of the combined bags' title bar, where the close X would be (and on separate bags), not over the search box. It stays there after you pick up, move and use items in the bags many times, and after closing and opening them again. At a merchant: junk sells and one chat line lists the items; gear repairs, from guild funds first when allowed. **Buy a full stack** buys a stack; on a sold-out item it says so.
 3. **Quests & NPCs:**
    - a flight master, vendor or banker with one option opens that service;
@@ -216,7 +216,7 @@ Turn on `/console taintLog 2` first.
 
 ### N2. A ring remembers the last pick
 
-1. In the Rings tab, a ring with 4 or more slots: the new **Middle** row sits under Show and reads **Cancel**. D-pad left / right steps it, Cross cycles it, and its tooltip explains both values. The preview is a little smaller and Rename / Icon / Delete keep their place.
+1. In the Rings tab, a ring with 4 or more slots: the new **Middle** row sits under Show and reads **Cancel**. Cross opens its list of both values, and its tooltip explains them. The preview is a little smaller and Rename / Icon / Delete keep their place.
 2. Set Show to **Hold** and Middle to **Use last**. Use a slot from the ring once.
    - The crossbar button, the Bindings cell and a touch button with that ring now show that slot's icon.
    - Open the ring: in **Full** the middle shows that slot's icon and name while nothing is aimed; aiming hides them. In **Compact** the centre shows that icon.
@@ -432,6 +432,50 @@ Back up `WTF/Account/<ACCOUNT>/SavedVariables/ForeverControllerTweaks.lua` first
 5. **Vehicle.** Get on a vehicle (or a mind-control / possess bar) and open the window: no mirrors, the game's own bar shows.
 6. **Close.** Close the window: everything is as before, and the buttons cast your bindings again.
 7. Throughout: no Lua error and no "blocked" chat line.
+
+### R3. The logo in the window's corner
+
+The logo is a new texture file: **quit the game completely and start it** the first time. A `/reload` doesn't load a new file, and the corner shows a green square or nothing instead.
+
+1. **Every tab.** Open Bindings, then step through Touch, Keyboard (and its Quick messages page), Rings, Tweaks and Settings with R1. Each shows the gold round ring in its top-left corner with the controller logo inside, centred, nothing of it cut off by the ring. 📸 each tab's top-left corner.
+2. **Nothing covered.** On every tab the text at the top left (Bindings' controller name and the line under it, the Touch counter and its button, the Rings count, each tab's hint) starts right of the ring, and the title is centred right of it.
+3. **Close and glow.** The X sits in the top-right corner as before and works. With the controller, the gold focus glow frames the whole window, the ring's corner included. 📸 the corner with the glow.
+4. **Only the main window.** Controller setup (`/fct detect`), What's new, a confirm dialog (Reset) and the action picker have no portrait.
+5. **Small screen.** At a high UI scale the ring stays inside the screen.
+6. Throughout: no Lua error and no "blocked" chat line.
+
+### R4. The mouse on a ring
+
+`/console taintLog 2`, `/fct debug` on. A Paladin with an aura picker on the crossbar to compare, a Hold ring and a Toggle ring (one Full, one Compact) with a spell, an item and a game action, a healer ring, and a touch ring.
+
+1. **Native first.** Open the paladin aura flyout and move the mouse over its slots: note the gold over-border and the tooltip. Click one.
+2. **Toggle ring.** Open it, then move the mouse over each slot: it lights as the stick's aim does (Full: the segment; Compact: the over-border, indicator and arrow) and shows the spell's, the item's or the action's tooltip. Off the slots: the light and the tooltip go. Left-click a slot: it fires and the ring closes. Open it again and right-click a slot: the ring closes, nothing fires.
+3. **Hold ring.** Hold the button, move the mouse onto a slot, let go with the stick centred: that slot fires. Again with the stick pushed at another slot: the stick's slot fires. Hold, hover, press **Cross**: the hovered slot fires. Hold and click a slot: it fires, and letting go of the button does nothing more.
+4. **Resting cursor.** Leave the mouse still where a slot will appear (hidden or shown), open the Hold ring and let go centred: nothing fires and nothing is lit until the mouse moves.
+5. **Healer ring.** Hover a party member's place: their unit tooltip. Click it: the heal lands on them. Click an empty place: nothing, the ring stays open. Hover a place and let go centred: the heal lands there.
+6. **Touch ring.** Taps work as before; the mouse lights and shows the tooltip too.
+7. **In combat.** Steps 2, 3 and 5 in a fight.
+8. Throughout: `taint.log` has no ForeverControllerTweaks line (above all near GameTooltip), and there is no "blocked" chat line. `/fct ringlog` shows `mouse=<slot>` on a release.
+
+### R5. Dropdowns and sliders in the settings window
+
+Controller only, except where a step names the mouse. A wireless pad (for the rumble steps) and two profiles on this character. Open the game's own Options (Graphics → Shadow Quality, or any dropdown) next to ours for the look steps.
+
+1. **Moving.** On every tab, walk every control with the D-pad in all four directions: nothing is a dead end, and walking never changes a value.
+   - **Tweaks:** from **Rumble → Group** and **Strength**, left and right cross to the neighbouring columns. All four columns are reachable from any row.
+   - **Rings:** from **Slots**, up reaches the ring preview's nearest slot (the bottom of the wheel), and left reaches the ring list column. From Stick, Show, Middle and Style, left reaches the ring list too.
+   - **Bindings, Touch, Keyboard, Settings:** every cell, row and the page box can be reached and left in all four directions.
+2. **Dropdowns have no arrows.** Every dropdown on every tab is one value box, as wide as the old box with its two arrows, so no row moved. Focused, it shows its hover art and the small arrow under it. The footer and tooltip say **Cross Change**; left / right on it move the focus and never change the value.
+3. **The list.** Press Cross on a dropdown: a list opens right under the box, starting at its left edge and at least as wide. The current option is gold, the others white; the gold chevron and a highlight bar sit on the focused option, which starts on the current one. The footer shows **Cross Select** and **Circle Close**, and the row's tooltip hides. 📸 our list next to the game's Shadow Quality list: background, border, row height, text inset, colours, highlight bar and chevron should match.
+4. **In the list.** D-pad up / down move, and holding repeats; at the first or last option it stops (no wrap). Left / right do nothing. Cross picks: the list closes, the box shows the new value and the focus stays on the row. Circle closes without a change, and so does Escape; the window stays open. L1 / R1 close the list first, without switching tabs.
+5. **Long and low lists.** A dropdown low on the screen (Touch's Shape at a large UI scale, or the Rings tab's Style) opens its list above the box when there's no room below. No list today has more than 10 options; the scrolling is covered by the specs.
+6. **Mouse.** Hover an option: it takes the focus and the chevron. Click it: it's picked. Click outside the list: it closes. Click a dropdown's box: its list opens.
+7. **Sliders keep edit mode.** On a slider row, Cross grabs it: the wash gets stronger and the value turns white. The footer and tooltip show **◀▶ Change**, **Cross Done** and **Circle Done**. D-pad left / right change it, and holding repeats. Cross or Circle lets go; D-pad up / down let go and move; L1 / R1 let go and switch tabs; a click anywhere but the footer lets go.
+8. **Rumble.** On **Rumble → Whisper**, the footer's Triangle says **Test**, and Triangle plays the pattern. Pick a pattern from its list: it plays once. On **Strength**, Triangle plays a Double tap, and each grabbed change plays it.
+9. **Pages.** In Bindings, an L2 / R2 tap still flips pages at once. Cross or a click on the page box opens **Page 1**, **Page 2**, **Page 3**, with the current one gold; picking one shows that page.
+10. **Profile.** Settings → **This character**: Cross lists this character's profiles. Pick another: the character switches to it and the bindings follow.
+11. **Dialogs.** The More menu and the confirm boxes keep their own left / right.
+12. Throughout: no Lua error, no "blocked" chat line, and `taint.log` has no ForeverControllerTweaks line.
 
 ## Reporting results
 

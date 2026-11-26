@@ -1,8 +1,8 @@
 -- Forever Controller Tweaks "Tweaks" side tab, in the Keyboard tab's language: the hint in the header, four insets
 -- with section headers (Bags & vendors and Quests & NPCs; Rumble; Controller; Loot & gear and Group & social), one
--- value per row: a checkbox (A toggles; left/right move between the columns), a dropdown (left/right step it, A rounds
--- it) or a slider (left/right step it). A dropdown or slider at its end hands left/right back, so the next press moves
--- to the next column: the Rumble column is never a dead end. Y opens More (Undo, Learn, the minimap button...).
+-- value per row: a checkbox (A toggles), a dropdown (A opens its list) or a slider (A grabs it, then left/right step
+-- it; A or B let go). Not grabbed, left/right move between the columns from any row. Y opens More (Undo, Learn, the
+-- minimap button...), or on a rumble row plays its test.
 -- Everything goes through ns.Tweaks (Tweaks.lua): Get / Set, saved in ForeverControllerTweaksDB.tweaks. The Settings
 -- tab (Panel/SettingsTab.lua) uses the same insets and rows: its geometry is S.GEO.
 local _, ns = ...
@@ -70,7 +70,7 @@ local T = {
 S.T = T
 
 -- Four insets, 12 apart; rows 8 inside them. Each control ends CONTROL_END in from its row's left: a checkbox, a
--- dropdown (its value CHOICE_W wide, with its steppers) or a slider (SLIDER_W, its value text after it).
+-- dropdown (CHOICE_W and its box's padding wide) or a slider (SLIDER_W, its value text after it).
 local X, TOP, INSET_W, INSET_H, HEADER_W = { 24, 315, 606, 897 }, 84, 279, 526, 197
 local ROW_W, ROW_H, ROW_PITCH, SUB_INDENT, CONTROL_END, CHOICE_W, SLIDER_W, SLIDER_TEXT = 263, 28, 44, 24, 255, 100, 110, 36
 S.GEO = { X = X, TOP = TOP, INSET_W = INSET_W, INSET_H = INSET_H, HEADER_W = HEADER_W, ROW_W = ROW_W, ROW_H = ROW_H, ROW_PITCH = ROW_PITCH, CONTROL_END = CONTROL_END, CHOICE_W = CHOICE_W }
@@ -131,13 +131,20 @@ end
 
 local function toggle(key) set(key, not get(key)) end
 
--- One step through a choice's options; false past an end (nothing changes), round with wrap (A).
-local function step(key, by, wrap)
-	local options, index = optionsOf(key), 1
-	for i, option in ipairs(options) do if option == get(key) then index = i end end
-	local option = options[wrap and (index + by - 1) % #options + 1 or index + by]
-	if not option then return false end
-	set(key, option)
+-- A choice's labels for its list, and the current one's index.
+local function choiceList(key)
+	local labels, value, current = {}, get(key), nil
+	for i, option in ipairs(optionsOf(key)) do
+		labels[i] = T.CHOICES[key][option]
+		if option == value then current = i end
+	end
+	return labels, current
+end
+
+-- A pick from a choice's list; on a rumble row its pattern plays once after it.
+local function pick(key, index)
+	set(key, optionsOf(key)[index])
+	if TEST[key] then TEST[key]() end
 end
 
 -- One step of a number within its range; false past an end.
@@ -164,7 +171,7 @@ local function newRow(x, y, key)
 	row.label:SetText(T.ROWS[key][1])
 	local range = rangeOf(key)
 	if optionsOf(key) then
-		row.control = UI.Dropdown(row, CHOICE_W, function(by, wrap) step(key, by, wrap) end)
+		row.control = UI.Dropdown(row, CHOICE_W, { options = function() return choiceList(key) end, pick = function(index) pick(key, index) end })
 	elseif range then
 		row.control = UI.Slider(row, SLIDER_W, range[1], range[2], range[3], function(by) return nudge(key, by) end, function(value) set(key, value) end)
 	else
@@ -176,25 +183,36 @@ local function newRow(x, y, key)
 	return row
 end
 
-local function prompts() return { { "PAD1", L.SELECT }, { "PAD4", L.MORE }, UI.TabPrompt("tweaks", -1), { "PAD2", L.CLOSE } } end
+-- Y tests a rumble row's pattern there (More is a step away on any other row).
+local function prompts()
+	local focus = window.focus
+	local test = focus and focus.region.key and TEST[focus.region.key]
+	return { { "PAD1", L.SELECT }, { "PAD4", test and T.TEST or L.MORE }, UI.TabPrompt("tweaks", -1), { "PAD2", L.CLOSE } }
+end
 
+-- A rumble row plays its test after every pick or grabbed change (a preview), and on Y.
 local function node(row, key, tip)
 	local options, range, value, test = optionsOf(key), rangeOf(key), get(key), TEST[key]
 	local function focus(focused)
 		row.wash:SetShown(focused)
 		if row.control.SetFocused then row.control:SetFocused(focused) end
 	end
+	local function change(changed)
+		if changed ~= false and test then test() end
+		return changed
+	end
+	local onKey = test and function(pressed) if pressed == "PAD4" then test() return true end end
+	if test then tip.actions = { { "PAD4", T.TEST } } end
 	if options then
-		for i, option in ipairs(options) do if option == value then row.control:Set(T.CHOICES[key][option], i == 1, i == #options) end end
+		local labels, current = choiceList(key)
+		row.control:Set(labels[current])
 		tip.lines[2] = L.CHOICE_TIP
-		if test then tip.actions = { { "PAD1", T.TEST } } end
-		return UI.Node(window, row, function() if test then test() else step(key, 1, true) end end, { cursorX = 0, onDir = function(by) return step(key, by) end, tip = tip, onFocus = focus })
+		return UI.Node(window, row, function() row.control:Open() end, { cursorX = 0, choice = true, onKey = onKey, tip = tip, onFocus = focus })
 	end
 	if range then
 		row.control:Set(value, valueText(key, value))
 		tip.lines[2] = L.STEPPER_TIP
-		if test then tip.actions = { { "PAD1", T.TEST } } end
-		return UI.Node(window, row, function() if test then test() end end, { cursorX = 0, onDir = function(by) return nudge(key, by) end, tip = tip, onFocus = focus })
+		return UI.Node(window, row, nil, { cursorX = 0, onDir = function(by) return change(nudge(key, by)) end, onKey = onKey, tip = tip, onFocus = focus })
 	end
 	row.control:Set(value)
 	return UI.Node(window, row, function() toggle(key) end, { cursorX = 0, onFocus = focus, tip = tip })
@@ -222,7 +240,7 @@ local function build()
 	window = UI.NewWindow(geo.WIDTH, geo.HEIGHT)
 	window.tabs = UI.SideTabs(window, UI.TABS, index)
 	window:SetTitle(T.TITLE)
-	UI.Text(window, "GameFontDisableSmall", 24, 33, T.HINT)
+	UI.Text(window, "GameFontDisableSmall", UI.PORTRAIT_CLEAR, 33, T.HINT)
 	for i, column in ipairs(COLUMNS) do
 		local x = X[i]
 		UI.Inset(window, x, TOP, INSET_W, INSET_H)

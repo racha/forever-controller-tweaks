@@ -184,4 +184,45 @@ assert(ns.Face.SetCellEntry("L3", "T", nil))
 ns.Rings = nil
 check(UI.Bindings.RingMiddleMore({ id = "ring:4", kind = "ring" }) == nil, "no row without the Rings module")
 
+-- The page selector: an L2/R2 tap flips pages directly; A or a click opens its list of pages (the game's dropdown),
+-- left/right on it move the focus.
+UI.Bindings.Open()
+b = UI.Current()
+local selector = nodeOf(b.pageSelector)
+local function pageText() return b.pageSelector.text.text end
+local first = pageText()
+b:Focus(selector)
+W.press(b, "PADDRIGHT")
+W.press(b, "PADDLEFT")
+check(pageText() == first and not b.editing, "left/right flip no page")
+b:Focus(nodeOf(b.pageSelector))
+W.press(b, "PAD1")
+local list
+for _, f in ipairs(W.frames) do if f.rows and f.catcher and f.bar then list = f end end
+local function listed()
+	local out = {}
+	for _, row in ipairs(list.rows) do if row.shown then out[#out + 1] = row.text.text .. (row.highlight.shown and "*" or "") end end
+	return table.concat(out, ",")
+end
+check(b.modal == UI.Choices and not b.editing and pageText() == first, "A opens the page list, flipping nothing")
+check(listed() == "Page 1*,Page 2,Page 3", "three pages, the focus on this one: " .. listed())
+check(list.rel ~= b.pageSelector and list.rel:GetWidth() == 150, "the list hangs from the box, not the glyphs")
+W.press(b, "PADDDOWN")
+W.press(b, "PAD1")
+local second = pageText()
+check(second == string.format(UI.L.PAGE_OF, 2, 3) and b.modal == nil and b.focus.region == b.pageSelector, "picking Page 2 shows page 2, the focus stays on the selector")
+b.pageSelector:Click()
+check(b.modal == UI.Choices and listed() == "Page 1,Page 2*,Page 3", "a click opens it too, on page 2")
+list.rows[1]:Click()
+check(pageText() == first and b.modal == nil, "a click on Page 1 flips back")
+W.press(b, "PAD1")
+W.press(b, "PAD2")
+check(b.modal == nil and b:IsShown() and pageText() == first, "B closes the list without closing the window")
+b:Focus(nodeOf(b.pageSelector))
+W.press(b, "PADRTRIGGER")
+check(pageText() == second, "an R2 tap still flips the page directly")
+W.press(b, "PADLTRIGGER")
+check(pageText() == first, "and L2 back")
+UI.CloseAll()
+
 io.stdout:write(("bindings_spec: %d checks passed\n"):format(checks))

@@ -1,5 +1,20 @@
 # Changelog
 
+## 1.5.5-beta.3 — 2026-11-26
+
+### Changed: the settings window is easy to drive with the D-pad
+- The D-pad now moves freely up, down, left and right on every tab. No more dead ends: in Tweaks you can cross the columns from any row, and in Rings you can go from the settings up to the ring and left to the ring list.
+- **Choices are real dropdowns,** like the game's own settings. No more left/right arrows: press **A** (or click) on a choice and a list opens under it. Up and down move, **A** picks, **B** closes. The current option is gold. Rumble patterns play once when you pick one, and **Y** tests them.
+- **Sliders:** press **A** to grab one, then left and right change it. **A** or **B** lets go, and up or down lets go and moves on.
+- In Bindings, **Page n of 3** opens a page list; L2 and R2 still flip pages.
+
+### New: rings take the mouse
+- Like the game's own radial flyout: move the mouse over a ring's slot and it lights up with its tooltip (the party member on a healer ring). Click it to use it, right click to close the ring. Works on Hold, Toggle and healer rings, in combat too.
+- On a Hold ring, letting go of the button with the stick centred uses the slot under the mouse. A pushed stick still wins.
+
+### New: the logo in the window's corner
+- The Controller Tweaks window wears the round logo in its top-left corner, in the game's gold portrait ring. **Restart the game once** (not just /reload) so the new picture loads.
+
 ## 1.5.5-beta.2 — 2026-11-26
 
 ### Fixed: the other stick feels native while a ring is open

@@ -77,8 +77,10 @@ UI.L = {
 	TOUCH_SETTINGS = { count = "Buttons per bar", size = "Button size", gap = "Spacing", inset = "From the edge", offsetY = "Up / down", alpha = "Opacity", shape = "Shape", showEmpty = "Empty buttons" },
 	TOUCH_CHOICES = { shape = { circle = "Circle", square = "Square" }, showEmpty = { [false] = "Hide", [true] = "Show" } },
 	TOUCH_NO_CHARACTER = "Touch bars: no character yet, try again in a moment.",
-	STEPPER_TIP = "D-pad left and right change it.",
-	CHOICE_TIP = "D-pad left and right pick one.",
+	STEPPER_TIP = "Press A, then D-pad left and right change it.",
+	CHOICE_TIP = "Press A to open the list, then pick one.",
+	CHANGE = "Change",
+	DONE = "Done",
 	NO_SLOT = "This button has no crossbar slot on this page.",
 	RANKS_TIP = "%d ranks. Press to choose one.",
 	OPEN_BINDINGS = "Open Bindings",
@@ -256,6 +258,7 @@ UI.L = {
 	CATEGORY = "Category",
 	PAGE = "Page",
 	PAGE_OF = "Page %d of %d",
+	PAGE_N = "Page %d",
 	PAGE_TIP = "Crossbar pages. The face buttons' first-page actions are the same on every page.",
 	PAGE_PREVIOUS = "Previous page",
 	PAGE_NEXT = "Next page",
@@ -1073,8 +1076,9 @@ end
 local MAX_LEVEL = 10000
 
 -- Fixed steps above the window's own tree (its overlays left out), two apart so an overlay's children stay under the
--- next one: re-raising on every focus move never climbs.
-local OVERLAY_RANK = { catcher = 2, picker = 4, dialog = 6, tooltip = 8, cursor = 10 }
+-- next one: re-raising on every focus move never climbs. A dropdown's list (menu) opens over a dialog too, so its
+-- catcher sits four above the dialog, clear of the dialog's own children.
+local OVERLAY_RANK = { catcher = 2, picker = 4, dialog = 6, menuCatcher = 10, menu = 12, tooltip = 14, cursor = 16 }
 
 local function treeTop(frame, skip)
 	if skip[frame] then return 0 end
@@ -1083,7 +1087,7 @@ local function treeTop(frame, skip)
 	return top
 end
 
--- kind: "catcher", "picker", "dialog", "tooltip" or "cursor".
+-- kind: "catcher", "picker", "dialog", "menuCatcher", "menu", "tooltip" or "cursor".
 function UI.RaiseAbove(frame, window, kind)
 	local overlays = window.overlays or {}
 	window.overlays = overlays
@@ -1156,7 +1160,7 @@ end
 -- 10 padding, 15 between prompts, sorted the way PromptedBindingFooter sorts keys. Blizzard's footer and
 -- prompt templates bind through InputBindingManager and register glyph callbacks, so neither is used. Clicking a
 -- prompt does what its button does.
-local PROMPT_ORDER = { PAD1 = 1, PAD3 = 2, PAD4 = 3, PADDUP = 4, PADLSHOULDER = 5, PADRSHOULDER = 6, PADLTRIGGER = 7, PADRTRIGGER = 8, PAD2 = 9 }
+local PROMPT_ORDER = { PAD1 = 1, PAD3 = 2, PAD4 = 3, PADDUP = 4, PADDLEFT = 5, PADDRIGHT = 6, PADLSHOULDER = 7, PADRSHOULDER = 8, PADLTRIGGER = 9, PADRTRIGGER = 10, PAD2 = 11 }
 
 function UI.Footer(window)
 	local footer = CreateFrame("Frame", nil, window)
@@ -1174,7 +1178,7 @@ function UI.Footer(window)
 	function footer:Set(list)
 		local sorted = {}
 		for _, entry in ipairs(list) do sorted[#sorted + 1] = entry end
-		table.sort(sorted, function(a, b) return (PROMPT_ORDER[a[1]] or 7) < (PROMPT_ORDER[b[1]] or 7) end)
+		table.sort(sorted, function(a, b) return (PROMPT_ORDER[a[1]] or 9) < (PROMPT_ORDER[b[1]] or 9) end)
 		for _, prompt in ipairs(self.prompts) do prompt:Hide() end
 
 		local x = 10
@@ -1185,15 +1189,22 @@ function UI.Footer(window)
 				prompt:SetHeight(24)
 				prompt.glyph = UI.Glyph(prompt, 24)
 				prompt.glyph:SetPoint("LEFT")
+				prompt.glyph2 = UI.Glyph(prompt, 24)
+				prompt.glyph2:SetPoint("LEFT", prompt.glyph, "RIGHT", 0, 0)
 				prompt.label = prompt:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-				prompt.label:SetPoint("LEFT", prompt.glyph, "RIGHT", 4, 0)
 				prompt:SetScript("OnClick", function(button) window:Pad(button.key) end)
 				self.prompts[i] = prompt
 			end
+			-- entry[3]: a second glyph beside the first (D-pad left and right: one "Change" for both).
+			local second = entry[3]
 			prompt.key = entry[1]
 			prompt.glyph:SetCode(entry[1])
+			prompt.glyph2:SetShown(second ~= nil)
+			if second then prompt.glyph2:SetCode(second) end
 			prompt.label:SetText(entry[2])
-			prompt:SetWidth(28 + prompt.label:GetStringWidth())
+			prompt.label:ClearAllPoints()
+			prompt.label:SetPoint("LEFT", second and prompt.glyph2 or prompt.glyph, "RIGHT", 4, 0)
+			prompt:SetWidth((second and 52 or 28) + prompt.label:GetStringWidth())
 			prompt:ClearAllPoints()
 			prompt:SetPoint("TOPLEFT", self, "TOPLEFT", x, -10)
 			prompt:Show()
@@ -1228,8 +1239,8 @@ UI.DialogButton = dialogButton
 -- dialog focus glow), built by the addon: StaticPopup_Show pushes Blizzard's popup binding set and the popup
 -- templates bind through GamepadMode. Pad: A presses the focused button, B the second (or spec.back), D-pad
 -- left/right moves. Up to three buttons (wider, as StaticPopup grows for three); spec.buttons may be a function. An
--- optional spec.stepper = { label = fn() -> text, first, last; step = fn(by, wrap) } is a dropdown above the buttons:
--- up/down move between it and the buttons, left/right (and A) step it, and the texts are read again after a step.
+-- optional spec.stepper = { options = fn() -> labels, current index; pick = fn(index) } is a dropdown above the
+-- buttons: up/down move between it and the buttons, A opens its list, and the texts are read again after a pick.
 local dialog
 local DialogMixin = {}
 local DIALOG_W, DIALOG_W3, DIALOG_TEXT_PAD, STEPPER_W = 320, 440, 40, 160
@@ -1257,7 +1268,9 @@ function DialogMixin:Render()
 	end
 	local stepper = spec.stepper
 	self.Stepper:SetShown(stepper ~= nil)
-	if stepper then self.Stepper:Set(stepper.label()) end
+	if not stepper then return end
+	local labels, current = stepper.options()
+	self.Stepper:Set(labels[current] or "")
 end
 
 function DialogMixin:Open(owner, spec)
@@ -1278,8 +1291,7 @@ function DialogMixin:Open(owner, spec)
 	self:SetHeight(math.max(120, 16 + self.Text:GetStringHeight() + 6 + self.SubText:GetStringHeight() + stepper + 16 + 21 + 16))
 	UI.RaiseAbove(self, owner, "dialog")
 	self:Show()
-	owner:SetPrompts({ { "PAD1", UI.L.SELECT }, { "PAD2", UI.L.BACK } })
-	self:Point()
+	self:Resume()
 end
 
 -- The pad-focused button keeps its highlight lit, like a hovered one, beside the cursor; index 0 is the stepper.
@@ -1292,11 +1304,11 @@ function DialogMixin:Point()
 	self.owner.cursor:Attach(self.index == 0 and self.Stepper or self["Button" .. self.index], 0)
 end
 
-function DialogMixin:Step(by, wrap)
-	local stepper = self.spec and self.spec.stepper
-	if not stepper then return end
-	stepper.step(by, wrap)
+-- Back from the stepper's list: redrawn, the focus and the prompts its own again.
+function DialogMixin:Resume()
 	self:Render()
+	self.owner:SetPrompts({ { "PAD1", UI.L.SELECT }, { "PAD2", UI.L.BACK } })
+	self:Point()
 end
 
 function DialogMixin:SetSub(text) self.SubText:SetText(text or "") end
@@ -1317,9 +1329,10 @@ end
 
 function DialogMixin:OnPad(key)
 	local count, side = self.count or 1, key == "PADDLEFT" and -1 or key == "PADDRIGHT" and 1
+	-- The stepper's open list takes the pad over the dialog (another modal, the action picker, stays under it).
+	if self.owner.modal == UI.Choices then return UI.Choices:OnPad(key) end
 	if self.spec.stepper and self.index == 0 then
-		if side then return self:Step(side) end
-		if key == "PAD1" then return self:Step(1, true) end
+		if key == "PAD1" then return self.Stepper:Open() end
 		if key == "PADDDOWN" then
 			self.index = 1
 			return self:Point()
@@ -1366,7 +1379,10 @@ function UI.Dialog()
 	dialog.Button2:SetPoint("BOTTOMLEFT", dialog, "BOTTOM", 6.5, 16)
 	dialog.Button3 = dialogButton(dialog)
 	dialog.Button3:Hide()
-	dialog.Stepper = UI.Dropdown(dialog, STEPPER_W, function(by, wrap) dialog:Step(by, wrap) end)
+	dialog.Stepper = UI.Dropdown(dialog, STEPPER_W, {
+		options = function() return dialog.spec.stepper.options() end,
+		pick = function(index) dialog.spec.stepper.pick(index) end,
+	})
 	dialog.Stepper:Hide()
 	for index = 1, 3 do
 		local button = dialog["Button" .. index]
@@ -1431,8 +1447,9 @@ local function tipAction(i)
 	action:SetHeight(ACTION_GLYPH)
 	action.glyph = UI.Glyph(action, ACTION_GLYPH)
 	action.glyph:SetPoint("LEFT")
+	action.glyph2 = UI.Glyph(action, ACTION_GLYPH)
+	action.glyph2:SetPoint("LEFT", action.glyph, "RIGHT", 0, 0)
 	action.text = action:CreateFontString(nil, "ARTWORK", "GameFontNormal")
-	action.text:SetPoint("LEFT", action.glyph, "RIGHT", 6, 0)
 	tooltip.actions[i] = action
 	return action
 end
@@ -1459,11 +1476,15 @@ function UI.Tooltip(owner, spec)
 	end
 	if spec.actions and #spec.actions > 0 then y = y + 8 end
 	for i, entry in ipairs(spec.actions or {}) do
-		local action = tipAction(i)
+		local action, second = tipAction(i), entry[3]
 		action.glyph:SetCode(entry[1])
+		action.glyph2:SetShown(second ~= nil)
+		if second then action.glyph2:SetCode(second) end
 		action.text:SetText(entry[2])
 		action.text:SetTextColor(GREEN_FONT_COLOR:GetRGB())
-		action:SetWidth(ACTION_GLYPH + 6 + action.text:GetStringWidth())
+		action.text:ClearAllPoints()
+		action.text:SetPoint("LEFT", second and action.glyph2 or action.glyph, "RIGHT", 6, 0)
+		action:SetWidth(ACTION_GLYPH * (second and 2 or 1) + 6 + action.text:GetStringWidth())
 		action:ClearAllPoints()
 		action:SetPoint("TOPLEFT", TIP_PAD, -y)
 		action:Show()
@@ -1537,55 +1558,223 @@ local function dropdownArt(button, atlas, layer)
 	return tex
 end
 
--- A stepper dropdown (SettingsDropdownWithButtonsTemplate's look): a back button, the value (width wide, 25 tall)
--- and a next button, 26 x 25 each, 5 and 4 apart. onStep(-1 | 1) from the steppers, onStep(1, true) from the value
--- (round past the end). drop:Set(text, first, last) greys the stepper at an end; drop:SetFocused(on) lights it.
-local DROP_H, DROP_STEP = 25, 26
+-- A dropdown (WowStyle2DropdownTemplate, the game's settings dropdown): one value box, width + 61 wide (where the
+-- old steppers stood, so rows keep their place) and 25 tall, its text centred 13 in from each side. A click, a tap or
+-- the row's A opens its list (UI.OpenChoices). choice = { options = fn() -> labels, current index; pick = fn(index) }.
+-- drop:Set(text) redraws it; drop:SetFocused(on) lights it; drop:Open() opens the list.
+local DROP_H, DROP_EXTRA, DROP_TEXT_X = 25, 61, 13
 
-function UI.Dropdown(parent, width, onStep)
-	local drop = CreateFrame("Frame", nil, parent)
-	drop:SetSize(width + 2 * DROP_STEP + 9, DROP_H)
-	local value = CreateFrame("Button", nil, drop)
-	value:SetSize(width, DROP_H)
-	value:SetPoint("LEFT", DROP_STEP + 5, 0)
-	dropdownArt(value, "common-dropdown-c-button")
-	drop.hover = dropdownArt(value, "common-dropdown-c-button-hover-2", "BORDER")
+function UI.Dropdown(parent, width, choice)
+	local drop = CreateFrame("Button", nil, parent)
+	drop:SetSize(width + DROP_EXTRA, DROP_H)
+	drop.bg = dropdownArt(drop, "common-dropdown-c-button")
+	drop.hover = dropdownArt(drop, "common-dropdown-c-button-hover-2", "BORDER")
 	drop.hover:Hide()
-	drop.arrow = value:CreateTexture(nil, "ARTWORK")
+	drop.arrow = drop:CreateTexture(nil, "ARTWORK")
 	drop.arrow:SetAtlas("common-dropdown-c-button-hover-arrow")
 	drop.arrow:SetSize(12, 5)
-	drop.arrow:SetPoint("TOP", value, "BOTTOM", 0, 1)
+	drop.arrow:SetPoint("TOP", drop, "BOTTOM", 0, 1)
 	drop.arrow:Hide()
-	drop.text = value:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-	drop.text:SetPoint("LEFT", 8, 0)
-	drop.text:SetPoint("RIGHT", -8, 0)
+	drop.text = drop:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+	drop.text:SetPoint("LEFT", DROP_TEXT_X, 0)
+	drop.text:SetPoint("RIGHT", -DROP_TEXT_X, 0)
 	drop.text:SetWordWrap(false)
-	value:SetScript("OnClick", function() onStep(1, true) end)
-	drop.steppers = {}
-	for step, name in pairs({ [-1] = "back", [1] = "next" }) do
-		local button = CreateFrame("Button", nil, drop)
-		button:SetSize(DROP_STEP, DROP_H)
-		button:SetPoint(step < 0 and "LEFT" or "RIGHT")
-		dropdownArt(button, "common-dropdown-c-button")
-		button.icon = button:CreateTexture(nil, "ARTWORK")
-		button.icon:SetSize(17, 17)
-		button.icon:SetPoint("CENTER")
-		button.atlas = "common-dropdown-icon-" .. name
-		button:SetScript("OnClick", function() onStep(step) end)
-		drop.steppers[step] = button
-	end
-	function drop.Set(_, text, first, last)
-		drop.text:SetText(text)
-		for step, button in pairs(drop.steppers) do
-			local ended = step < 0 and first or step > 0 and last
-			button.icon:SetAtlas(button.atlas .. (ended and "-disabled" or ""))
-		end
-	end
+	function drop.Set(_, text) drop.text:SetText(text) end
 	function drop.SetFocused(_, on)
 		drop.hover:SetShown(on)
 		drop.arrow:SetShown(on)
 	end
+	-- WowStyle2DropdownMixin's open state while its list is up.
+	function drop.SetOpen(_, on) drop.bg:SetAtlas(on and "common-dropdown-c-button-open" or "common-dropdown-c-button") end
+	function drop.Open()
+		local labels, current = choice.options()
+		UI.OpenChoices({ anchor = drop, labels = labels, current = current, pick = choice.pick })
+	end
+	drop:SetScript("OnClick", drop.Open)
 	return drop
+end
+
+-- An open dropdown's list, drawn as the game's settings dropdown draws its menu (MenuStyle2Mixin; rows from
+-- CreateHighlightRadio on WowMenuDropdownHighlightButtonTemplate): common-dropdown-c-bg 17 past each side, 12 above
+-- and 22 below; rows 20 tall, 3 in from the sides, 6 from the top and 7 from the bottom; a row's text GameFontNormal 14
+-- in, as wide as the longest option plus 45 and the row's 14 padding; the current option NORMAL_FONT_COLOR, the
+-- focused one HIGHLIGHT_FONT_COLOR, the rest VERY_LIGHT_GRAY_COLOR; the focused row over
+-- common-dropdown-customize-mouseover at 0.15, the window's chevron at its left. Our own frames: the Menu system
+-- taints. It opens under its box with the same left edge (above it when there's no room below), at least as wide, and
+-- is the window's modal while up: D-pad up/down move (held, they repeat; no wrap), A picks, B or any other button but
+-- left/right closes, a click outside closes. More than CHOICE_ROWS options scroll, the focus kept in view.
+-- spec = { anchor = region, labels = { text, ... }, current = index, pick = fn(index) }.
+local CHOICE_ROW, CHOICE_ROWS, CHOICE_TEXT_X, CHOICE_TEXT_PAD, CHOICE_ROW_PAD = 20, 10, 14, 45, 14
+local CHOICE_LEFT, CHOICE_TOP, CHOICE_RIGHT, CHOICE_BOTTOM, CHOICE_BAR_GAP = 3, 6, 3, 7, 4
+local CHOICE_BG = { -17, 12, 17, -22 }
+local choices
+local Choices = {}
+UI.Choices = Choices
+
+local function rgb(color, fallback)
+	if color and color.GetRGB then return color:GetRGB() end
+	return fallback, fallback, fallback
+end
+
+-- follow: scroll so the focused row shows (the pad); a wheel or bar scroll leaves the focus where it is.
+local function drawChoices(follow)
+	local state = choices.state
+	local labels, index, current = state.labels, state.index, state.current
+	local count = #labels
+	local visible = math.min(count, CHOICE_ROWS)
+	if follow and index <= state.top then state.top = index - 1 end
+	if follow and index > state.top + visible then state.top = index - visible end
+	state.top = math.max(0, math.min(state.top, count - visible))
+	for i, row in ipairs(choices.rows) do
+		local n = state.top + i
+		local label = i <= visible and labels[n]
+		row:SetShown(not not label)
+		if label then
+			row.index = n
+			row.text:SetText(label)
+			if n == current then row.text:SetTextColor(rgb(NORMAL_FONT_COLOR, 1))
+			elseif n == index then row.text:SetTextColor(rgb(HIGHLIGHT_FONT_COLOR, 1))
+			else row.text:SetTextColor(rgb(VERY_LIGHT_GRAY_COLOR, 0.88)) end
+			row.highlight:SetShown(n == index)
+		end
+	end
+	choices.bar:Set(state.top, visible, count)
+	state.window.cursor:Attach(choices.rows[index - state.top], 0)
+end
+
+local function buildChoices()
+	choices = CreateFrame("Frame", nil, UIParent)
+	choices:EnableMouse(true)
+	choices:EnableMouseWheel(true)
+	choices:SetScript("OnMouseWheel", function(_, delta) Choices.Scroll(choices.state.top - delta) end)
+	local bg = choices:CreateTexture(nil, "BACKGROUND")
+	bg:SetAtlas("common-dropdown-c-bg")
+	bg:SetPoint("TOPLEFT", CHOICE_BG[1], CHOICE_BG[2])
+	bg:SetPoint("BOTTOMRIGHT", CHOICE_BG[3], CHOICE_BG[4])
+	choices.rows = {}
+	for i = 1, CHOICE_ROWS do
+		local row = CreateFrame("Button", nil, choices)
+		row:SetHeight(CHOICE_ROW)
+		row:SetPoint("TOPLEFT", CHOICE_LEFT, -CHOICE_TOP - (i - 1) * CHOICE_ROW)
+		row.highlight = row:CreateTexture(nil, "BACKGROUND")
+		row.highlight:SetAtlas("common-dropdown-customize-mouseover")
+		row.highlight:SetAlpha(0.15)
+		row.highlight:SetAllPoints()
+		row.text = row:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+		row.text:SetPoint("LEFT", CHOICE_TEXT_X, 0)
+		row.text:SetPoint("RIGHT", -CHOICE_ROW_PAD, 0)
+		row.text:SetJustifyH("LEFT")
+		row.text:SetWordWrap(false)
+		row:SetScript("OnEnter", function(self)
+			choices.state.index = self.index
+			drawChoices(false)
+		end)
+		row:SetScript("OnClick", function(self) Choices.Pick(self.index) end)
+		choices.rows[i] = row
+	end
+	choices.bar = UI.ScrollBar(choices, CHOICE_ROWS * CHOICE_ROW, function(top) Choices.Scroll(top) end)
+	choices.bar:SetPoint("TOPRIGHT", -CHOICE_RIGHT, -CHOICE_TOP)
+	local catcher = CreateFrame("Button", nil, UIParent)
+	catcher:SetAllPoints(UIParent)
+	catcher:SetScript("OnClick", function() Choices.Close() end)
+	catcher:Hide()
+	choices.catcher = catcher
+	choices:Hide()
+end
+
+-- The list's row width: the box's inner width, or the longest option's text and the row's padding.
+local function choicesWidth(labels, anchorWidth, scrolls)
+	local measure, longest = choices.rows[1].text, 0
+	for _, label in ipairs(labels) do
+		measure:SetText(label)
+		longest = math.max(longest, measure.GetUnboundedStringWidth and measure:GetUnboundedStringWidth() or measure:GetStringWidth())
+	end
+	local bar = scrolls and choices.bar:GetWidth() + CHOICE_BAR_GAP or 0
+	return math.max(anchorWidth - CHOICE_LEFT - CHOICE_RIGHT - bar, CHOICE_TEXT_X + longest + CHOICE_TEXT_PAD + CHOICE_ROW_PAD), bar
+end
+
+function UI.OpenChoices(spec)
+	local window = UI.Current()
+	if InCombatLockdown() or not window or not spec.labels[1] then return end
+	if not choices then buildChoices() end
+	if choices.state then Choices.Close() end
+
+	local anchor, labels = spec.anchor, spec.labels
+	local count = #labels
+	local visible = math.min(count, CHOICE_ROWS)
+	local rowWidth, bar = choicesWidth(labels, anchor:GetWidth(), count > visible)
+	for _, row in ipairs(choices.rows) do row:SetWidth(rowWidth) end
+	local height = CHOICE_TOP + visible * CHOICE_ROW + CHOICE_BOTTOM
+	choices:SetSize(CHOICE_LEFT + rowWidth + bar + CHOICE_RIGHT, height)
+	choices:SetScale(window:GetScale())
+	choices:ClearAllPoints()
+	-- Room below: the box's bottom (in its own units, the list's at the same scale) above the list and its art.
+	if (anchor:GetBottom() or math.huge) >= height - CHOICE_BG[4] then
+		choices:SetPoint("TOPLEFT", anchor, "BOTTOMLEFT", 0, 0)
+	else
+		choices:SetPoint("BOTTOMLEFT", anchor, "TOPLEFT", 0, -CHOICE_BG[4] - CHOICE_BG[2])
+	end
+	local current = math.max(1, math.min(count, spec.current or 1))
+	choices.state = { window = window, anchor = anchor, labels = labels, current = spec.current, index = current, top = 0, pick = spec.pick }
+	choices.catcher:Show()
+	UI.RaiseAbove(choices.catcher, window, "menuCatcher")
+	UI.RaiseAbove(choices, window, "menu")
+	choices:Show()
+	if anchor.SetOpen then anchor:SetOpen(true) end
+	window.modal = Choices
+	UI.HideTooltip()
+	window:SetPrompts({ { "PAD1", L.SELECT }, { "PAD2", L.CLOSE } })
+	drawChoices(true)
+end
+
+function UI.ChoicesShown() return not not (choices and choices.state) end
+
+function Choices.Scroll(top)
+	if not (choices and choices.state) then return end
+	choices.state.top = top
+	drawChoices(false)
+end
+
+function Choices.Move(_, dx, dy)
+	local state = choices.state
+	if dy == 0 or not state then return end
+	state.index = math.max(1, math.min(#state.labels, state.index - (dy > 0 and 1 or -1)))
+	drawChoices(true)
+end
+
+-- The pick runs with the list still the window's modal, so the window redraws once, when the list closes.
+function Choices.Pick(index)
+	local state = choices and choices.state
+	if not state then return end
+	state.pick(index)
+	Choices.Close()
+end
+
+-- Closing hands the window back: its focus row redraws with its tooltip and prompts (or the dialog's, over it).
+function Choices.Close()
+	local state = choices and choices.state
+	if not state then return end
+	choices.state = nil
+	choices:Hide()
+	choices.catcher:Hide()
+	local window, anchor = state.window, state.anchor
+	if anchor.SetOpen then anchor:SetOpen(false) end
+	window.modal = nil
+	if not window:IsShown() then return end
+	window:Refresh()
+	if UI.DialogShown() then return UI.Dialog():Resume() end
+	window:Focus(window.focus)
+end
+
+function Choices.OnPad(_, key)
+	local state = choices.state
+	if key == "PAD1" then return Choices.Pick(state.index) end
+	if key == "PADDUP" or key == "PADDDOWN" then
+		local window = state.window
+		window.repeatKey = key
+		return window:StartRepeat({ 0, key == "PADDUP" and 1 or -1 })
+	end
+	if key ~= "PADDLEFT" and key ~= "PADDRIGHT" then Choices.Close() end
 end
 
 -- A slider with steppers (MinimalSliderWithSteppersTemplate's art), width wide with the steppers, the value in
@@ -1636,6 +1825,8 @@ function UI.Slider(parent, width, min, max, step, onStep, onSet)
 		slider.quiet = nil
 		slider.value:SetText(text or value)
 	end
+	-- Grabbed by the pad: the value white (the minimal slider's steppers have no hover art).
+	function slider.SetEditing(_, on) slider.value:SetFontObject(on and "GameFontHighlight" or "GameFontNormal") end
 	return slider
 end
 
@@ -1717,6 +1908,8 @@ end
 local TAB_ICON_X = -4
 
 function UI.SideTabs(window, specs, index)
+	-- Every tab's window is the addon's main window: it carries the logo portrait; dialogs and one-off windows don't.
+	UI.AddPortrait(window, ART .. "portrait.tga")
 	local info = C_Texture.GetAtlasInfo("common-sidetab")
 	local width, height = info and info.width or 50, info and info.height - 5 or 45
 	local column = CreateFrame("Frame", nil, window)

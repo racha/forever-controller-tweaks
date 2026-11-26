@@ -711,10 +711,11 @@ local function build()
 	window = UI.NewWindow(WIDTH, HEIGHT)
 	B.Boxes(window)
 	window.tabs = UI.SideTabs(window, UI.TABS, 1)
-	window.device = UI.Text(window, "GameFontHighlight", 24, 30)
-	window.sub = UI.Text(window, "GameFontDisableSmall", 24, 47)
+	window.device = UI.Text(window, "GameFontHighlight", UI.PORTRAIT_CLEAR, 30)
+	window.sub = UI.Text(window, "GameFontDisableSmall", UI.PORTRAIT_CLEAR, 47)
 
-	-- Page selector: L2 glyph, "Page n of N" in a dropdown box, R2 glyph; D-pad left/right on it or an L2/R2 tap switch pages.
+	-- Page selector: L2 glyph, "Page n of N" in a dropdown box, R2 glyph; an L2/R2 tap flips pages, A or a click opens
+	-- the box's list of pages.
 	local selector = CreateFrame("Button", nil, window)
 	selector:SetSize(200, 28)
 	UI.At(selector, window, WIDTH - 230, 24)
@@ -729,7 +730,17 @@ local function build()
 	box:SetPoint("CENTER")
 	selector.text = selector:CreateFontString(nil, "OVERLAY", "GameFontNormal")
 	selector.text:SetPoint("CENTER")
-	selector:SetScript("OnClick", function() B.SetPage(page % pageCount() + 1) end)
+	-- The list hangs from the box itself, not the glyphs beside it.
+	local field = CreateFrame("Frame", nil, selector)
+	field:SetSize(150, 25)
+	field:SetPoint("CENTER")
+	function field.SetOpen(_, on) box:SetAtlas(on and "common-dropdown-c-button-open" or "common-dropdown-c-button") end
+	function selector.Open()
+		local labels = {}
+		for n = 1, pageCount() do labels[n] = string.format(L.PAGE_N, n) end
+		UI.OpenChoices({ anchor = field, labels = labels, current = page, pick = B.SetPage })
+	end
+	selector:SetScript("OnClick", selector.Open)
 	window.pageSelector = selector
 	-- Left of the selector, right-aligned and wrapped, so a long override note stays clear of the right header.
 	window.pageNote = UI.Text(window, "GameFontDisableSmall", nil, nil, nil, 420)
@@ -873,8 +884,8 @@ local function refresh()
 	-- A window opens on D-pad Up's top-bar cell.
 	if first then table.insert(nodes, 1, first) end
 
-	nodes[#nodes + 1] = UI.Node(window, selector, function() B.SetPage(page % count + 1) end, {
-		onDir = function(step) B.SetPage(page + step) end,
+	nodes[#nodes + 1] = UI.Node(window, selector, selector.Open, {
+		choice = true,
 		tip = { title = string.format(L.PAGE_OF, page, count), lines = { L.PAGE_TIP }, actions = { { "PADLTRIGGER", L.PAGE_PREVIOUS }, { "PADRTRIGGER", L.PAGE_NEXT } }, side = "below" },
 	})
 

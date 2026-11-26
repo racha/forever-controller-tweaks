@@ -74,6 +74,14 @@ W.fire("PLAYER_ENTERING_WORLD")
 W.advance(2.5)
 local UI, L = ns.UI, ns.UI.L
 UI.CloseAll()
+-- Every window's border layout and header texts, for the portrait checks (windows are built on first open).
+NineSliceUtil = { ApplyLayoutByName = function(nine, name) nine.layout = name end }
+local texts, uiText = {}, UI.Text
+function UI.Text(parent, ...)
+	local fs = uiText(parent, ...)
+	texts[#texts + 1] = { parent = parent, fs = fs }
+	return fs
+end
 
 local checks = 0
 local function check(ok, msg)
@@ -122,7 +130,29 @@ local function dump(t, out)
 	return table.concat(out, ",")
 end
 
--- Walks w from its first node: up/down everywhere, left/right only off nodes without a value (no onDir, not noSide).
+-- The open dropdown list: its shown rows' texts, the focused one starred; nil while no list is up.
+local function listed(w)
+	if w.modal ~= ns.UI.Choices then return end
+	local out = {}
+	for _, f in ipairs(W.frames) do
+		if f.rows and f.catcher and f.bar then
+			for _, row in ipairs(f.rows) do if row.shown then out[#out + 1] = row.text.text .. (row.highlight.shown and "*" or "") end end
+		end
+	end
+	return table.concat(out, ",")
+end
+
+-- Picks the list's option at index (its pick, then it closes).
+local function choose(w, index)
+	local now, at = nil, 0
+	for text in (listed(w) .. ","):gmatch("([^,]*),") do at = at + 1 if text:sub(-1) == "*" then now = at end end
+	for _ = now + 1, index do w:Pad("PADDDOWN") end
+	for _ = index + 1, now do w:Pad("PADDUP") end
+	w:Pad("PAD1")
+	w.repeatKey, w.repeatDir = nil, nil
+end
+
+-- Walks w from its first node in all four directions (left/right on a value row move too, until A grabs it).
 -- Returns the labels of the visible nodes it never reached.
 local function unreached(w)
 	local start = w.nodes[1].region
@@ -132,8 +162,7 @@ local function unreached(w)
 		i = i + 1
 		local node
 		for _, n in ipairs(w.nodes) do if n.region == region then node = n end end
-		local keys = (node.onDir or node.noSide) and { "PADDUP", "PADDDOWN" } or { "PADDUP", "PADDDOWN", "PADDLEFT", "PADDRIGHT" }
-		for _, key in ipairs(keys) do
+		for _, key in ipairs({ "PADDUP", "PADDDOWN", "PADDLEFT", "PADDRIGHT" }) do
 			w:Focus(node)
 			w:Pad(key)
 			w.repeatKey, w.repeatDir = nil, nil
@@ -174,6 +203,42 @@ local titles = {}
 for i, spec in ipairs(UI.TABS) do titles[i] = spec[2] end
 check(table.concat(titles, ",") == table.concat(wanted, ","), "tabs " .. table.concat(titles, ",") .. ", wanted " .. table.concat(wanted, ","))
 
+-- The logo portrait on every tab's window (the Keyboard tab's quick messages page too): the template's round portrait
+-- in the corner, the title right of it, and no header text under the ring (about 57 in, 55 down).
+local tabWindows = {}
+for i, spec in ipairs(UI.TABS) do
+	spec[3]()
+	tabWindows[i] = UI.Current()
+end
+if has.Keyboard then
+	ns.Keyboard.SettingsTab.OpenQuick()
+	tabWindows[#tabWindows + 1] = UI.Current()
+end
+for _, w in ipairs(tabWindows) do
+	local name, portrait, mask, title = w.NineSlice.Text.text, w.portrait, w.portraitMask, w.NineSlice.Text
+	check(portrait and portrait.texture == UI.ART .. "portrait.tga" and portrait.w == 62 and portrait.h == 62 and portrait.point == "TOPLEFT" and portrait.x == -5 and portrait.y == 7, name .. ": the logo portrait, 62 at -5, 7")
+	check(mask.texture == "Interface\\CharacterFrame\\TempPortraitAlphaMask" and portrait.masks and portrait.masks[1] == mask, name .. ": masked round by the native portrait mask")
+	check(w.NineSlice.layout == "PortraitFrameTemplate", name .. ": the border takes the portrait layout")
+	check(title.point == "LEFT" and title.x == 58, name .. ": the title right of the portrait")
+	check(w.ClosePanelButton:GetFrameLevel() > w.NineSlice:GetFrameLevel(), name .. ": the close button stays above the border")
+	for _, t in ipairs(texts) do
+		local fs = t.fs
+		local onWindow = t.parent == w and fs.point == "TOPLEFT" and (fs.rel == nil or fs.rel == w)
+		if onWindow then check(fs.x >= UI.PORTRAIT_CLEAR or -fs.y > 62, name .. ": text at " .. fs.x .. ", " .. -fs.y .. " clear of the ring: " .. tostring(fs.text)) end
+	end
+end
+local b = tabWindows[1]
+check(b.device.x == 64 and b.device.y == -30 and b.sub.x == 64 and b.sub.y == -47, "Bindings: the device name and its line start right of the portrait")
+UI.CloseAll()
+-- One-off windows and the dialog have none.
+UI.Detect.Open()
+check(UI.Current() and not UI.Current().portrait and UI.Current().NineSlice.layout == nil, "controller setup has no portrait")
+UI.CloseAll()
+UI.Dialog():Open(tabWindows[1], { text = "?", buttons = { L.OK } })
+check(not UI.Dialog().portrait, "the dialog has no portrait")
+UI.Dialog():Close()
+UI.CloseAll()
+
 -- Bindings: the side tabs always (Tweaks is the core's), R1 names the next tab.
 UI.Bindings.Open()
 local b = UI.Current()
@@ -195,7 +260,8 @@ if has.Keyboard then
 	KS.Open()
 	local kb = UI.Current()
 	check(footer(kb).PAD3 == KS.T.QUICK, "keyboard tab: Square is Quick messages")
-	-- The settings controls on the pad: A toggles a checkbox and rounds a dropdown, D-pad left/right steps.
+	-- The settings controls on the pad: A toggles a checkbox, opens a dropdown's list, or grabs a slider (D-pad
+	-- left/right step it).
 	local db = ns.db.keyboard
 	check(kb.nodes[1].region:GetText() == KS.T.QUICK, "keyboard tab: Quick messages is the first stop")
 	focusRow(kb, KS.T.ON)
@@ -204,21 +270,36 @@ if has.Keyboard then
 	kb:Select()
 	check(db.enabled == true, "and A turns it on again")
 	focusRow(kb, KS.T.OPEN)
+	local opened = db.open
 	kb:Pad("PADDLEFT")
-	check(db.open == "controller", "D-pad left steps the Open dropdown")
-	kb:Pad("PADDRIGHT")
-	local open = kb.focus
-	kb:Pad("PADDRIGHT")
-	check(db.open == "always" and kb.focus == open, "past its end, D-pad right keeps the focus and the value")
+	kb.repeatKey, kb.repeatDir = nil, nil
+	check(db.open == opened, "D-pad left on the Open dropdown steps nothing")
+	focusRow(kb, KS.T.OPEN)
+	kb:Select()
+	local star = { controller = "*", always = "" }
+	check(listed(kb) == KS.T.CHOICES.controller .. star[opened] .. "," .. KS.T.CHOICES.always .. (opened == "always" and "*" or "") and not kb.editing, "A opens the Open list on the current option: " .. tostring(listed(kb)))
+	choose(kb, 1)
+	check(db.open == "controller" and kb.focus.region.control.text.text == KS.T.CHOICES.controller and not listed(kb), "picking With the controller saves it and closes")
+	kb:Select()
+	choose(kb, 2)
+	check(db.open == "always", "and Always")
 	focusRow(kb, "Scale")
+	kb:Select()
 	kb:Pad("PADDRIGHT")
 	check(db.scale == 1.05, "D-pad right steps the Scale slider: " .. tostring(db.scale))
 	kb:Pad("PADDLEFT")
+	kb:Pad("PADDDOWN")
+	check(not kb.editing, "down lets go")
 	focusRow(kb, "Layout")
-	kb:Pad("PADDRIGHT")
-	check(db.layout == "compact", "D-pad right steps the Layout dropdown")
 	kb:Select()
-	check(db.layout == "ring", "A rounds the Layout dropdown back to the first")
+	choose(kb, 2)
+	check(db.layout == "compact", "the Layout list picks Compact")
+	kb:Select()
+	kb:Pad("PAD2")
+	check(db.layout == "compact" and not listed(kb) and not kb.editing, "B closes it, unchanged")
+	kb:Select()
+	choose(kb, 1)
+	check(db.layout == "ring", "back to Ring")
 	focusRow(kb, "Word suggestions")
 	kb:Select()
 	check(db.suggestions == false, "A on the Word suggestions checkbox turns them off")
@@ -297,9 +378,8 @@ for i = 2, #UI.TABS do
 end
 UI.CloseAll()
 
--- One value per row: every tab's controls are reached with up/down (left/right only off cells and buttons) and the
--- walk changes nothing saved. Every setting with a left/right value is a noSide row (Bindings' page selector aside;
--- Tweaks' value rows hand left/right back at their ends, so its four columns are crossed sideways: tweaks_spec).
+-- Edit mode: the D-pad moves freely on every tab, so the walk reaches every control and changes nothing saved, and
+-- no value row is a dead end sideways (left or right leaves it).
 local walks = {}
 for _, spec in ipairs(UI.TABS) do walks[#walks + 1] = { spec[2], spec[3] } end
 for _, walk in ipairs(walks) do
@@ -307,10 +387,19 @@ for _, walk in ipairs(walks) do
 	local w = UI.Current()
 	local before = dump(ns.db)
 	local missed = unreached(w)
-	check(missed == "", walk[1] .. ": up/down reach every control, missed: " .. missed)
+	check(missed == "", walk[1] .. ": the D-pad reaches every control, missed: " .. missed)
 	check(dump(ns.db) == before, walk[1] .. ": walking the controls changes no setting")
 	for _, node in ipairs(w.nodes) do
-		if node.onDir and node.region ~= w.pageSelector and walk[1] ~= "Tweaks" then check(node.noSide, walk[1] .. ": a value row keeps left/right") end
+		local region = node.region
+		if (node.onDir or node.choice) and region:IsVisible() then
+			local left, right
+			w:Focus(node) w:Pad("PADDLEFT") w.repeatKey, w.repeatDir = nil, nil
+			left = w.focus.region
+			w:Focus(node) w:Pad("PADDRIGHT") w.repeatKey, w.repeatDir = nil, nil
+			right = w.focus.region
+			check(left ~= region or right ~= region, walk[1] .. ": left or right leaves the value row " .. tostring(region.label and region.label.text or node.tip and node.tip.title))
+			check(not w.editing and not listed(w), walk[1] .. ": moving never grabs a row or opens a list")
+		end
 
 	end
 	-- Every tooltip wraps at the native width, so it stays beside its row.
@@ -407,8 +496,14 @@ if has.Touch then
 	local size = left().size
 	focusRow(tw, L.TOUCH_SETTINGS.size)
 	tw:Pad("PADDRIGHT")
-	check(left().size == size + 4, "D-pad right steps the Button size slider")
+	check(left().size == size, "D-pad right moves off the Button size slider before A grabs it")
+	focusRow(tw, L.TOUCH_SETTINGS.size)
+	tw:Pad("PAD1")
+	tw:Pad("PADDRIGHT")
+	check(left().size == size + 4, "grabbed: D-pad right steps the Button size slider")
 	tw:Pad("PADDLEFT")
+	tw:Pad("PAD1")
+	check(not tw.editing and left().size == size, "A lets go")
 	focusTip(tw, L.TOUCH_ON)
 	tw:Select()
 	check(ns.Touch.Config().enabled == false, "A on the On checkbox turns the bars off")
@@ -416,7 +511,21 @@ if has.Touch then
 	local shown = ns.Touch.Config().show
 	focusTip(tw, L.TOUCH_SHOW_LABEL)
 	tw:Select()
-	check(ns.Touch.Config().show ~= shown, "A rounds the Show dropdown on")
+	check(ns.Touch.Config().show == shown and listed(tw) and not tw.editing, "A opens the Show list: " .. tostring(listed(tw)))
+	tw:Pad("PAD2")
+	check(not listed(tw) and UI.Current() == tw and ns.Touch.Config().show == shown, "B closes it without closing the tab")
+	tw:Select()
+	choose(tw, shown == "never" and 1 or 4)
+	check(ns.Touch.Config().show ~= shown and not listed(tw), "a pick changes Show")
+	assert(ns.Touch.Set("show", shown))
+	focusTip(tw, L.TOUCH_SIDE_LABEL)
+	tw:Select()
+	choose(tw, 2)
+	check(tw.focus.region.control.text.text == L.TOUCH_SIDE.right, "Settings for: the list picks the right bar")
+	focusRow(tw, L.TOUCH_SETTINGS.shape)
+	tw:Select()
+	check(listed(tw) == L.TOUCH_CHOICES.shape.circle .. "*," .. L.TOUCH_CHOICES.shape.square or listed(tw) == L.TOUCH_CHOICES.shape.circle .. "," .. L.TOUCH_CHOICES.shape.square .. "*", "Shape opens its list: " .. tostring(listed(tw)))
+	tw:Pad("PAD2")
 	UI.CloseAll()
 end
 
@@ -446,21 +555,54 @@ if has.Rings then
 	local r = UI.Current()
 	local function rings() local out = {} for _, ring in ipairs(ns.Rings.List()) do out[ring.id] = { ring.count, ring.stick, ring.show } end return out end
 	local before = rings()
+	-- Not grabbed, the D-pad leaves the Slots row every way: up into the preview's slots (the wheel is scaled, so the
+	-- focus compares screen units), left to the ring list.
+	local function from(label, key)
+		focusRow(r, label)
+		r:Pad(key)
+		r.repeatKey, r.repeatDir = nil, nil
+		return r.focus.region
+	end
+	local function screen(region)
+		local x, y = region:GetCenter()
+		local scale = region:GetEffectiveScale()
+		return x * scale, y * scale
+	end
 	focusRow(r, L.RINGS_SLOTS)
+	local sx, sy = screen(r.focus.region)
+	local nearest, nearestD
+	for _, node in ipairs(r.slotNodes) do
+		local x, y = screen(node.region)
+		local d = (x - sx) ^ 2 + (y - sy) ^ 2
+		if node.region:IsVisible() and (not nearestD or d < nearestD) then nearest, nearestD = node.region, d end
+	end
+	local above = from(L.RINGS_SLOTS, "PADDUP")
+	check(above.slot and above == nearest, "up from Slots reaches the preview slot nearest it on screen: " .. tostring(above.slot))
+	local leftOf = from(L.RINGS_SLOTS, "PADDLEFT")
+	check(leftOf:GetCenter() < 344, "left from Slots reaches the ring list's column, not the buttons under the settings")
+	for _, label in ipairs({ L.RINGS_STICK, L.RINGS_SHOW, L.RINGS_MIDDLE, L.RINGS_STYLE }) do check(not from(label, "PADDLEFT").label or from(label, "PADDLEFT").label.text ~= label, label .. ": left leaves the row") end
+	check(dump(rings()) == dump(before), "moving changes no ring")
+	focusRow(r, L.RINGS_SLOTS)
+	r:Select()
 	r:Pad("PADDLEFT")
 	local stepped
 	for id, ring in pairs(rings()) do if ring[1] == before[id][1] - 1 then stepped = true end end
-	check(stepped, "D-pad left steps the Slots slider")
+	check(stepped and r.editing, "grabbed: D-pad left steps the Slots slider")
+	r:Pad("PADDUP")
+	check(not r.editing and r.focus.region.slot, "up lets go and moves into the preview")
 	focusRow(r, L.RINGS_STICK)
 	r:Select()
+	check(listed(r) and listed(r):find(L.RINGS_STICK_NAMES.dynamic, 1, true) and not r.editing, "A opens the Stick list: " .. tostring(listed(r)))
+	choose(r, 3)
 	local turned
 	for id, ring in pairs(rings()) do if ring[2] ~= before[id][2] then turned = true end end
-	check(turned, "A rounds the Stick dropdown on")
+	check(turned and not listed(r), "a pick sets the Stick")
 	focusRow(r, L.RINGS_SHOW)
-	r:Pad("PADDRIGHT")
+	r:Select()
+	choose(r, 2)
 	local shown
 	for id, ring in pairs(rings()) do if before[id][3] == "toggle" and ring[3] == "hold" then shown = true end end
-	check(shown, "D-pad right steps Show from Toggle to Hold")
+	check(shown, "the Show list picks Hold")
 	for _, ring in ipairs(ns.Rings.List()) do assert(ns.Rings.SetShow(ring.id, "toggle")) end
 	-- The preview (design/rings.md 10.8) is the in-game wheel scaled into its area, following the count, with the
 	-- native highlight on the focused slot.

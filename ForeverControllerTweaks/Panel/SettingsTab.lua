@@ -54,14 +54,17 @@ local function profileIndex(items, id)
 	return 1
 end
 
--- One step through the profiles (A rounds); false past an end.
-local function stepProfile(by, wrap)
-	local items = Profile.List()
-	if not (hasChar() and items[1]) then return false end
-	local index = profileIndex(items, Profile.CurrentId())
-	local item = items[wrap and (index + by - 1) % #items + 1 or index + by]
-	if not item then return false end
-	Profile.Use(item.id)
+-- This character's profiles for the dropdown's list, and the one it plays on.
+local function profileChoices()
+	local labels, items = {}, Profile.List()
+	if not hasChar() then return labels end
+	for i, item in ipairs(items) do labels[i] = item.name end
+	return labels, profileIndex(items, Profile.CurrentId())
+end
+
+local function pickProfile(index)
+	local item = Profile.List()[index]
+	if hasChar() and item then Profile.Use(item.id) end
 end
 
 -- The first profile but this one: where Delete moves the character.
@@ -156,7 +159,7 @@ end
 local function buildProfile()
 	local y = FIRST_ROW
 	rows.profile = newRow(1, y, T.THIS)
-	placeControl(rows.profile, UI.Dropdown(rows.profile, CHOICE_W, stepProfile))
+	placeControl(rows.profile, UI.Dropdown(rows.profile, CHOICE_W, { options = profileChoices, pick = pickProfile }))
 	y = y + ROW_PITCH
 	rows.name = newRow(1, y, T.NAME)
 	nameBox = CreateFrame("EditBox", nil, rows.name, "InputBoxTemplate")
@@ -211,11 +214,10 @@ end
 -- Refresh
 
 local function refreshProfile(nodes)
-	local known, items = hasChar(), Profile.List()
+	local known = hasChar()
 	local profile, id = Profile.Current()
 	local live = known and profile ~= nil
-	local index = profileIndex(items, id)
-	rows.profile.control:Set(profile and profile.name or "", index == 1, index == #items)
+	rows.profile.control:Set(profile and profile.name or "")
 	if not nameBox:HasFocus() then nameBox:SetText(profile and profile.name or "") end
 	nameBox:EnableMouse(live)
 	for _, key in ipairs({ "profile", "name" }) do rows[key].label:SetFontObject(live and "GameFontNormal" or "GameFontDisable") end
@@ -226,7 +228,7 @@ local function refreshProfile(nodes)
 	rows.noChar:SetShown(not known)
 	if not known then return end
 
-	nodes[#nodes + 1] = UI.Node(window, rows.profile, function() stepProfile(1, true) end, { cursorX = 0, onDir = stepProfile, noSide = true, onFocus = rowFocus(rows.profile), tip = { title = T.THIS, lines = { T.THIS_TIP, L.CHOICE_TIP }, side = "right" } })
+	nodes[#nodes + 1] = UI.Node(window, rows.profile, function() rows.profile.control:Open() end, { cursorX = 0, choice = true, onFocus = rowFocus(rows.profile), tip = { title = T.THIS, lines = { T.THIS_TIP, L.CHOICE_TIP }, side = "right" } })
 	if profile then nodes[#nodes + 1] = UI.Node(window, rows.name, editName, { cursorX = 0, onFocus = rowFocus(rows.name), tip = { title = T.NAME, lines = { T.NAME_TIP }, side = "right" } }) end
 	nodes[#nodes + 1] = buttonNode(rows.new, T.NEW_TIP, "right")
 	if live then nodes[#nodes + 1] = buttonNode(rows.copy, T.COPY_TIP, "right") end
@@ -293,7 +295,7 @@ local function build()
 	window = UI.NewWindow(geo.WIDTH, geo.HEIGHT)
 	window.tabs = UI.SideTabs(window, UI.TABS, index)
 	window:SetTitle(T.TITLE)
-	UI.Text(window, "GameFontDisableSmall", 24, 33, T.HINT)
+	UI.Text(window, "GameFontDisableSmall", UI.PORTRAIT_CLEAR, 33, T.HINT)
 	for i, title in ipairs({ T.PROFILE, T.SYNC, T.BACKUP }) do
 		UI.Inset(window, X[i], TOP, INSET_W, INSET_H)
 		UI.SectionHeader(window, X[i] + (INSET_W - HEADER_W) / 2, TOP + 12, HEADER_W, title)

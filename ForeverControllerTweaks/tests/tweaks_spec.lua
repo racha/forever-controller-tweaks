@@ -313,42 +313,150 @@ check(walk(8) == "fastLoot,passUnusable,upgradeArrows,wearRewards,acceptInvites,
 focusKey("fastLoot")
 press("PADDLEFT")
 check(focused() == "battery", "left comes back: " .. focused())
--- The rumble rows: one strength; a pattern per group (Off included). Left/right change only the focused row.
+-- The rumble rows: one strength; a pattern per group (Off included). Left/right always cross the columns from a
+-- pattern row; A opens its list (the game's dropdown): up/down move, A picks, B closes.
 local gs = ns.db.tweaks.rumbleGroups
+local FIRST_COLUMN = { sortBags = 1, sortKey = 1, sellJunk = 1, repair = 1, repairGuild = 1, buyStack = 1, skipGossip = 1, learnAll = 1, openMail = 1 }
+-- The open dropdown list's helpers, in one table (the spec's main chunk is near Lua's 200-local limit).
+local D = {}
+function D.list() for _, f in ipairs(W.frames) do if f.rows and f.catcher and f.bar then return f end end end
+function D.open(win) local f = D.list() return f and f.shown and (win or w).modal == UI.Choices end
+function D.focus() for _, row in ipairs(D.list().rows) do if row.shown and row.highlight.shown then return row.index, row.text.text end end end
+function D.tip() for _, f in ipairs(W.frames) do if f.title and type(f.lines) == "table" and type(f.actions) == "table" then return f.shown end end end
+do
+local list, listOpen, listFocus, tooltipShown = D.list, D.open, D.focus, D.tip
+focusKey("rumble:group")
+check(w.focus.region.label.text == "Group", "Group: its name first")
+press("PADDLEFT")
+check(FIRST_COLUMN[focused()] and gs.group == "double", "left from Rumble Group crosses to the first column, changing nothing: " .. focused())
+focusKey("rumble:group")
+press("PADDRIGHT")
+check(not focused():find("^rumble"), "and right crosses to the Controller column: " .. focused())
+focusKey("rumbleStrength")
+press("PADDRIGHT")
+check(not focused():find("^rumble") and ns.db.tweaks.rumbleStrength == 0.9, "right from Strength crosses too, the strength kept: " .. focused())
 focusKey("rumble:whisper")
 check(w.focus.region.control.text.text == "Tap" and w.focus.region.label.text == "Whisper", "Whisper: its name, then its pattern")
+check(footer().PAD1 == L.CHANGE and not footer().PADDLEFT and not w.editing, "a choice row's footer: A Change, no D-pad hint")
+press("PAD1")
+check(listOpen() and not w.editing and gs.whisper == "tap", "A opens Whisper's list, changing nothing, grabbing nothing")
+check(#Tweaks.PATTERN_ORDER == 8 and listFocus() == 2 and select(2, listFocus()) == "Tap", "the list: every pattern, the focus on the current one (Tap)")
+check(footer().PAD1 == L.SELECT and footer().PAD2 == L.CLOSE and not footer().PAD4, "list footer: A Select, B Close")
+check(not tooltipShown(), "the row's tooltip hides while the list is up")
+check(w.cursor.rel == list().rows[2], "the window's chevron on the focused option")
+press("PADDLEFT")
 press("PADDRIGHT")
-check(gs.whisper == "double" and gs.group == "double" and focused() == "rumble:whisper", "right steps only Whisper's pattern")
-press("PADDLEFT")
-press("PADDLEFT")
-check(gs.whisper == "off" and w.focus.region.control.text.text == "Off" and focused() == "rumble:whisper", "Off is a pattern: the group switches off right there")
-press("PADDLEFT")
-local leftOf = focused()
-local FIRST_COLUMN = { sortBags = 1, sortKey = 1, sellJunk = 1, repair = 1, repairGuild = 1, buyStack = 1, skipGossip = 1, learnAll = 1, openMail = 1 }
-check(gs.whisper == "off" and FIRST_COLUMN[leftOf], "left past Off leaves for the first column, changing nothing: " .. leftOf)
-
+check(listOpen() and listFocus() == 2 and gs.whisper == "tap", "left/right in the list do nothing")
+press("PADDDOWN")
+check(listFocus() == 3 and gs.whisper == "tap", "down moves the focus only")
+press("PAD1")
+check(not listOpen() and gs.whisper == "double" and gs.group == "double" and focused() == "rumble:whisper" and w.focus.region.control.text.text == "Double tap", "A picks the next pattern and closes, the focus stays on the row")
+check(footer().PAD1 == L.CHANGE and tooltipShown(), "the row's footer and tooltip are back")
+press("PAD1")
+press("PADDUP")
+press("PADDUP")
+press("PADDUP")
+check(listFocus() == 1, "up stops at the first option (no wrap)")
+press("PAD2")
+check(not listOpen() and gs.whisper == "double" and w:IsShown() and focused() == "rumble:whisper", "B closes, nothing changes, the window stays")
+press("PAD1")
+press("PADDUP")
+press("PADDUP")
+press("PAD1")
+check(gs.whisper == "off" and w.focus.region.control.text.text == "Off", "Off is a pattern: the group switches off right there")
+press("PADDDOWN")
+check(focused() == "rumble:tradeDuel" and gs.whisper == "off", "down moves on")
 press("PADDRIGHT")
-check(focused():find("^rumble"), "right comes back into the Rumble column: " .. focused())
+check(not focused():find("^rumble"), "right leaves the column again: " .. focused())
 focusKey("rumble:procs")
-for _ = 1, #Tweaks.PATTERN_ORDER do press("PADDRIGHT") end
-check(gs.procs == "fade" and not focused():find("^rumble"), "right past the last pattern goes on to the row level with it on the right: " .. focused())
-
+press("PAD1")
+for _ = 1, #Tweaks.PATTERN_ORDER do press("PADDDOWN") end
+check(listFocus() == #Tweaks.PATTERN_ORDER, "down stops at the last option")
+-- Held down repeats in the list too; L1 closes it, switching nothing.
+press("PAD1")
+check(gs.procs == "fade" and not listOpen(), "the last pattern picked")
+press("PAD1")
+w:Pad("PADDUP")
+W.advance(0.6)
+check(listFocus() < #Tweaks.PATTERN_ORDER - 1, "held up repeats: " .. tostring(listFocus()))
+w:Fire("OnGamePadButtonUp", "PADDUP")
+w:Fire("OnGamePadButtonDown", "PADLSHOULDER")
+w:Fire("OnGamePadButtonUp", "PADLSHOULDER")
+check(not listOpen() and UI.Current() == w and gs.procs == "fade", "L1 closes the list, the tab stays")
+-- The mouse: a click on the box opens, a click on an option picks, a click outside closes.
+local procs
+for _, node in ipairs(w.nodes) do if node.region.key == "rumble:procs" then procs = node.region end end
+procs.control:Click()
+check(listOpen() and listFocus() == #Tweaks.PATTERN_ORDER, "a click on the box opens the list")
+list().rows[2]:Fire("OnEnter")
+check(listFocus() == 2 and w.cursor.rel == list().rows[2], "hover focuses an option")
+list().rows[2]:Click()
+check(not listOpen() and gs.procs == "tap", "a click on an option picks it")
+procs.control:Click()
+list().catcher:Click()
+check(not listOpen() and gs.procs == "tap", "a click outside closes, nothing picked")
+-- The control: one value box over the old stepper row's width, no arrow buttons; open, it shows its open art.
+check(procs.control.steppers == nil and procs.control:GetWidth() == 161 and procs.control.text.font == "GameFontNormal", "no arrow buttons: the box spans the control's whole width")
+procs.control:Click()
+check(procs.control.bg.atlas == "common-dropdown-c-button-open", "open: the box takes its open art")
+check(list().point == "TOPLEFT" and list().rel == procs.control and list():GetWidth() >= procs.control:GetWidth(), "the list hangs under the box, its left edge, at least as wide")
+press("PAD2")
+check(procs.control.bg.atlas == "common-dropdown-c-button", "closed: the plain box again")
+-- A long list scrolls (10 rows), keeping the focus in view.
+local long = {}
+for i = 1, 14 do long[i] = "Option " .. i end
+local picked
+UI.OpenChoices({ anchor = procs.control, labels = long, current = 12, pick = function(i) picked = i end })
+local function shownRows() local n = 0 for _, row in ipairs(list().rows) do if row.shown then n = n + 1 end end return n end
+check(shownRows() == 10 and listFocus() == 12 and list().bar.shown, "14 options: 10 rows with a scroll bar, scrolled to the current one")
+for _ = 1, 11 do press("PADDUP") end
+check(listFocus() == 1 and list().rows[1].index == 1, "up to the first: scrolled back to the top")
+for _ = 1, 13 do press("PADDDOWN") end
+check(listFocus() == 14 and list().rows[10].index == 14, "down to the last: scrolled to the end")
+press("PAD1")
+check(picked == 14 and not listOpen(), "picks the 14th")
+UI.OpenChoices({ anchor = procs.control, labels = { "One", "Two" }, current = 1, pick = function() end })
+check(not list().bar.shown, "a short list has no scroll bar")
+press("PAD2")
+-- A dialog's stepper is a dropdown too: A opens a list of its numbers over the dialog, a pick redraws it in place.
+local count = 2
+local numbers = { "1", "2", "3", "4", "5" }
+UI.Dialog():Open(w, { text = "How many?", buttons = { L.OK, L.CANCEL }, stepper = { options = function() return numbers, count end, pick = function(i) count = i end } })
+local dialog = UI.Dialog()
+check(dialog.Stepper.steppers == nil and dialog.Stepper.text.text == "2", "the dialog's stepper: one box, no arrows, its value")
+press("PADDUP")
+press("PAD1")
+check(listOpen() and listFocus() == 2 and UI.DialogShown(), "A on it opens the number list over the dialog")
+check(list():GetFrameLevel() > dialog:GetFrameLevel() + 2 and list().catcher:GetFrameLevel() > dialog:GetFrameLevel() + 2, "the list and its catcher sit above the dialog and its children")
+check(footer().PAD1 == L.SELECT and footer().PAD2 == L.CLOSE, "list footer over the dialog")
+press("PADDDOWN")
+press("PAD1")
+check(count == 3 and dialog.Stepper.text.text == "3" and UI.DialogShown() and not listOpen() and dialog.index == 0, "a pick sets 3, the dialog stays with the focus on its stepper")
+check(footer().PAD1 == L.SELECT and footer().PAD2 == L.BACK and w.cursor.rel == dialog.Stepper, "the dialog's footer and cursor are back")
+press("PAD1")
+press("PAD2")
+check(count == 3 and UI.DialogShown() and not listOpen(), "B closes the list, not the dialog")
+press("PAD2")
+check(not UI.DialogShown(), "B again closes the dialog")
+Tweaks.SetRumbleGroup("procs", "fade")
+end
 Tweaks.SetRumbleGroup("procs", "off")
 Tweaks.SetRumbleGroup("whisper", "tap")
 focusKey("rumbleStrength")
-
-
+press("PAD1")
 press("PADDLEFT")
 check(ns.db.tweaks.rumbleStrength == 0.8 and focused() == "rumbleStrength", "one strength for all")
 press("PADDRIGHT")
 check(ns.db.tweaks.rumbleStrength == 0.9, "back to 90%")
+press("PADLSHOULDER")
+check(not w.editing and w:IsShown(), "L1 lets go")
 -- A toggles and saves; the guild row greys while Repair is off.
 local function rowOf(key) for _, node in ipairs(w.nodes) do if node.region.key == key then return node.region end end end
 check(rowOf("repairGuild").label.font == "GameFontDisable", "Use guild funds greys while Repair is off")
 check(rowOf("rumbleStrength").label.font == "GameFontDisable" and rowOf("rumble:group").label.font == "GameFontDisable" and rowOf("rumbleStrength").control.value.text == "90%", "the rumble rows grey while Rumble is off; the slider shows the strength")
 for _, node in ipairs(w.nodes) do if node.region.key == "repair" then w:Focus(node) end end
 w:Select()
-check(ns.db.tweaks.repair == true and rowOf("repair").control.check.shown and rowOf("repairGuild").label.font == "GameFontNormal", "A turns Repair on, checks it and lights its sub-row")
+check(ns.db.tweaks.repair == true and rowOf("repair").control.check.shown and rowOf("repairGuild").label.font == "GameFontNormal" and not w.editing, "A turns Repair on, checks it and lights its sub-row, never grabbing it")
 w:Select()
 check(ns.db.tweaks.repair == false and not rowOf("repair").control.check.shown, "A again turns it off")
 rowOf("declineDuels").control:Click()
@@ -367,21 +475,43 @@ for _, node in ipairs(w.nodes) do
 	for _, line in ipairs(tip.lines) do check(not line.shown or line:GetWidth() <= UI.TIP_TEXT_W + 1, node.region.key .. ": a long line wraps") end
 end
 w:Focus(w.nodes[1])
--- Light bar: a dropdown row; left/right step it and keep the focus, A rounds it; Custom colour greys until Custom.
+-- Light bar: a dropdown row; A opens its list, left/right move the focus; Custom colour greys until Custom. Sliders
+-- keep edit mode: A grabs, left/right step, a click anywhere lets go.
 for _, node in ipairs(w.nodes) do if node.region.key == "lightBar" then w:Focus(node) end end
-check(not w.focus.noSide and w.focus.onDir, "Light bar: left/right are its own until an end")
+check(w.focus.choice and not w.focus.onDir and not w.editing, "Light bar: a choice row, never grabbed")
+check(footer().PAD1 == L.CHANGE and footer().PAD4 == L.MORE and not footer().PADDLEFT, "choice row footer: A Change, Y More, no D-pad hint")
+local function tipActions()
+	local out = {}
+	for _, action in ipairs(tooltipFrame().actions) do
+		if action.shown then out[#out + 1] = action.glyph.code .. (action.glyph2.shown and "+" .. action.glyph2.code or "") .. "=" .. action.text.text end
+	end
+	return table.concat(out, ",")
+end
+check(tipActions() == "PAD1=" .. L.CHANGE, "choice row tip: A Change: " .. tipActions())
 check(rowOf("lightBar").control.text.text == "Game default" and rowOf("lightColor").label.font == "GameFontDisable", "Game default; Custom colour greyed")
 w:Pad("PADDLEFT")
 w.repeatKey, w.repeatDir = nil, nil
-check(ns.db.tweaks.lightBar == "default" and focused():find("^rumble"), "left at the first option: nothing changes, the focus moves to the Rumble column: " .. focused())
+check(ns.db.tweaks.lightBar == "default" and focused():find("^rumble"), "left on a choice row moves the focus, never the value: " .. focused())
 for _, node in ipairs(w.nodes) do if node.region.key == "lightBar" then w:Focus(node) end end
 w:Pad("PADDRIGHT")
-
-check(ns.db.tweaks.lightBar == "class" and rowOf("lightBar").control.text.text == "Class colour", "right steps to Class colour")
-w:Pad("PADDRIGHT")
-check(ns.db.tweaks.lightBar == "custom" and rowOf("lightColor").label.font == "GameFontNormal", "Custom lights its colour row")
+w.repeatKey, w.repeatDir = nil, nil
+check(ns.db.tweaks.lightBar == "default" and focused() ~= "lightBar", "right too: " .. focused())
+for _, node in ipairs(w.nodes) do if node.region.key == "lightBar" then w:Focus(node) end end
 w:Select()
-check(ns.db.tweaks.lightBar == "default", "A rounds back to Game default")
+w:Pad("PADDDOWN")
+w:Pad("PAD1")
+w.repeatKey, w.repeatDir = nil, nil
+check(ns.db.tweaks.lightBar == "class" and rowOf("lightBar").control.text.text == "Class colour" and focused() == "lightBar", "the list picks Class colour")
+w:Select()
+w:Pad("PADDDOWN")
+w:Pad("PAD1")
+w.repeatKey, w.repeatDir = nil, nil
+check(ns.db.tweaks.lightBar == "custom" and rowOf("lightColor").label.font == "GameFontNormal" and not w.editing, "Custom lights its colour row")
+for _, node in ipairs(w.nodes) do if node.region.key == "cameraZoom" then w:Focus(node) end end
+w:Select()
+check(w.editing == w.focus and tipActions() == "PADDLEFT+PADDRIGHT=" .. L.CHANGE .. ",PAD1=" .. L.DONE .. ",PAD2=" .. L.DONE, "a slider still grabs: D-pad Change, A Done, B Done: " .. tipActions())
+W.fire("GLOBAL_MOUSE_DOWN")
+check(not w.editing and tipActions() == "PAD1=" .. L.CHANGE, "a click anywhere lets go")
 Tweaks.Set("lightBar", "default")
 UI.CloseAll()
 
@@ -1137,19 +1267,38 @@ Tweaks.Set("rumble", false)
 reset()
 W.fire("PLAYER_DEAD")
 check(count("SetVibration") == 0, "Rumble off: nothing")
--- A on a group's row plays its pattern; A on Strength a Double tap; Rumble on events on or not.
+-- Y on a group's row plays its pattern; Y on Strength a Double tap; Rumble on events on or not. A pick from a group's
+-- list plays its pattern once; Strength, grabbed, plays the test on each change.
 UI.TweaksTab.Open()
 local tab = UI.Current()
-for _, case in ipairs({ { "rumble:danger", 0.2 }, { "rumbleStrength", 0.12 } }) do
-	local key = case[1]
+for _, key in ipairs({ "rumble:danger", "rumbleStrength" }) do
 	for _, node in ipairs(tab.nodes) do if node.region.key == key then tab:Focus(node) end end
-	check(tab.focus.tip.actions and tab.focus.tip.actions[1][1] == "PAD1" and tab.focus.tip.actions[1][2] == "Test", key .. ": the tooltip offers A: Test")
+	check(tab.focus.tip.actions and tab.focus.tip.actions[1][1] == "PAD4" and tab.focus.tip.actions[1][2] == "Test", key .. ": the tooltip offers Y: Test")
 	reset()
 	ns.db.options.debug = true
-	tab:Select()
+	W.press(tab, "PAD4")
 	ns.db.options.debug = false
 	local line = ns.db.debugLog[#ns.db.debugLog] or ""
-	check(count("SetVibration") == 2 and calls.SetVibration[2][2] == 0.8 and line:find(key == "rumbleStrength" and ": double at 80%" or ": long at 80%", 1, true) and ns.db.tweaks.rumbleGroups.danger == "long", key .. ": A plays the test, changes nothing: " .. line)
+	check(count("SetVibration") == 2 and calls.SetVibration[2][2] == 0.8 and line:find(key == "rumbleStrength" and ": double at 80%" or ": long at 80%", 1, true) and ns.db.tweaks.rumbleGroups.danger == "long" and not UI.DialogShown(), key .. ": Y plays the test, changes nothing, opens no More: " .. line)
+	W.advance(1)
+	reset()
+	W.press(tab, "PAD1")
+	local list = key == "rumble:danger"
+	check(count("SetVibration") == 0 and (list and D.open(tab) or not list and tab.editing), key .. (list and ": A opens its list" or ": A grabs it") .. ", no test")
+	W.press(tab, list and "PADDDOWN" or "PADDLEFT")
+	check(count("SetVibration") == 0 or not list, key .. ": moving in the list plays nothing")
+	if list then W.press(tab, "PAD1") end
+	check(count("SetVibration") == 2 and (not list or ns.db.tweaks.rumbleGroups.danger == "heartbeat"), key .. (list and ": a pick plays the pattern once" or ": a change plays the test once"))
+	W.advance(1)
+	if list then
+		W.press(tab, "PAD1")
+		W.press(tab, "PADDUP")
+		W.press(tab, "PAD1")
+	else
+		W.press(tab, "PADDRIGHT")
+		W.press(tab, "PAD1")
+	end
+	check(not tab.editing and not D.open(tab) and ns.db.tweaks.rumbleGroups.danger == "long" and ns.db.tweaks.rumbleStrength == 0.8, key .. ": back")
 	W.advance(1)
 end
 UI.CloseAll()
@@ -1264,15 +1413,13 @@ lit, color = level()
 check(lit == 4 and color[3] == 1, "Wired: four blue")
 -- Its neighbours move or the minimap scales: placed again, at the minimap's scale.
 lowest.GetCenter = function() local rad = math.rad(200) return 500 + 75 * math.cos(rad), 400 + 75 * math.sin(rad) end
--- A child's effective scale is its parent's, as in the client.
+-- A child's effective scale is its parent's (the stub inherits it, as the client does).
 Minimap.scale = 0.8
-for _, child in ipairs(Minimap.children or {}) do child.scale = 0.8 end
 W.advance(0.3)
 x, y = Tweaks.BatteryOffset(75, 225)
 check(at(b, x, y) and b.scale == 0.8, "follows its neighbours and the minimap's scale")
 check(near(edge.left.w, 1.25) and near(edge.top.w, 15 * 1.25), "laid out again in whole pixels at the new scale")
 Minimap.scale = nil
-for _, child in ipairs(Minimap.children or {}) do child.scale = nil end
 lowest:Hide()
 W.advance(0.3)
 x, y = Tweaks.BatteryOffset(75, 190)

@@ -25,10 +25,39 @@ end
 
 function Window:SetTitle(text) self.NineSlice.Text:SetText(text) end
 
-function Window:SetPrompts(list) self.footer:Set(list) end
+-- A value row (a node with onDir: a slider or a number) changes only while A grabs it. Its hints say so: A Change;
+-- while grabbed, the D-pad changes it and A or B is Done. A row's own D-pad labels replace the generic one then. A
+-- choice row (choice = true: its select opens a dropdown's list) is never grabbed; its hint is A Change too.
+local function valueHints(list, editing)
+	local L, sides, rest = UI.L, {}, {}
+	for _, entry in ipairs(list or {}) do
+		local key = entry[1]
+		if key == "PADDLEFT" or key == "PADDRIGHT" then sides[#sides + 1] = entry
+		elseif key ~= "PAD1" and not (editing and key == "PAD2") then rest[#rest + 1] = entry end
+	end
+	local out = editing and (sides[1] and sides or { { "PADDLEFT", L.CHANGE, "PADDRIGHT" } }) or {}
+	out[#out + 1] = { "PAD1", editing and L.DONE or L.CHANGE }
+	if editing then out[#out + 1] = { "PAD2", L.DONE } end
+	for _, entry in ipairs(rest) do out[#out + 1] = entry end
+	return out
+end
 
--- nodes: { region, select = fn, cursorX = n, onFocus = fn(focused) }; refreshes rebuild the list, so the focus
--- stays on the same region when it is still listed.
+local function valueTip(tip, editing)
+	local copy = {}
+	for k, v in pairs(tip) do copy[k] = v end
+	copy.actions = valueHints(tip.actions, editing)
+	return copy
+end
+
+-- A dialog or modal sets its own prompts on the window while the row stays focused under it.
+function Window:SetPrompts(list)
+	local focus = self.focus
+	local value = focus and (focus.onDir or focus.choice) and not self.modal and not UI.DialogShown()
+	self.footer:Set(value and valueHints(list, self.editing) or list)
+end
+
+-- nodes: { region, select = fn, cursorX = n, onFocus = fn(focused), onDir = fn(dx), choice = true }; refreshes rebuild
+-- the list, so the focus stays on the same region when it is still listed.
 function Window:SetNodes(nodes)
 	self.nodes = nodes
 	local region, keep = self.focus and self.focus.region, nil
@@ -36,54 +65,91 @@ function Window:SetNodes(nodes)
 		if node.region == region then keep = node end
 	end
 	if keep then self.focus = nil end
+	if self.editing then self.editing = keep and keep.onDir and keep or nil end
 	self:Focus(keep or nodes[1])
 end
 
 -- Native focus: the gold chevron at the row's left edge, a subtle row wash (unless the row draws its own focus
 -- state), and the row's tooltip with its button actions beside it.
+-- A grabbed row also takes the window's wash over its own, a stronger wash.
 function Window:Focus(node)
 	local old = self.focus
 	self.focus = node
+	if self.editing ~= node then self.editing = nil end
 	if old and old ~= node and old.onFocus then old.onFocus(false) end
 	if node and node.onFocus then node.onFocus(true) end
 
-	local region = node and node.region
+	local region, editing = node and node.region, self.editing
+	self:Grab(editing and (region.control or region))
+	local washed = region and (editing or not node.onFocus)
 	self.wash:ClearAllPoints()
-	self.wash:SetShown(region and not node.onFocus)
-	if region and not node.onFocus then
+	self.wash:SetShown(washed)
+	if washed then
 		self.wash:SetPoint("TOPLEFT", region, "TOPLEFT", -10, 0)
 		self.wash:SetPoint("BOTTOMRIGHT", region, "BOTTOMRIGHT", 5, 0)
 	end
 	UI.HideTooltip()
 	if UI.DialogShown() then return end
-	if node and node.tip then UI.Tooltip(node.tipRegion or region, type(node.tip) == "function" and node.tip() or node.tip) end
+	if node and node.tip then
+		local tip = type(node.tip) == "function" and node.tip() or node.tip
+		UI.Tooltip(node.tipRegion or region, (node.onDir or node.choice) and valueTip(tip, editing) or tip)
+	end
 	self.cursor:Attach(node and (node.cursorRegion or region), node and node.cursorX)
 	if self.OnFocusChanged then self:OnFocusChanged(node) end
 end
 
--- Picks the nearest visible node in the direction; off-axis distance counts double.
+-- The grabbed control lights itself (SetEditing: its native hover art) until it is let go.
+function Window:Grab(control)
+	if control and not control.SetEditing then control = nil end
+	if self.grabbed == control then return end
+	if self.grabbed then self.grabbed:SetEditing(false) end
+	self.grabbed = control
+	if control then control:SetEditing(true) end
+end
+
+-- A grabs the focused value row (a node with onDir), so left/right change it; Edit(false) lets go.
+function Window:Edit(on)
+	local focus = self.focus
+	self.editing = on and focus and focus.onDir and focus or nil
+	self:Focus(focus)
+end
+
+-- Picks the nearest visible node in the direction; off-axis distance counts double. While a row is grabbed,
+-- left/right change it and up/down let go and move.
 -- repeats: how many times a held direction has repeated (nil for a fresh press).
 local OFF_BAND = 10000
 
+-- Centre and height in screen units: a scaled frame (the Rings preview's wheel) reports its own units.
+local function place(region)
+	local x, y = region:GetCenter()
+	if not x then return end
+	local scale = region:GetEffectiveScale()
+	return x * scale, y * scale, region:GetHeight() * scale
+end
+
 function Window:Move(dx, dy, repeats)
 	if self.modal then return self.modal:Move(dx, dy, repeats) end
+	local editing = self.editing
+	if editing and dx ~= 0 then return editing.onDir(dx) end
+	if editing then self:Edit(false) end
 	local from = self.focus and self.focus.region
 	if not from then return self:Focus(self.nodes and self.nodes[1]) end
 
-	local fx, fy = from:GetCenter()
+	local fx, fy, fh = place(from)
 	if not fx then return end
 	local best, bestScore
 	for _, node in ipairs(self.nodes or {}) do
 		local region = node.region
-		local x, y = region:GetCenter()
-		-- noSide nodes (setting rows, where left/right change a value) are reached with up/down only.
-		if node ~= self.focus and x and region:IsVisible() and not (dx ~= 0 and node.noSide) then
+		local x, y, h = place(region)
+		if node ~= self.focus and x and region:IsVisible() then
 			local along = (x - fx) * dx + (y - fy) * dy
 			local across = math.abs((x - fx) * dy) + math.abs((y - fy) * dx)
 			if along > 1 then
 				local score = along + across * 2
-				-- Left/right stays in the focused element's row band when anything there is level with it.
-				if dx ~= 0 and math.abs(y - fy) >= (from:GetHeight() + region:GetHeight()) / 2 then score = score + OFF_BAND end
+				-- Left/right stays in the focused element's row band when anything there is level with it, and then prefers
+				-- what lies more sideways than up or down (the Rings list, not the buttons under the settings).
+				if dx ~= 0 and math.abs(y - fy) >= (fh + h) / 2 then score = score + OFF_BAND end
+				if dx ~= 0 and across > along then score = score + OFF_BAND end
 				if not bestScore or score < bestScore then best, bestScore = node, score end
 			end
 		end
@@ -93,6 +159,7 @@ end
 
 function Window:Select()
 	local node = self.focus
+	if node and node.onDir then return self:Edit(self.editing ~= node) end
 	if node and node.select then node.select() end
 end
 
@@ -113,15 +180,13 @@ function Window:Pad(key)
 		return UI.Dialog():OnPad(key)
 	end
 	if self.modal then return self.modal:OnPad(key) end
+	-- A grabbed row lets go on A or B (keeping its value); any other button but the D-pad lets go, then does its job.
+	if self.editing and (key == "PAD1" or key == "PAD2") then return self:Edit(false) end
+	if self.editing and not DIRS[key] then self:Edit(false) end
 	-- A focused element may own extra keys.
 	if self.focus and self.focus.onKey and self.focus.onKey(key) then return end
 	if self.OnKey and self:OnKey(key) then return end
 
-	-- A focused control may use left/right itself (the page selector, a setting); false hands the press back to
-	-- focus movement. A noSide row (one setting per row) keeps left/right even at its end, so walking the rows never
-	-- lands on, or changes, another setting.
-	local focus = self.focus
-	if (key == "PADDLEFT" or key == "PADDRIGHT") and focus and (focus.onDir and focus.onDir(key == "PADDLEFT" and -1 or 1) ~= false or focus.noSide) then return end
 	local dir = DIRS[key]
 	if dir then
 		self.repeatKey = key
@@ -185,6 +250,7 @@ local function onKeyDown(self, key)
 
 	if self.modal then return self.modal:Close() end
 	if UI.DialogShown() then return UI.Dialog():OnPad("PAD2") end
+	if self.editing then return self:Edit(false) end
 	if self.OnBack then return self:OnBack() end
 	UI.CloseAll()
 end
@@ -210,7 +276,8 @@ local function onHide(self)
 	if self.closing then return end
 	self.glow:Hide()
 	UI.HideTooltip()
-	self.repeatKey, self.repeatDir, self.tap = nil, nil, nil
+	self.repeatKey, self.repeatDir, self.tap, self.editing = nil, nil, nil, nil
+	self:Grab(nil)
 	if self.modal then self.modal:Close() end
 	if UI.DialogShown() and UI.Dialog().owner == self then UI.Dialog():Close() end
 	if self.OnClosed then self:OnClosed() end
@@ -268,6 +335,44 @@ function UI.NewWindow(w, h)
 	window.wash:SetColorTexture(1, 1, 1, 0.1)
 	window.wash:Hide()
 	return window
+end
+
+-- PortraitFrameTemplate's round portrait on one of our windows (SharedUIPanelTemplates.xml, NineSliceLayouts.lua
+-- PortraitFrameTemplate): the window's own border takes the portrait layout (its corner is
+-- UI-Frame-PortraitMetal-CornerTopLeft, the gold ring), and under it a 62 x 62 texture at -5, 7 masked round by
+-- Interface\CharacterFrame\TempPortraitAlphaMask, inset 2, 0, -2, 4. The title moves right of it as the template's
+-- TitleContainer does (58 from the left, 24 from the right). This client has no SetPortraitToTexture, so the mask does
+-- the rounding. The ring reaches about 57 in and 55 down: UI.PORTRAIT_CLEAR is where header text starts beside it.
+local PORTRAIT_SIZE, PORTRAIT_X, PORTRAIT_Y, TITLE_LEFT, TITLE_RIGHT, TITLE_Y = 62, -5, 7, 58, -24, -5
+local PORTRAIT_MASK = "Interface\\CharacterFrame\\TempPortraitAlphaMask"
+UI.PORTRAIT_CLEAR = 64
+
+function UI.AddPortrait(window, file)
+	local nine, close = window.NineSlice, window.ClosePanelButton
+	if NineSliceUtil and NineSliceUtil.ApplyLayoutByName then NineSliceUtil.ApplyLayoutByName(nine, "PortraitFrameTemplate") end
+	local holder = CreateFrame("Frame", nil, window)
+	holder:SetSize(1, 1)
+	holder:SetPoint("TOPLEFT")
+	holder:SetFrameLevel(window:GetFrameLevel() + 1)
+	-- The ring draws over the portrait's edge; the close button stays above the border it sits on.
+	nine:SetFrameLevel(window:GetFrameLevel() + 2)
+	if close:GetFrameLevel() <= nine:GetFrameLevel() then close:SetFrameLevel(nine:GetFrameLevel() + 1) end
+	local portrait = holder:CreateTexture(nil, "OVERLAY")
+	portrait:SetSize(PORTRAIT_SIZE, PORTRAIT_SIZE)
+	portrait:SetPoint("TOPLEFT", PORTRAIT_X, PORTRAIT_Y)
+	portrait:SetTexture(file)
+	local mask = holder:CreateMaskTexture()
+	mask:SetTexture(PORTRAIT_MASK, "CLAMPTOBLACKADDITIVE", "CLAMPTOBLACKADDITIVE")
+	mask:SetPoint("TOPLEFT", portrait, "TOPLEFT", 2, 0)
+	mask:SetPoint("BOTTOMRIGHT", portrait, "BOTTOMRIGHT", -2, 4)
+	portrait:AddMaskTexture(mask)
+	local title = nine.Text
+	title:ClearAllPoints()
+	title:SetPoint("TOP", 0, TITLE_Y)
+	title:SetPoint("RIGHT", TITLE_RIGHT, 0)
+	title:SetPoint("LEFT", TITLE_LEFT, 0)
+	window.portrait, window.portraitMask = portrait, mask
+	return portrait
 end
 
 -- A focus node for a frame: hover focuses it, click selects it.
@@ -344,6 +449,11 @@ ns.On("PLAYER_REGEN_ENABLED", function()
 	C_Timer.After(0.5, function()
 		if not InCombatLockdown() and not current then UI.OfferResume(resume) end
 	end)
+end)
+
+-- A click anywhere lets go of a grabbed row, except on the footer, whose prompts are the buttons (A Done).
+ns.On("GLOBAL_MOUSE_DOWN", function()
+	if current and current.editing and not current.footer:IsMouseOver() then current:Edit(false) end
 end)
 
 ns.On("FCT_ACTIVE_CHANGED", function(active)

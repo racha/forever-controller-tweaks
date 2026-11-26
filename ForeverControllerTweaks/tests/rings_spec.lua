@@ -4,7 +4,8 @@
 -- (open, release pick, toggle, slot tap, catcher, guard), a ring on a routed face cell and on a touch button, in
 -- combat too, Healer mode (kinds, attributes, units, pick skips, native copy and its undo, touch), the native sticks
 -- (pass and block keep only the aiming stick's twin from the game, open and after the close), deleting a ring
--- clearing every binding, and the db repair.
+-- clearing every binding, the db repair, and the mouse on an open ring (hover, tooltip, click, a held ring's release)
+-- with View.lua loaded.
 local here = (arg and arg[0] or ""):match("^(.*)[/\\]") or "."
 local dir = here .. "/.."
 
@@ -110,7 +111,11 @@ function Frame:RunAttribute(name, ...)
 	assert(W.secure, "RunAttribute outside a snippet")
 	return scrub(runArgs(self.env, assert(self.attrs[name], "no snippet " .. name), self, scrub(...)))
 end
-function Frame:WrapScript(target, _, pre, post) target.wrap = { header = self, pre = pre, post = post } end
+function Frame:WrapScript(target, script, pre, post)
+	target.wraps = target.wraps or {}
+	target.wraps[script] = { header = self, pre = pre, post = post }
+	if script == "OnClick" then target.wrap = target.wraps[script] end
+end
 -- Priority bindings (an open ring's) beat the routers' plain ones and give them back when cleared.
 function Frame:ClearBindings()
 	for _, list in ipairs({ W.bindings, W.prio }) do
@@ -1437,6 +1442,157 @@ secure(ring.RunAttribute, ring, "_open", heals.id, "hold", "lstick")
 check(fromR3 == "left" and ring.attrs["ps-aimside"] == "right", "dynamic: R3 aims with the left stick, L3 with the right")
 secure(ring.RunAttribute, ring, "_close")
 assert(Rings.SetStick(heals.id, "right"))
+
+-- The mouse on an open ring (the game's radial flyout): in every mode the slot under the pointer lights as the aim and
+-- shows its tooltip, a left click fires it, a right click closes. A held ring's release (and A) fires the hovered slot
+-- when the stick aims at nothing; the stick wins. The secure wraps keep ps-hover only for a pointer that moved.
+-- The pointer moving onto or off a slot, as the game runs it: the secure wrap's snippet (only with motion), then the
+-- slot's own scripts (View.lua hooks them).
+local function enter(slot, motion)
+	if motion then secure(run, slot.wraps.OnEnter.header.env, "self", slot.wraps.OnEnter.pre, slot) end
+	hooked(slot, "OnEnter", motion)
+end
+local function leave(slot)
+	secure(run, slot.wraps.OnLeave.header.env, "self", slot.wraps.OnLeave.pre, slot)
+	hooked(slot, "OnLeave", true)
+end
+-- What View.lua draws with, as no-ops or recorders.
+function Frame:CreateMaskTexture() return frame(nil, nil, self) end
+function Frame:CreateFontString() return frame(nil, nil, self) end
+function Frame:CreateAnimationGroup() return frame(nil, nil, self) end
+function Frame:CreateAnimation() return frame(nil, nil, self) end
+ns.UI = ns.UI or { ART = "", Glyph = function(parent) return frame(nil, nil, parent) end }
+SOUNDKIT, RAID_CLASS_COLORS = {}, {}
+local function color() return { GetRGB = function() return 1, 1, 1 end } end
+NORMAL_FONT_COLOR, DISABLED_FONT_COLOR = color(), color()
+function UnitExists(unit) return W.units[unit] ~= nil end
+function UnitCanAssist(_, unit) return W.units[unit] == "friend" or W.units[unit] == "dead" end
+function UnitIsDeadOrGhost(unit) return W.units[unit] == "dead" end
+function UnitClass() return "Priest", "PRIEST" end
+function UnitHealth() return 1 end
+function UnitHealthMax() return 1 end
+function SetPortraitTexture() end
+function UnitGroupRolesAssigned() return "NONE" end
+-- The tooltip: what it shows now, or nil.
+local shownTip
+GameTooltip = {
+	IsOwned = function() return shownTip ~= nil end, Hide = function() shownTip = nil end, Show = function() end,
+	SetUnit = function(_, unit) shownTip = "unit " .. unit end, SetSpellByID = function(_, id) shownTip = "spell " .. id end,
+	SetItemByID = function(_, id) shownTip = "item " .. id end, SetText = function(_, text) shownTip = "text " .. text end,
+}
+function GameTooltip_SetDefaultAnchor() end
+W.combat = false
+assert(Rings.SetMiddle(heals.id, "cancel"))
+assert(Rings.SetShow(heals.id, "hold"))
+assert(Rings.SetStyle(heals.id, "full"))
+local made, create = {}, CreateFrame
+function CreateFrame(...) local f = create(...) made[#made + 1] = f return f end
+loadModule("Rings", "View")
+CreateFrame = create
+local display
+for _, f in ipairs(made) do if f.parent == ring and not display then display = f end end
+local View = Rings.View
+local function tick() display.scripts.OnUpdate(display, 0.01) end
+local slot = {}
+for i = 1, 8 do slot[i] = frames["ForeverControllerTweaksRingSlot" .. i] end
+check(slot[3].wraps.OnEnter and slot[3].wraps.OnLeave and slot[3].wrap == slot[3].wraps.OnClick and slot[3].hooks.OnEnter, "mouse: the slots' OnEnter and OnLeave wrapped by the ring, View hooks them (a SetScript would drop the wrap)")
+
+-- Hold, in combat: hover lights and shows the tooltip, leaving clears it; a pointer at rest aims nothing.
+W.combat = true
+aim(0, 0)
+press("PAD1", true)
+tick()
+enter(slot[3], true)
+tick()
+check(ring.attrs["ps-hover"] == 3 and View.Focused() == 3 and shownTip == "spell 639", "mouse hold: slot 3 hovered: the aim's highlight and its spell's tooltip")
+enter(slot[5], true)
+tick()
+check(View.Focused() == 5 and shownTip == "item 6948", "mouse hold: an item shows its item tooltip")
+leave(slot[5])
+tick()
+check(ring.attrs["ps-hover"] == nil and View.Focused() == nil and shownTip == nil, "mouse hold: left, cleared")
+enter(slot[7], true)
+tick()
+check(shownTip == "text Sit", "mouse hold: a game action shows its name")
+leave(slot[7])
+enter(slot[3], false)
+tick()
+check(ring.attrs["ps-hover"] == nil and View.Focused() == nil and shownTip == nil, "mouse hold: a pointer at rest under the opening ring aims nothing")
+check(press("PAD1", false) == nil and not ring.shown, "mouse hold: let go with nothing aimed, nothing fires")
+
+-- Hold release: the hovered slot fires with the stick centred; a pushed stick wins. A fires it too.
+aim(0, 0)
+press("PAD1", true)
+enter(slot[3], true)
+check(press("PAD1", false) == "spell 639" and not ring.shown and ring.attrs["ps-hover"] == nil, "mouse hold: let go with slot 3 hovered, stick centred: slot 3 fires, closed")
+leave(slot[3])
+press("PAD1", true)
+enter(slot[3], true)
+aim(180)
+tick()
+check(View.Focused() == 5 and shownTip == nil, "mouse hold: the stick's aim lights over the hovered slot, no tooltip")
+check(press("PAD1", false) == "item item:6948" and not ring.shown, "mouse hold: stick pushed at slot 5, slot 3 hovered: slot 5 fires")
+leave(slot[3])
+aim(0, 0)
+press("PAD1", true)
+enter(slot[3], true)
+check(keyUp("PAD1") == "spell 639" and not ring.shown and press("PAD1", false) == nil, "mouse hold: A with slot 3 hovered fires it")
+leave(slot[3])
+
+-- Click: a left click fires the slot, records it and closes; a right click only closes. In combat.
+press("PAD1", true)
+check(click(slot[3], false) == "spell 639" and ring.attrs[p .. "l"] == 3 and not ring.shown and press("PAD1", false) == nil, "mouse hold: a click on slot 3 fires it (_used), closes; the release then does nothing")
+press("PAD1", true)
+check(click(slot[3], false, nil, "RightButton") == false and not ring.shown and press("PAD1", false) == nil, "mouse hold: a right click closes, nothing fires")
+W.combat = false
+
+-- Toggle: the same hover; the release that opened it ignores the pointer; a click uses the slot.
+assert(Rings.SetShow(heals.id, "toggle"))
+W.combat = true
+press("PAD1", true)
+enter(slot[3], true)
+check(press("PAD1", false) == nil and ring.shown, "mouse toggle: the opening release ignores a hovered slot")
+tick()
+check(View.Focused() == 3 and shownTip == "spell 639", "mouse toggle: slot 3 hovered: highlight and tooltip")
+leave(slot[3])
+tick()
+check(View.Focused() == nil and shownTip == nil, "mouse toggle: left, cleared")
+check(click(slot[3], false) == "spell 639" and not ring.shown, "mouse toggle: a click on slot 3 fires it, closes")
+press("PAD1", true)
+press("PAD1", false)
+check(click(slot[3], false, nil, "RightButton") == false and not ring.shown, "mouse toggle: a right click closes")
+W.combat = false
+
+-- Healer: hover shows the unit; a click on a place without a unit does nothing; on one with a unit, it heals there.
+W.units = { player = "friend", party1 = "friend" }
+W.combat = true
+secure(ring.RunAttribute, ring, "_open", hid, "hold")
+tick()
+enter(slot[2], true)
+tick()
+check(View.Focused() == 2 and shownTip == "unit party1", "mouse healer: Party 1 hovered: the unit's tooltip")
+leave(slot[2])
+check(click(slot[3], false) == false and ring.shown, "mouse healer: a click on a missing Party 2: nothing, still open")
+enter(slot[3], true)
+check(secure(ring.RunAttribute, ring, "_hover") == false, "mouse healer: a hovered missing unit can't be the aim")
+leave(slot[3])
+check(click(slot[2], false) == "spell 133" and slot[2].attrs.unit == "party1" and not ring.shown, "mouse healer: a click on Party 1 heals Party 1")
+display.scripts.OnHide(display)
+check(shownTip == nil, "mouse healer: closed (the display hides with the ring), the tooltip goes")
+W.units = {}
+
+-- Touch: unchanged, a tap on a slot fires it; the hover lights and shows the tooltip.
+click(touch, true)
+tick()
+enter(slot[3], true)
+check(View.Focused() == 3, "mouse touch: the slot entered is focused")
+tick()
+check(shownTip == "spell 639", "mouse touch: with its tooltip")
+leave(slot[3])
+tick()
+check(View.Focused() == nil and shownTip == nil, "mouse touch: left, cleared")
+check(click(slot[1], false) == "game macrotext" or not ring.shown, "mouse touch: a tap fires and closes")
+W.combat = false
 
 -- Renames and icons follow on every binding; deleting a ring clears this character's bindings to it (rings are per
 -- character since 1.5.2: another character's ring:<id> is its own ring).

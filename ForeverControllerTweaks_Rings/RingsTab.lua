@@ -18,7 +18,7 @@ local STRINGS = {
 	RINGS_ICON = "Icon", RINGS_ICON_TITLE = "Ring icon", RINGS_ICON_AUTO = "First slot's icon", RINGS_ICON_SLOT = "From this ring's slots", RINGS_ICON_TIP = "The icon in the ring's hub and on the buttons that open it.",
 	RINGS_DELETE = "Delete", RINGS_DELETE_TEXT = "Delete the ring \"%s\"?", RINGS_DELETE_SUB = "It is on %d of this character's button(s): they will be cleared.",
 	RINGS_DELETE_TIP = "Deletes the ring and clears every button that opens it.",
-	RINGS_SLOTS = "Slots", RINGS_SLOTS_TIP = "D-pad left and right: %d to %d slots. Slots past the count are kept for later.",
+	RINGS_SLOTS = "Slots", RINGS_SLOTS_TIP = "Press A, then D-pad left and right: %d to %d slots. Slots past the count are kept for later.",
 	RINGS_STICK = "Stick", RINGS_STICK_NAMES = { right = "Right", left = "Left", dynamic = "Dynamic" },
 	RINGS_STICK_TIP = "The stick that aims while you hold the button. Dynamic: right on a D-pad button, left on a face button.",
 	RINGS_SHOW = "Show", RINGS_SHOW_NAMES = { toggle = "Toggle", hold = "Hold" },
@@ -78,22 +78,27 @@ local function stepCount(step)
 	report(Rings.SetCount(ring.id, count))
 end
 
--- One step through a ring setting's values (Stick: Right, Left, Dynamic; Show: Toggle, Hold; Middle: Cancel, Use last;
--- Style: Full, Compact); past either end false
--- (left/right moves the focus on), or round with wrap (A).
-local function stepper(values, field, set)
-	return function(step, wrap)
-		local ring = Rings.Get(selected)
-		if not (ring and editable()) then return false end
-		local index = 1
-		for i, value in ipairs(values) do if value == ring[field] then index = i end end
-		local value = values[wrap and (index + step - 1) % #values + 1 or index + step]
-		if not value then return false end
-		report(set(ring.id, value))
-	end
+-- A ring setting's dropdown list (Stick: Right, Left, Dynamic; Show: Toggle, Hold; Middle: Cancel, Use last; Style:
+-- Full, Compact), the selected ring's value current; empty (no list) while no ring is editable.
+local function choice(values, field, set, names)
+	return {
+		options = function()
+			local ring, labels, current = Rings.Get(selected), {}, nil
+			if not (ring and editable()) then return labels end
+			for i, value in ipairs(values) do
+				labels[i] = names[value]
+				if value == ring[field] then current = i end
+			end
+			return labels, current
+		end,
+		pick = function(index)
+			local ring = Rings.Get(selected)
+			if ring and editable() then report(set(ring.id, values[index])) end
+		end,
+	}
 end
-local stepStick, stepShow = stepper(Rings.STICKS, "stick", Rings.SetStick), stepper(Rings.SHOWS, "show", Rings.SetShow)
-local stepStyle, stepMiddle = stepper(Rings.STYLES, "style", Rings.SetStyle), stepper(Rings.MIDDLES, "middle", Rings.SetMiddle)
+local stickChoice, showChoice = choice(Rings.STICKS, "stick", Rings.SetStick, L.RINGS_STICK_NAMES), choice(Rings.SHOWS, "show", Rings.SetShow, L.RINGS_SHOW_NAMES)
+local styleChoice, middleChoice = choice(Rings.STYLES, "style", Rings.SetStyle, L.RINGS_STYLE_NAMES), choice(Rings.MIDDLES, "middle", Rings.SetMiddle, L.RINGS_MIDDLE_NAMES)
 
 -- The ring marker (ns.db.ringMarker: nil or true on, false off), account-wide; textures only, so in combat too.
 local function toggleMarker()
@@ -461,14 +466,10 @@ local function drawRing()
 
 	ringPill.text:SetText(ring.name)
 	stepRow.control:Set(ring.count)
-	local sticks = Rings.STICKS
-	for i, stick in ipairs(sticks) do if stick == ring.stick then stickRow.control:Set(L.RINGS_STICK_NAMES[stick], i == 1, i == #sticks) end end
-	local shows = Rings.SHOWS
-	for i, show in ipairs(shows) do if show == ring.show then showRow.control:Set(L.RINGS_SHOW_NAMES[show], i == 1, i == #shows) end end
-	local middles = Rings.MIDDLES
-	for i, middle in ipairs(middles) do if middle == ring.middle then middleRow.control:Set(L.RINGS_MIDDLE_NAMES[middle], i == 1, i == #middles) end end
-	local styles = Rings.STYLES
-	for i, style in ipairs(styles) do if style == ring.style then styleRow.control:Set(L.RINGS_STYLE_NAMES[style], i == 1, i == #styles) end end
+	stickRow.control:Set(L.RINGS_STICK_NAMES[ring.stick])
+	showRow.control:Set(L.RINGS_SHOW_NAMES[ring.show])
+	middleRow.control:Set(L.RINGS_MIDDLE_NAMES[ring.middle])
+	styleRow.control:Set(L.RINGS_STYLE_NAMES[ring.style])
 	local n, compact = ring.count, ring.style == "compact"
 	-- Full is scaled to fit the box; the compact flyout fits it at its in-game size.
 	wheel:SetScale(compact and 1 or PREVIEW / wheel:GetHeight())
@@ -554,24 +555,24 @@ local function refresh()
 		window.slotNodes[i] = node
 		nodes[#nodes + 1] = node
 	end
-	nodes[#nodes + 1] = UI.Node(window, stepRow, function() end, {
-		cursorX = 0, noSide = true, onDir = stepCount, onFocus = function(on) stepRow.wash:SetShown(on) end,
+	nodes[#nodes + 1] = UI.Node(window, stepRow, nil, {
+		cursorX = 0, onDir = stepCount, onFocus = function(on) stepRow.wash:SetShown(on) end,
 		tip = { title = L.RINGS_SLOTS, lines = { string.format(L.RINGS_SLOTS_TIP, Rings.MIN_SLOTS, Rings.MAX_SLOTS) }, side = "right" },
 	})
-	nodes[#nodes + 1] = UI.Node(window, stickRow, function() stepStick(1, true) end, {
-		cursorX = 0, noSide = true, onDir = stepStick, onFocus = function(on) stickRow.wash:SetShown(on) stickRow.control:SetFocused(on) end,
+	nodes[#nodes + 1] = UI.Node(window, stickRow, function() stickRow.control:Open() end, {
+		cursorX = 0, choice = true, onFocus = function(on) stickRow.wash:SetShown(on) stickRow.control:SetFocused(on) end,
 		tip = { title = L.RINGS_STICK, lines = { L.RINGS_STICK_TIP }, side = "right" },
 	})
-	nodes[#nodes + 1] = UI.Node(window, showRow, function() stepShow(1, true) end, {
-		cursorX = 0, noSide = true, onDir = stepShow, onFocus = function(on) showRow.wash:SetShown(on) showRow.control:SetFocused(on) end,
+	nodes[#nodes + 1] = UI.Node(window, showRow, function() showRow.control:Open() end, {
+		cursorX = 0, choice = true, onFocus = function(on) showRow.wash:SetShown(on) showRow.control:SetFocused(on) end,
 		tip = { title = L.RINGS_SHOW, lines = { L.RINGS_SHOW_TIP }, side = "right" },
 	})
-	nodes[#nodes + 1] = UI.Node(window, middleRow, function() stepMiddle(1, true) end, {
-		cursorX = 0, noSide = true, onDir = stepMiddle, onFocus = function(on) middleRow.wash:SetShown(on) middleRow.control:SetFocused(on) end,
+	nodes[#nodes + 1] = UI.Node(window, middleRow, function() middleRow.control:Open() end, {
+		cursorX = 0, choice = true, onFocus = function(on) middleRow.wash:SetShown(on) middleRow.control:SetFocused(on) end,
 		tip = { title = L.RINGS_MIDDLE, lines = { L.RINGS_MIDDLE_TIP }, side = "right" },
 	})
-	nodes[#nodes + 1] = UI.Node(window, styleRow, function() stepStyle(1, true) end, {
-		cursorX = 0, noSide = true, onDir = stepStyle, onFocus = function(on) styleRow.wash:SetShown(on) styleRow.control:SetFocused(on) end,
+	nodes[#nodes + 1] = UI.Node(window, styleRow, function() styleRow.control:Open() end, {
+		cursorX = 0, choice = true, onFocus = function(on) styleRow.wash:SetShown(on) styleRow.control:SetFocused(on) end,
 		tip = { title = L.RINGS_STYLE, lines = { L.RINGS_STYLE_TIP }, side = "right" },
 	})
 	nodes[#nodes + 1] = UI.Node(window, buttons.rename, rename, { cursorX = 0 })
@@ -603,8 +604,8 @@ local function build()
 	window = UI.NewWindow(geo.WIDTH, geo.HEIGHT)
 	window.tabs = UI.SideTabs(window, UI.TABS, index)
 	window:SetTitle(L.RINGS_TITLE)
-	countText = UI.Text(window, "GameFontNormal", 24, 31, "")
-	UI.Text(window, "GameFontDisableSmall", 24, 58, L.RINGS_HINT)
+	countText = UI.Text(window, "GameFontNormal", UI.PORTRAIT_CLEAR, 31, "")
+	UI.Text(window, "GameFontDisableSmall", UI.PORTRAIT_CLEAR, 58, L.RINGS_HINT)
 	UI.Inset(window, LEFT_X, TOP_Y, LEFT_W, BOX_H)
 	UI.Inset(window, RIGHT_X, TOP_Y, RIGHT_W, BOX_H)
 	UI.SectionHeader(window, LEFT_X + (LEFT_W - PILL_W) / 2, TOP_Y + 12, PILL_W, L.RINGS_LIST)
@@ -668,16 +669,16 @@ local function build()
 	end)
 	stepRow.control:SetPoint("LEFT", stepRow, "LEFT", CONTROL_X, 0)
 	stickRow = settingRow(STICK_Y, L.RINGS_STICK)
-	stickRow.control = UI.Dropdown(stickRow, STICK_W, stepStick)
+	stickRow.control = UI.Dropdown(stickRow, STICK_W, stickChoice)
 	stickRow.control:SetPoint("LEFT", stickRow, "LEFT", CONTROL_X, 0)
 	showRow = settingRow(SHOW_Y, L.RINGS_SHOW)
-	showRow.control = UI.Dropdown(showRow, STICK_W, stepShow)
+	showRow.control = UI.Dropdown(showRow, STICK_W, showChoice)
 	showRow.control:SetPoint("LEFT", showRow, "LEFT", CONTROL_X, 0)
 	middleRow = settingRow(MIDDLE_Y, L.RINGS_MIDDLE)
-	middleRow.control = UI.Dropdown(middleRow, STICK_W, stepMiddle)
+	middleRow.control = UI.Dropdown(middleRow, STICK_W, middleChoice)
 	middleRow.control:SetPoint("LEFT", middleRow, "LEFT", CONTROL_X, 0)
 	styleRow = settingRow(STYLE_Y, L.RINGS_STYLE)
-	styleRow.control = UI.Dropdown(styleRow, STICK_W, stepStyle)
+	styleRow.control = UI.Dropdown(styleRow, STICK_W, styleChoice)
 	styleRow.control:SetPoint("LEFT", styleRow, "LEFT", CONTROL_X, 0)
 	buttons = {}
 	for i, spec in ipairs({ { "rename", L.RINGS_RENAME, rename }, { "icon", L.RINGS_ICON, pickIcon }, { "delete", L.RINGS_DELETE, delete } }) do

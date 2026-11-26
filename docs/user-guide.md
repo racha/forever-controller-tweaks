@@ -58,7 +58,7 @@ The footer always lists the buttons you can use, and tooltips explain the focuse
 
 While a window is open, its buttons only drive the window, but your crossbar still shows your own bindings, on the page shown. A change you make shows there right away.
 
-**Settings controls.** The settings rows use the game's own controls, one value per row. **D-pad up / down** move between rows. On a **slider** or **dropdown**, **D-pad left / right** change the value; on a **checkbox**, **Cross** turns it on or off. On the Tweaks tab, left / right at the end of a dropdown or slider move on to the next column.
+**Settings controls.** The settings rows use the game's own controls, one value per row. The **D-pad** always moves the focus, in all four directions, across rows and columns. On a **checkbox**, **Cross** turns it on or off. A **dropdown** works like the game's own settings: **Cross** opens its list under the value, **D-pad up / down** move through the options (hold to repeat), **Cross** picks one and **Circle** closes the list without a change. On a **slider**, **Cross** grabs it and **D-pad left / right** change the value (hold to repeat). **Cross** or **Circle** lets go and keeps the value; **D-pad up / down** let go and move on. While a slider is grabbed, Circle doesn't close the window. The footer and the tooltip say what Cross does: **Cross Change** on a dropdown or slider, **Cross Select** and **Circle Close** while a list is open, **◀▶ Change** and **Cross Done** while a slider is grabbed. With a mouse, click a dropdown to open its list, then click an option, or click anywhere else to close it. The Bindings page box is a dropdown too: it lists the pages, and L2 / R2 still flip them directly.
 
 ## Modules
 
@@ -78,7 +78,7 @@ With **Rings** off, a button that holds **Open ring** does nothing. Its cell is 
 
 The controller is drawn in the middle, with one row per button at the window's edges, placed where that button sits on the pad. Each face and D-pad row shows the button's glyph and four cells, one per bar: top, left, right and bottom. At the top of each side are the bumper and trigger rows (and paddle rows, if your pad has paddles), where their roles are set. The focused row draws a gold line to its button on the drawing.
 
-- **Pages:** the header shows **Page 1 of 3**. **L2 / R2** switch pages. If a stance or pet bar replaces a bar on that page, a note says so.
+- **Pages:** the header shows **Page 1 of 3**. **L2 / R2** switch pages. You can also focus the page box, press **Cross**, and switch with **D-pad left / right**. If a stance or pet bar replaces a bar on that page, a note says so.
 - **Each page has its own cells.** A ring, a game action or Jump on a crossbar cell belongs to the page you set it on, so the same button can open a different ring on each page. A page where that cell is empty keeps its own slot. The four first-page face slots (where Jump, Interact, Back and Inspect sit), back paddles and stick presses have no page: their cells are the same on every page.
 - **Cross on a face or D-pad cell** opens the action picker.
 - **Square** clears a cell. **More → Undo** puts back the last clear.
@@ -166,7 +166,7 @@ Two bars of tap buttons on the left and right edges of the screen, for playing t
 - The middle shows your screen with both bars at their real size and place.
 - The edge columns list each bar's buttons, with four cells per button: one per bar (top, left, right, bottom), like the Bindings rows. A tap uses the action for the bar your modifiers have open. An empty cell hides its button on that bar. **Cross** opens the action picker, **Square** clears a cell.
 - **Slots x / 36** counts the hidden action slots (keyboard bars 6-8) your touch buttons and moved actions use. If none is free, a new action still works, but without a live cooldown until one frees up. If your own actions sit on those bars, **Free up slots** next to the counter lists them and, after you confirm, clears them from there (the actions themselves stay in your spellbook, bags and macros).
-- Under them, switch between **Left bar** and **Right bar**, then D-pad left / right change that side's buttons per bar (1–12), button size, spacing, distance from the edge, up / down, opacity, **Shape** (Circle or Square) and **Empty buttons** (Hide or Show).
+- Under them, switch between **Left bar** and **Right bar**, then (**Cross**, then D-pad left / right) change that side's buttons per bar (1–12), button size, spacing, distance from the edge, up / down, opacity, **Shape** (Circle or Square) and **Empty buttons** (Hide or Show).
 
 Touch buttons look and behave like native crossbar slots, and they work in combat. What each button does is saved per character and per profile, like bindings: a new profile starts with empty buttons, and **Copy profile** copies them. The bars' size, place, shape and On / Show are one setting per character, the same in every profile.
 
@@ -208,6 +208,7 @@ Radial menus of actions you build yourself. Open the **Rings** tab, or `/fct rin
 - While a ring is open the addon turns on the game's stick-as-buttons setting (`GamePadStickAxisButtons`) and puts your own value back when it closes. The other stick works as usual meanwhile: the left stick walks and runs, the right stick moves the camera. The aiming stick is held back after release until it's centred, while you cast or channel what it fired, or for a second at most. Works in combat.
 - **Arrow on ring buttons:** every button that opens a ring wears the game's small flyout arrow at its top edge (on the crossbar, in Bindings and on touch buttons); it hides while that ring is open. On by default; untick **Arrow on ring buttons** at the foot of the ring list to turn it off for all your characters.
 - **On a touch button:** a tap opens the ring, a tap on a slot uses it, a tap outside closes it.
+- **With the mouse,** as with the game's own flyouts: move the pointer over a slot of any open ring and it lights up with its tooltip; click it to use it, right-click to close the ring. On a **Hold** ring, letting go of the button with the stick centred uses the slot under the pointer; a pushed stick wins. The pointer counts once you move the mouse, so a cursor resting where the ring opens doesn't aim. Works in combat.
 - Slots show cooldowns, charges, range and whether they're usable. Rings are shared by all your characters and use no hidden action slots.
 - `/fct ringlog` prints the last ring events. Add those lines to a ring bug report.
 
@@ -228,6 +229,7 @@ Any button that holds a heal can open a ring of your group instead: aim at someo
   - a tinted glow and the type icon when they have a debuff you can dispel.
 - **Last target:** in **Bindings**, on a button in Healer mode, **Triangle** shows **Middle: Cancel** under the Healer mode row. Pick it to switch to **Middle: Last target**: letting go in the middle then casts on the place you last healed with that button (it remembers the place, like Party 2, not the person). While you hold the ring with the stick in the middle, that place lights up with its tooltip. If that unit can't be helped now, nothing is cast. Per button and per character; off by default.
 - **Touch:** a tap opens the ring, a tap on a place casts there.
+- **Mouse:** point at a place to see that person's tooltip, click it to cast on them. Letting go of the button with the stick centred casts on the place under the pointer.
 - Apart from Last target there are no settings: it always shows while held and always aims with the stick for that button. It works in combat; switching it on or off is out of combat. It needs the Rings module.
 
 ## Tweaks
@@ -250,8 +252,8 @@ Small conveniences, on the **Tweaks** tab (the one before Settings). **Each one 
 
 ### Rumble
 
-- **Rumble on events** turns it on. **Strength** sets how strong every rumble is (10% to 100%); Cross on it plays a Double tap.
-- Each group has its own pattern: Tap, Double tap, Triple tap, Long buzz, Heartbeat, Ramp up, Fade out, or **Off**. **D-pad left / right** change it, **Cross** plays it.
+- **Rumble on events** turns it on. **Strength** sets how strong every rumble is (10% to 100%); **Triangle** on it plays a Double tap.
+- Each group has its own pattern: Tap, Double tap, Triple tap, Long buzz, Heartbeat, Ramp up, Fade out, or **Off**. **Cross**, then **D-pad left / right** change it, and each change plays the new pattern once. **Triangle** plays it. On the rumble rows Triangle is the test, so More is a row away.
 
 | Group | Rumbles for | Starts as |
 |---|---|---|
@@ -277,7 +279,7 @@ Small conveniences, on the **Tweaks** tab (the one before Settings). **Each one 
 
 ### Camera
 
-- **Camera zoom:** where the camera sits, in yards, up to the game's own limit. D-pad left / right move it a yard at a time and the camera follows at once; it goes back there when you log in. Until you move it, the addon never touches your camera, and the slider shows where the camera is now.
+- **Camera zoom:** where the camera sits, in yards, up to the game's own limit. Cross, then D-pad left / right move it a yard at a time and the camera follows at once; it goes back there when you log in. Until you move it, the addon never touches your camera, and the slider shows where the camera is now.
 
 ### Loot & gear
 
@@ -379,7 +381,7 @@ The **Settings** tab, the last side tab, in the Tweaks tab's look. Hover or focu
 
 | Section | Row | What it does |
 |---|---|---|
-| Profile | This character | The profile this character plays on, with any controller. D-pad left / right switch it (out of combat); the bindings and layout change at once. Only this character's profiles are listed. |
+| Profile | This character | The profile this character plays on, with any controller. Cross, then D-pad left / right switch it (out of combat); the bindings and layout change at once. Only this character's profiles are listed. |
 | | Name | This profile's name. **Cross** starts typing (the on-screen keyboard works); Enter keeps it, Escape puts the old one back. Names are unique: a second "Default" becomes "Default 2". |
 | | New profile | An empty profile for this character: the game's layout, no bindings. |
 | | Copy profile | A copy of this profile with its bindings and touch buttons, to change on its own. |

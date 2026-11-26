@@ -133,17 +133,21 @@ function Obj:SetPoint(point, rel, relPoint, x, y)
 end
 function Obj:ClearAllPoints() self.cleared = true end
 function Obj:SetAllPoints() end
+-- Screen position: offsets and sizes are in the frame's own units, so a scaled parent (the Rings preview's wheel)
+-- scales them; GetCenter answers in the frame's own units, as the client does.
 function Obj:Abs()
 	local base = self.rel or self.parent
 	local bx, by = 0, 0
 	if base and base ~= self and base.Abs then bx, by = base:Abs() end
-	return bx + (self.x or 0), by + (self.y or 0)
+	local scale = self:GetEffectiveScale()
+	return bx + (self.x or 0) * scale, by + (self.y or 0) * scale
 end
 function Obj:GetCenter()
 	local x, y = self:Abs()
-	if self.point == "TOPLEFT" then return x + self.w / 2, y - self.h / 2 end
-	if self.point == "LEFT" then return x + self.w / 2, y end
-	return x, y
+	local scale = self:GetEffectiveScale()
+	if self.point == "TOPLEFT" then x, y = x + self.w * scale / 2, y - self.h * scale / 2
+	elseif self.point == "LEFT" then x = x + self.w * scale / 2 end
+	return x / scale, y / scale
 end
 function Obj:SetScript(name, fn) self.scripts[name] = fn end
 function Obj:GetScript(name) return self.scripts[name] end
@@ -159,7 +163,6 @@ function Obj:GetStringHeight() return 14 end
 function Obj:GetStringWidth() return #(self.text or "") * 6 end
 function Obj:SetAlpha(a) self.alpha = a end
 function Obj:GetAlpha() return self.alpha or 1 end
-function Obj:GetEffectiveScale() return 1 end
 function Obj:GetName() return self.frameName end
 function Obj:SetDesaturated(d) self.desat = d end
 function Obj:EnableMouse(on) self.mouse = on end
@@ -200,7 +203,10 @@ function Obj:SetValue(v) self.value = v end
 function Obj:GetStatusBarTexture() return self.barTex or new("Texture", self) end
 function Obj:SetScale(v) self.scale = v end
 function Obj:GetScale() return self.scale or 1 end
-function Obj:GetEffectiveScale() return self.scale or 1 end
+function Obj:GetEffectiveScale()
+	local parent = self.parent
+	return (self.scale or 1) * (parent and parent.GetEffectiveScale and parent:GetEffectiveScale() or 1)
+end
 function Obj:LockHighlight() self.locked = true end
 function Obj:UnlockHighlight() self.locked = false end
 function Obj:SetVertexColor(r, g, b) self.color = { r, g, b } end
