@@ -1,5 +1,35 @@
 # Changelog
 
+## 1.5.5-beta.2 — 2026-11-26
+
+### Fixed: the other stick feels native while a ring is open
+- Beta.1's fix moved you with keys instead of the stick: opening a ring cancelled your run, the camera stayed locked while you turned, and the right stick turned your character in place instead of the camera.
+- Now the stick you don't aim with is the game's own stick again. A ring on the right stick: the left stick walks and runs as usual, and the camera follows. A ring on the left stick: the right stick moves the camera as usual. Only the aiming stick is kept from the game, and after you let go it stays kept until it's back in the middle, so you don't walk off or swing the camera. Works in combat.
+- The **Ring open: left stick moves** and **Ring open: right stick turns** settings are gone: there's nothing to turn off any more.
+
+### New: different rings and actions on each crossbar page
+- A button's ring or action now belongs to the crossbar page you set it on, so page 1, 2 and 3 can each have their own. Switch pages in Bindings with **L2 / R2** and set each one.
+- Your current setup is copied to all three pages, so nothing changes until you edit a page. The back paddles, L3 / R3 and the Jump, Back, Interact and Inspect spots stay the same on every page.
+
+### Fixed: forms and stances, again
+- A macro or ring on the stance bar's layer still didn't fire in some forms. The press now asks the game which form bar is up at that moment, so it works in Stealth, Cat and Bear Form and stances.
+- `/fct status` shows a form line (what the addon sees for your form). If a form still misbehaves, send us that line.
+
+### Fixed: Best healing potion and Best mana potion
+- They did nothing when the potions weren't loaded yet after login, or when the game filed a potion under another kind of item. They now find them, and say so when you have none.
+
+### New: Options → AddOns page
+- **Forever Controller Tweaks** is listed under Options → AddOns, with a button that opens the addon's window. The controller can't reach that page's button (the game only lets it move through setting rows); use the mouse or touch, or the usual shortcut.
+
+### Changed: your bindings stay on the crossbar while the window is open
+- With Bindings (or any of the addon's tabs) open, the crossbar used to show the game's own face actions, so it looked as if your bindings were gone. It now keeps showing your bindings, on the page shown, and updates as you edit. Your buttons still drive the window and cast nothing while it's open.
+
+### Fixed: keyboard Shift and Symbols moved around
+- Depending on your modifier setup, Shift and Symbols on the on-screen keyboard jumped between L1, L2 and R1. They're now always the physical triggers: **L2** is Shift, **R2** is Symbols, both together the extra symbols. L1 does nothing on the keyboard.
+
+### Sync
+- Sync is written in a new format that carries the per-page bindings. A computer still on 1.5.4 or older pauses sync and says to update; it never writes over the newer copy.
+
 ## 1.5.5-beta.1 — 2026-11-25
 
 ### Fixed: a ring stopped your movement

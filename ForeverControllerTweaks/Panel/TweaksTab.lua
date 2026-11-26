@@ -47,8 +47,6 @@ local T = {
 		lightBar = { "Light bar", "Your class colour or a colour you pick. Light-bar pads only; Steam may take it over." },
 		lightColor = { "Colour", "The light bar's colour when Light bar is Custom." },
 		combatFlash = { "Combat flash", "The light bar turns red while you are in combat." },
-		ringMove = { "Ring open: left stick moves", "While a ring aims with the right stick, the left stick keeps moving you (full speed, 8 directions)." },
-		ringTurn = { "Ring open: right stick turns", "While a ring aims with the left stick, the right stick turns and tilts the camera at a fixed speed." },
 		rumble = { "Rumble on events", "The controller rumbles for the events below, each group with its own pattern." },
 		rumbleStrength = { "Strength", "How strong every rumble is." },
 		["rumble:group"] = { "Group", "A ready check, group invite, summon or resurrection offer." },
@@ -81,7 +79,7 @@ for _, group in ipairs(ns.Tweaks.RUMBLE_GROUPS) do RUMBLE_ROWS[#RUMBLE_ROWS + 1]
 local COLUMNS = {
 	{ side = "right", sections = { { T.BAGS, { "sortBags", "sortKey", "sellJunk", "repair", "repairGuild", "buyStack" } }, { T.NPCS, { "skipGossip", "learnAll", "openMail" } } } },
 	{ side = "right", sections = { { T.RUMBLE, RUMBLE_ROWS } } },
-	{ side = "left", sections = { { T.CONTROLLER, { "battery", "batteryIcon", "rareAlert", "lightBar", "lightColor", "combatFlash", "ringMove", "ringTurn" } }, { T.CAMERA, { "cameraZoom" } } } },
+	{ side = "left", sections = { { T.CONTROLLER, { "battery", "batteryIcon", "rareAlert", "lightBar", "lightColor", "combatFlash" } }, { T.CAMERA, { "cameraZoom" } } } },
 	{ side = "left", sections = { { T.GEAR, { "fastLoot", "passUnusable", "upgradeArrows", "wearRewards" } }, { T.SOCIAL, { "acceptInvites", "declineDuels", "acceptRes", "whisperAlert" } } } },
 }
 -- A sub-row: its label is indented. A row in IDLE greys while the row above doesn't use it.

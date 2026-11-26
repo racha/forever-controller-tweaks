@@ -913,6 +913,9 @@ end
 
 scene(DUNGEON)
 ns.db = { keyboard = { open = "always" } }
+-- The keyboard goes by the physical button; native here (no config of ours applied).
+assert(loadfile(here .. "/../Layout.lua"))("ForeverControllerTweaks", ns)
+ns.Remap = { Outputs = function() end }
 ns.UI = { ART = "", L = {}, CODE = {}, Glyph = function(parent) return new("Frame", parent) end }
 loadModule("View")
 local V = K.View
@@ -932,10 +935,10 @@ local function send(key)
 end
 -- Shift + Erase empties the line.
 local function clear()
-	V.Press("PADLSHOULDER")
+	V.Press("PADLTRIGGER")
 	V.Press("PAD3")
 	V.Release("PAD3")
-	V.Release("PADLSHOULDER")
+	V.Release("PADLTRIGGER")
 end
 local function line() return V.State().draft end
 local function lineKind() return V.State().channel and V.State().channel.kind end
@@ -1162,13 +1165,13 @@ focus = switched
 V.Observe()
 ns.UI.CODE.PAD4 = "FT"
 local function pick(set, key)
-	V.Press("PADLSHOULDER")
 	V.Press("PADLTRIGGER")
+	V.Press("PADRTRIGGER")
 	V.Stick("Left", set[1], set[2])
 	V.Stick("Right", key[1], key[2])
 	V.Stick("Right", 0, 0)
-	V.Release("PADLSHOULDER")
 	V.Release("PADLTRIGGER")
+	V.Release("PADRTRIGGER")
 	V.Stick("Left", 0, 0)
 end
 local function cursorTo(n) while V.State().at > n do V.Press("PADDLEFT") V.Release("PADDLEFT") end end
@@ -1207,15 +1210,15 @@ local function typeKeys(keys)
 		if key == " " then V.Press("PAD1") else V.Type(key) end
 	end
 end
-V.Press("PADLSHOULDER")
 V.Press("PADLTRIGGER")
+V.Press("PADRTRIGGER")
 V.Stick("Left", 0, 1)
 assert(V.State().charset == "symbols" and K.CHARSETS.symbols[1][2] == "/p")
 V.Stick("Right", 0.6, 0)
 V.Stick("Right", 0, 0)
 assert(lineKind() == "PARTY" and line() == "", "the /p key switches the line to Party: " .. line())
-V.Release("PADLSHOULDER")
 V.Release("PADLTRIGGER")
+V.Release("PADRTRIGGER")
 V.Stick("Left", 0, 0)
 typeKeys({ "h", "e", "l", "l", "o" })
 send()

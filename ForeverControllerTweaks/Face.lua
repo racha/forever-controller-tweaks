@@ -9,14 +9,18 @@
 -- A cell can instead hold a catalog entry (Actions.lua), stored per character and controller: a face action is a
 -- click of its reserved top-bar button on that layer; anything a slot holds sits in its own shadow action slot
 -- (Actions.Shadow) and fires with type "action" like Blizzard's buttons (ps-action-<layer>); when no shadow slot can
--- be placed it runs its secure macro text instead (ps-entry-<layer>). Routed cells apply on every crossbar page, and
--- a click catcher over the cell's crossbar slot takes mouse clicks, hover and gamepad focus.
+-- be placed it runs its secure macro text instead (ps-entry-<layer>). A cell with a crossbar slot holds its entry per
+-- crossbar page (ps-<kind>-<layer>-<page>): the press finds the page shown from the layer's native slot button, and a
+-- page without an entry fires that slot natively. The cells without one (the paddles, the stick presses, the reserved
+-- top-bar face slots) hold one entry for every page. A click catcher over the cell's crossbar slot takes mouse clicks,
+-- hover and gamepad focus.
 -- A back paddle has no crossbar slot: only its cells route (a layer without one does nothing), and only while the
 -- paddle has no role, so it still outputs PADPADDLEn. The stick presses (L3, R3) are the same, without roles: bound
 -- only while a cell holds an entry, so an unused one keeps its native Auto-run or Ping.
 -- The header owns the bindings and drops them in vehicles, override/possess bars and pet battles, in combat too.
 local _, ns = ...
-local Layout = ns.Layout
+local Layout, Cells = ns.Layout, ns.Cells
+local pageCount, isEntry = Cells.PageCount, Cells.IsEntry
 
 local ACTION_SLOT = { interact = 5, inspect = 6, back = 7, jump = 8 }
 -- The game's default bindings (bar slots 1-8), used only when the core binding context can't be read.
@@ -45,10 +49,13 @@ local CORE_CTX = Enum.BindingContext and Enum.BindingContext.GamepadModeInGameCo
 local BARS = { left = "leftBar", right = "rightBar", bottom = "bottomBar", friendly = "friendlyTargetingBar", hostile = "hostileTargetingBar", shortcuts = "shortcutsBar" }
 local MOD_ROLES = { "leftmod", "rightmod" }
 local TARGET_LAYERS = { friendly = true, hostile = true, shortcuts = true }
--- Blizzard checks the possess bar before the stance bar (PageUnit.overrideBars).
+-- Blizzard checks the possess bar before the stance bar (PageUnit.overrideBars). The stance bar is up while a bonus
+-- bar is (StanceBar.lua UpdateStanceBarState, HasBonusActionBar): the press tests GetBonusBarOffset(), since the plain
+-- macro option [bonusbar] answers no in Forever even in stealth or a form; condition (a state driver's) is the
+-- numbered one.
 local OVERRIDES = {
 	{ kind = "pet", bar = "possessBar", cvar = "GamepadPossessBarOverride", condition = "[pet]" },
-	{ kind = "stance", bar = "stanceBar", cvar = "GamepadStanceBarOverride", condition = "[bonusbar]" },
+	{ kind = "stance", bar = "stanceBar", cvar = "GamepadStanceBarOverride", condition = "[bonusbar:1/2/3/4/5]" },
 }
 local GUARD = "[vehicleui][overridebar][possessbar][bonusbar:5][petbattle] native; "
 local BAR_RETRIES = 10
@@ -60,9 +67,10 @@ local BAR_RETRIES = 10
 -- An override bar takes its layer's presses as Blizzard decides (IsBarActivelyOverridingActionBar): while its condition
 -- holds and on its page, however it is drawn. Its visibility lags or differs (compact layout, hidden empty bars, the
 -- frame after a shapeshift), and a hidden stance bar sent the press to the normal bar, casting out of form. A page
--- change re-IDs every pageable button to its storage slot on that page, so the layer's own button tells the page.
+-- change re-IDs every pageable button to its storage slot on that page, so the layer's own button tells the page:
+-- the override bar's, and a routed cell's (ps-page-<layer>-<page>, out of combat) for its entry on that page.
 local ROUTER_SNIPPET = [[
-	local name, layer, slot
+	local name, layer, slot, suffix = nil, nil, nil, ""
 	if down then
 		-- A healer ring's release armed this button with a unit; no other route may cast on it.
 		self:SetAttribute("unit", nil)
@@ -86,7 +94,9 @@ local ROUTER_SNIPPET = [[
 		end
 		name = self:GetAttribute("ps-" .. layer)
 		for _, kind in ipairs(OVERRIDE_KINDS) do
-			local button = self:GetAttribute("ps-" .. kind .. "layer") == layer and SecureCmdOptionParse(self:GetAttribute("ps-" .. kind .. "if")) and self:GetFrameRef(kind)
+			local here = self:GetAttribute("ps-" .. kind .. "layer") == layer
+			local on = here and (kind == "stance" and (GetBonusBarOffset() or 0) > 0 or kind ~= "stance" and SecureCmdOptionParse(self:GetAttribute("ps-" .. kind .. "if")))
+			local button = on and self:GetFrameRef(kind)
 			if button then
 				-- No page to compare (the special page, a reserved slot): the bar's visibility, as before.
 				local page, normal = self:GetAttribute("ps-" .. kind .. "page"), self:GetFrameRef(kind .. "page")
@@ -96,20 +106,32 @@ local ROUTER_SNIPPET = [[
 				end
 			end
 		end
-		slot = self:GetAttribute("ps-action-" .. layer)
+		-- No page found (the special page, an override bar's layer, a cell without a crossbar slot): the page-less ones.
+		-- The stance bar's button is its layer's native one: its ID is its storage slot.
+		local native = self:GetFrameRef(layer == "stance" and "stance" or "slot-" .. layer)
+		local shown = native and native:GetID()
+		for page = 1, shown and PAGES or 0 do
+			if shown == self:GetAttribute("ps-page-" .. layer .. "-" .. page) then
+				suffix = "-" .. page
+				break
+			end
+		end
+		name = self:GetAttribute("ps-click-" .. layer .. suffix) or name
+		slot = self:GetAttribute("ps-action-" .. layer .. suffix)
 		if slot then name = "action"
-		elseif self:GetAttribute("ps-entry-" .. layer) then name = "entry"
-		elseif self:GetAttribute("ps-ring-" .. layer) then name = "ring"
+		elseif self:GetAttribute("ps-entry-" .. layer .. suffix) then name = "entry"
+		elseif self:GetAttribute("ps-ring-" .. layer .. suffix) then name = "ring"
 		else
 			-- Since 11.0.2 a macro can't /click a button that runs another macro (dropped without an error), so a
 			-- player macro in the native slot fires as that slot, as Blizzard's button would. Anything else keeps the
 			-- /click: the button's flyout radial and press dent. ID 0: an empty or reserved slot.
-			local native = self:GetFrameRef("slot-" .. layer)
 			local id = native and native:GetName() == name and native:GetID() or 0
 			if id > 0 and GetActionInfo(id) == "macro" then name, slot = "action", id end
 		end
 		self:SetAttribute("ps-cur", name)
 		self:SetAttribute("ps-curlayer", name and layer or nil)
+		-- Rings.lua finds the router that opened a held ring by it.
+		self:SetAttribute("ps-curring", name == "ring" and self:GetAttribute("ps-ring-" .. layer .. suffix) or nil)
 	else
 		name, layer = self:GetAttribute("ps-cur"), "release"
 		self:SetAttribute("ps-curlayer", nil)
@@ -121,7 +143,7 @@ local ROUTER_SNIPPET = [[
 		local rings = self:GetFrameRef("rings")
 		self:SetAttribute("type", nil)
 		self:SetAttribute("typerelease", nil)
-		if rings and down then rings:RunAttribute("_open", self:GetAttribute("ps-ring-" .. layer), "hold", self:GetAttribute("ps-kind"), self:GetAttribute("ps-key")) end
+		if rings and down then rings:RunAttribute("_open", self:GetAttribute("ps-curring"), "hold", self:GetAttribute("ps-kind"), self:GetAttribute("ps-key")) end
 		if rings and not down then rings:RunAttribute("_release", self:GetName()) end
 		return
 	end
@@ -145,7 +167,7 @@ local ROUTER_SNIPPET = [[
 	self:SetAttribute("checkfocuscast", nil)
 	self:SetAttribute("checkmouseovercast", nil)
 	if name == "entry" then
-		self:SetAttribute("macrotext", down and self:GetAttribute("ps-entry-" .. layer) or "")
+		self:SetAttribute("macrotext", down and self:GetAttribute("ps-entry-" .. layer .. suffix) or "")
 		return
 	end
 	self:SetAttribute("macrotext", "/click " .. name .. (down and " LeftButton 1" or " LeftButton"))
@@ -191,18 +213,19 @@ local function isSpell(id) return type(id) == "string" and (id:find("^spell:") o
 -- slots of the rings those open.
 function Face.SpellsOf(record)
 	local out, rings = {}, {}
+	local function take(_, _, entry)
+		local id = type(entry) == "table" and entry.id
+		if isSpell(id) then out[#out + 1] = id end
+		local ring = tonumber(tostring(id):match("^ring:(%d+)$"))
+		if ring then rings[ring] = true end
+	end
 	local function grid(rows)
 		for _, row in pairs(type(rows) == "table" and rows or NONE) do
-			for _, entry in pairs(type(row) == "table" and row or NONE) do
-				local id = type(entry) == "table" and entry.id
-				if isSpell(id) then out[#out + 1] = id end
-				local ring = tonumber(tostring(id):match("^ring:(%d+)$"))
-				if ring then rings[ring] = true end
-			end
+			for _, entry in pairs(type(row) == "table" and row or NONE) do take(nil, nil, entry) end
 		end
 	end
 	local function sides(bars) for _, list in pairs(type(bars) == "table" and bars or NONE) do grid(list) end end
-	for _, rows in pairs(type(record.cells) == "table" and record.cells or NONE) do grid(rows) end
+	for _, rows in pairs(type(record.cells) == "table" and record.cells or NONE) do Cells.EachCell(rows, take) end
 	for _, bars in pairs(type(record.touchBars) == "table" and record.touchBars or NONE) do sides(bars) end
 	sides(type(record.touch) == "table" and record.touch.bars)
 	local list = type(record.rings) == "table" and type(record.rings.list) == "table" and record.rings.list or NONE
@@ -399,8 +422,9 @@ end
 local busy
 
 
--- Routed cells per character and profile: ns.db.chars[char].cells[profileId][code][layer] = { id, name, icon, kind }
--- (a migrated profile's id is its old device key, Profile.lua). The profile is the character's, whatever the pad.
+-- Routed cells per character and profile: ns.db.chars[char].cells[profileId][code][layer] = { id, name, icon, kind },
+-- or a page list of them for a cell with a crossbar slot (ns.Cells.Paged; a migrated profile's id is its old device key,
+-- Profile.lua). The profile is the character's, whatever the pad.
 -- Written out of combat only (the router attributes follow on the next apply). Older stores move in once: the
 -- account-wide ns.db.faceEntries to the first character seen, a character's faceEntries[deviceKey][pos] to the
 -- base layer of that face button.
@@ -451,6 +475,38 @@ local function entryText(entry)
 	return entry and (ns.Actions and ns.Actions.TextFor(entry.id) or entry.text)
 end
 
+-- A cell's entry on page (nil for a page-less cell). A paged cell still holding one entry (not expanded yet) has it
+-- on every page.
+local function cellAt(list, code, layer, page)
+	local row = list and list[code]
+	local value = type(row) == "table" and row[layer]
+	if isEntry(value) then return value end
+	if not (page and type(value) == "table" and Cells.Paged(code, layer)) then return nil end
+	return isEntry(value[page]) and value[page] or nil
+end
+
+-- Sets a cell's entry on page (ignored for a page-less cell); the other pages keep theirs.
+local function setCell(list, code, layer, page, entry)
+	local row = list[code] or {}
+	if Cells.Paged(code, layer) then
+		local pages = {}
+		for p = 1, pageCount() do pages[p] = cellAt(list, code, layer, p) end
+		pages[page] = entry
+		entry = next(pages) and pages or nil
+	end
+	row[layer] = entry
+	list[code] = next(row) and row or nil
+end
+
+-- The crossbar page shown (PageUnit:GetCurrentPage, read only), nil on the special page; 1 when the bars can't tell.
+-- For display: the router reads the page from the native buttons' IDs at the press.
+function Face.ShownPage()
+	local unit = GamepadMainActionBarFrame and GamepadMainActionBarFrame.PageUnit
+	local ok, page = pcall(unit and unit.GetCurrentPage, unit)
+	if not (ok and type(page) == "number") then return 1 end
+	return page >= 1 and page <= pageCount() and page or nil
+end
+
 -- True when this entry on this cell must go through the router: a face button's base layer (its storage slot is
 -- reserved for the face actions), or an entry no storage slot can hold (a face action) on any layer. Everything
 -- else goes into the cell's storage slot (Actions.Assign), D-pad base layer included. A paddle has no storage slot.
@@ -466,12 +522,22 @@ function Face.PaddleFree(code)
 	return not not (device and device.raw and device.raw[code] and not Layout.Roles()[code])
 end
 
--- The routed entry { id, name, icon, kind } on a cell, or nil. Callers must not modify it.
-function Face.CellEntry(code, layer)
-	local list = cells()
-	local row = list and list[code]
-	return row and row[layer]
+-- The routed entry { id, name, icon, kind } on a cell, or nil: on page (default the page shown) for a paged cell.
+-- Callers must not modify it.
+function Face.CellEntry(code, layer, page)
+	return cellAt(cells(), code, layer, page or Face.ShownPage())
 end
+
+-- True when a cell holds an entry on any page.
+function Face.AnyEntry(code, layer)
+	for page = 1, Cells.Paged(code, layer) and pageCount() or 1 do
+		if cellAt(cells(), code, layer, page) then return true end
+	end
+	return false
+end
+
+-- A paged cell's page for an edit (default 1), nil for a page-less one.
+local function editPage(code, layer, page) return Cells.Paged(code, layer) and (page or 1) or nil end
 
 local function nativeSlot(key)
 	local ok, action = pcall(GetBindingAction, key, nil, CORE_CTX)
@@ -492,15 +558,17 @@ local function storageSlot(code, layer, page)
 	return ok and slot or nil
 end
 
--- A routed cell applies on every crossbar page, so the cell's storage slots sit under it: shown around the routed entry
--- and fired natively when the router stands down. page: the page being edited, whose slot is emptied whatever it
--- holds; on every other page (or without a page) only the addon's own FCT: macros go, never the player's actions.
--- The reserved top-bar face slots and the paddles have none.
-local function clearUnder(code, layer, page)
+-- A routed entry sits over its page's storage slot: shown around it and fired natively when the router stands down.
+-- page: the page being edited, whose slot is emptied whatever it holds; with oursOnly only the addon's own FCT: macro
+-- goes, never the player's action. The other pages' slots belong to their own entries, or fire natively, so they stay.
+-- page nil: every page, ours only (an entry kept for every page before 1.5.5). The reserved top-bar face slots and
+-- the paddles have none.
+local function clearUnder(code, layer, page, oursOnly)
 	local Actions = ns.Actions
-	for p = 1, Actions.STANDARD_PAGES do
+	oursOnly = oursOnly or not page
+	for p = page or 1, page or Actions.STANDARD_PAGES do
 		local slot = storageSlot(code, layer, p)
-		if slot and (p == page and C_ActionBar.HasAction(slot) or Actions.Ours(slot)) then
+		if slot and (oursOnly and Actions.Ours(slot) or not oursOnly and C_ActionBar.HasAction(slot)) then
 			local cleared, err = Actions.Clear(slot)
 			if not cleared then return nil, err end
 		end
@@ -509,8 +577,8 @@ local function clearUnder(code, layer, page)
 end
 
 -- entry = { id, name, icon[, kind] } (a passed text is ignored: it is built from the id) or nil to give the cell
--- back (a face button's base layer goes back to its face action). page (1-3): the crossbar page shown while editing.
--- Fires FCT_LAYOUT_CHANGED("layout").
+-- back (a face button's base layer goes back to its face action). page (1-3, default 1): the crossbar page shown while
+-- editing; a paged cell changes there only. Fires FCT_LAYOUT_CHANGED("layout").
 function Face.SetCellEntry(code, layer, entry, page)
 	if InCombatLockdown() then return nil, "out of combat only" end
 	if not (CODE_KEY[code] and CELL_LAYER[layer]) then return nil, "unknown cell " .. tostring(code) .. " " .. tostring(layer) end
@@ -523,7 +591,7 @@ function Face.SetCellEntry(code, layer, entry, page)
 	local list = cells(true)
 	if not list then return nil, "no controller found" end
 
-	local row = list[code] or {}
+	page = editPage(code, layer, page)
 	local new = entry and { id = entry.id, name = entry.name, icon = entry.icon, kind = ns.Actions.KindOf(entry) }
 	-- A slot kind gets its shadow slot now (a full range is refused here); anything else gives the cell's slot back.
 	-- With the Gamepad UI off, nothing is written; the next apply while it is on places or releases the slot.
@@ -541,15 +609,15 @@ function Face.SetCellEntry(code, layer, entry, page)
 		local ok, err = clearUnder(code, layer, page)
 		if not ok then return nil, err end
 	end
-	row[layer] = new
-	list[code] = next(row) and row or nil
+	setCell(list, code, layer, page, new)
 	ns.Fire("FCT_LAYOUT_CHANGED", "layout")
 	return true
 end
 
 -- Healer mode on a cell (Rings.HealerRing): its entry gets healer = true and the cell opens a ring of the group. A cell
 -- without an entry copies the spell or item in its crossbar slot on page (default 1) as an entry with native = true,
--- and that slot stays as it is: Off drops the copy, so the slot fires natively again. Fires FCT_LAYOUT_CHANGED("layout").
+-- and that slot stays as it is: Off drops the copy, so the slot fires natively again. A paged cell changes on that
+-- page only. Fires FCT_LAYOUT_CHANGED("layout").
 function Face.SetHealer(code, layer, on, page)
 	if InCombatLockdown() then return nil, "out of combat only" end
 	if not (CODE_KEY[code] and CELL_LAYER[layer]) then return nil, "unknown cell " .. tostring(code) .. " " .. tostring(layer) end
@@ -557,11 +625,11 @@ function Face.SetHealer(code, layer, on, page)
 	local list = cells(true)
 	if not list then return nil, "no controller found" end
 
-	local row = list[code] or {}
-	local entry = row[layer]
+	page = editPage(code, layer, page)
+	local entry = cellAt(list, code, layer, page)
 	if not entry and not on then return true end
 	if not entry then
-		local slot = storageSlot(code, layer, page or 1)
+		local slot = page and storageSlot(code, layer, page)
 		local found = slot and ns.Actions.Find(ns.Actions.CurrentId(slot) or "")
 		entry = found and { id = found.id, name = found.name, icon = found.icon, kind = ns.Actions.KindOf(found), native = true }
 	end
@@ -575,25 +643,25 @@ function Face.SetHealer(code, layer, on, page)
 	new.healer = on or nil
 	if not on then new.healerLast = nil end
 	if new.native and not on then new = nil end
-	row[layer] = new
-	list[code] = next(row) and row or nil
+	setCell(list, code, layer, page, new)
 	ns.Fire("FCT_LAYOUT_CHANGED", "layout")
 	return true
 end
 
 -- A Healer mode cell's middle (design/1.5.0.md 6): on, letting go in the middle casts on the place it last healed
--- (healerLast = true); off, nothing. Only on a cell in Healer mode. Fires FCT_LAYOUT_CHANGED("layout").
-function Face.SetHealerLast(code, layer, on)
+-- (healerLast = true); off, nothing. Only on a cell in Healer mode, on page (default 1) for a paged cell. Fires
+-- FCT_LAYOUT_CHANGED("layout").
+function Face.SetHealerLast(code, layer, on, page)
 	if InCombatLockdown() then return nil, "out of combat only" end
 	local list = cells(true)
-	local row = list and list[code]
-	local entry = row and row[layer]
+	page = editPage(code, layer, page)
+	local entry = cellAt(list, code, layer, page)
 	if not (entry and entry.healer) then return nil, "Healer mode is off on this button." end
 
 	local new = {}
 	for key, value in pairs(entry) do new[key] = value end
 	new.healerLast = on or nil
-	row[layer] = new
+	setCell(list, code, layer, page, new)
 	ns.Fire("FCT_LAYOUT_CHANGED", "layout")
 	return true
 end
@@ -626,6 +694,21 @@ local ONSTATE_SNIPPET = ([[
 	end
 ]]):format(#CODES) .. APPLY_SNIPPET
 
+-- A paged cell's catcher, before each click: the route of the page its native slot shows (ps-<field>-<page>).
+local CATCHER_FIELDS = { "type", "typerelease", "action", "macrotext", "checkselfcast", "checkfocuscast", "checkmouseovercast" }
+local CATCHER_SNIPPET = [[
+	if not self:GetAttribute("ps-paged") then return end
+	local native, page = self:GetFrameRef("native"), 0
+	local shown = native and native:GetID()
+	for p = 1, shown and PAGES or 0 do
+		if shown == self:GetAttribute("ps-page" .. p) then
+			page = p
+			break
+		end
+	end
+	for _, field in ipairs(CATCHER_FIELDS) do self:SetAttribute(field, self:GetAttribute("ps-" .. field .. "-" .. page)) end
+]]
+
 local header = CreateFrame("Frame", "ForeverControllerTweaksFaceHeader", UIParent, "SecureHandlerStateTemplate")
 local routers = {}
 for i, code in ipairs(CODES) do
@@ -644,11 +727,12 @@ local function setup()
 	if setUp then return end
 	setUp = true
 
-	header:Execute("OVERRIDE_KINDS = newtable('pet', 'stance'); TARGET_KINDS = newtable('shortcuts', 'friendly', 'hostile')")
+	header:Execute("OVERRIDE_KINDS = newtable('pet', 'stance'); TARGET_KINDS = newtable('shortcuts', 'friendly', 'hostile'); PAGES = " .. pageCount())
+	header:Execute("CATCHER_FIELDS = newtable('" .. table.concat(CATCHER_FIELDS, "', '") .. "')")
 	header:SetAttribute("_onstate-face", ONSTATE_SNIPPET)
 	for i, router in ipairs(routers) do
 		-- Read at the press: a state driver lags a shapeshift by up to a throttle.
-		for _, override in ipairs(OVERRIDES) do router:SetAttribute("ps-" .. override.kind .. "if", override.condition .. " on") end
+		for _, override in ipairs(OVERRIDES) do router:SetAttribute("ps-" .. override.kind .. "if", override.kind ~= "stance" and override.condition .. " on" or nil) end
 		router:SetAttribute("ps-pos", CODE_POS[CODES[i]] or CODES[i])
 		-- A dynamic ring aims with the stick of the hand that isn't on the button (Rings.lua); a paddle, like a
 		-- D-pad button, with the right one; a stick press with the other stick.
@@ -706,17 +790,33 @@ function Face.ActionButton(action)
 	return actionBars and ACTION_SLOT[action] and button(actionBars, "topBar", ACTION_SLOT[action])
 end
 
+-- Router key per CODES index (ps-key<i>) for every routed cell as of the last apply, also while the window holds the
+-- pad and the router is off. Glyphs reads it; callers must not modify it.
+Face.planKeys = {}
+
 -- Click catchers: our own secure button over each crossbar slot that shows a routed cell, so a mouse click, hover
 -- and gamepad focus reach the routed action. A child of the native slot button: it follows its visibility, scale
 -- and press dent, and sits one frame level above it (a child's default level). Made and set out of combat; shown by the header's snippets
--- only while routed. Keyed "code/layer".
+-- only while routed, over a paged cell while any page has an entry (a page change in combat can't show or hide it).
+-- Keyed "code/layer".
 local catchers, catcherCount, shadowOf = {}, 0, {}
 
--- Blizzard's tooltip for an action button (ActionBarActionButtonMixin:SetTooltip), on the shadow slot.
+-- The page a native slot button shows: the page of ids ({ [page] = storage slot }) its ID is, else 0.
+local function pageOf(native, ids)
+	local id = native and native:GetID()
+	for page, slot in pairs(ids or NONE) do if id == slot then return page end end
+	return 0
+end
+
+-- Blizzard's tooltip for an action button (ActionBarActionButtonMixin:SetTooltip), on the shadow slot; over a paged
+-- cell's page without an entry, the native slot's own action.
 local function catcherTooltip(self)
-	if not self.shadow then return end
+	local parent = self:GetParent()
+	local page = self.ids and pageOf(parent, self.ids)
+	local slot = self.shadow or page and not (self.routes or NONE)[page] and parent and parent:GetID()
+	if not slot or slot == 0 then return end
 	if GetCVar("UberTooltips") == "1" then GameTooltip_SetDefaultAnchor(GameTooltip, self) else GameTooltip:SetOwner(self, "ANCHOR_RIGHT") end
-	self.UpdateTooltip = GameTooltip:SetAction(self.shadow) and catcherTooltip or nil
+	self.UpdateTooltip = GameTooltip:SetAction(slot) and catcherTooltip or nil
 end
 
 local function catcherLeave(self)
@@ -736,12 +836,15 @@ local function catcherFor(actionBars, code, layer, slot)
 			catcher:SetParent(target)
 			catcher:ClearAllPoints()
 			catcher:SetAllPoints(target)
+			SecureHandlerSetFrameRef(catcher, "native", target)
 		end
 		return catcher
 	end
 
 	catcher = CreateFrame("Button", "ForeverControllerTweaksCatcher" .. code .. layer, target, "SecureActionButtonTemplate")
 	catcher:SetAllPoints(target)
+	SecureHandlerSetFrameRef(catcher, "native", target)
+	header:WrapScript(catcher, "OnClick", CATCHER_SNIPPET)
 	catcher:RegisterForClicks("AnyUp", "LeftButtonDown", "RightButtonDown")
 	catcher:SetScript("OnEnter", catcherTooltip)
 	-- A post-hook on our own frame: one debug line per mouse click, to tell a catcher click from a pad press.
@@ -758,22 +861,41 @@ local function catcherFor(actionBars, code, layer, slot)
 	return catcher
 end
 
--- route = { how, value } as the router runs it, or nil to stand the catcher down.
+-- A catcher's attributes for route = { how, value } as the router runs it.
 -- A face action's reserved button acts on press (Jump, Back, Interact) or release (Inspect), and a "click" type only
--- sends the release, so the catcher clicks it down and up, as Actions' game commands do.
-local function aimCatcher(catcher, route, actionBars)
+-- sends the release, so the catcher clicks it down and up, as Actions' game commands do. No route (a paged cell's
+-- page without an entry): a click of the native slot (clickbutton), as if the catcher weren't there.
+local function catcherFields(route, actionBars)
 	local how, value = route and route[1], route and route[2]
+	if not how then return { type = "click" } end
 	local click = how == "click" and button(actionBars, "topBar", ACTION_SLOT[value])
 	local name = click and click:GetName()
 	-- A hold action's button, clicked once from a catcher: its toggle (RightButton).
 	local text = name and Face.ClickBoth(name) or how == "text" and value or how == "hold" and "/click " .. value .. " RightButton" or nil
-	catcher:SetAttribute("type", how == "action" and "action" or text and "macro" or nil)
-	catcher:SetAttribute("typerelease", how == "action" and "actionrelease" or nil)
-	catcher:SetAttribute("action", how == "action" and value or nil)
-	catcher:SetAttribute("macrotext", text)
-	for _, check in ipairs(Face.CHECK_CASTS) do catcher:SetAttribute(check, how == "action" or nil) end
-	catcher:SetAttribute("ps-on", how and true or nil)
-	catcher.shadow = how == "action" and value or nil
+	local out = { type = how == "action" and "action" or text and "macro" or nil, macrotext = text }
+	if how == "action" then out.typerelease, out.action = "actionrelease", value end
+	for _, check in ipairs(Face.CHECK_CASTS) do out[check] = how == "action" or nil end
+	return out
+end
+
+-- routes = { [page] = route } (page 0: a cell without a crossbar slot), or nil to stand the catcher down. ids =
+-- { [page] = storage slot } of a paged cell: its OnClick wrap takes the page its native slot shows at each click; the
+-- attributes set here are the page shown now.
+local function aimCatcher(catcher, routes, actionBars, ids)
+	local paged = routes and routes[0] == nil
+	for page = 0, pageCount() do
+		local fields = paged and catcherFields(routes[page], actionBars) or NONE
+		for _, field in ipairs(CATCHER_FIELDS) do catcher:SetAttribute("ps-" .. field .. "-" .. page, fields[field]) end
+		catcher:SetAttribute("ps-page" .. page, paged and ids[page] or nil)
+	end
+	local now = routes and (routes[0] or routes[pageOf(catcher:GetParent(), ids)])
+	local fields = routes and catcherFields(now, actionBars) or NONE
+	for _, field in ipairs(CATCHER_FIELDS) do catcher:SetAttribute(field, fields[field]) end
+	catcher:SetAttribute("clickbutton", paged and catcher:GetParent() or nil)
+	catcher:SetAttribute("ps-paged", paged or nil)
+	catcher:SetAttribute("ps-on", routes and true or nil)
+	catcher.routes, catcher.ids = routes, paged and ids or nil
+	catcher.shadow = routes and routes[0] and routes[0][1] == "action" and routes[0][2] or nil
 end
 
 -- The layer ("top", "left", "right", "bottom") an override bar replaces per its CVar, false for None, nil when unknown;
@@ -820,6 +942,14 @@ local function modifierIndexes()
 end
 Face.ModifierIndexes = modifierIndexes
 
+-- The button a "click" or "hold" route clicks: a face action's reserved top-bar button, our hold button.
+local function clickTarget(route, actionBars)
+	local how, value = route and route[1], route and route[2]
+	if how == "hold" then return value end
+	local target = how == "click" and button(actionBars, "topBar", ACTION_SLOT[value])
+	return target and target:GetName() or nil
+end
+
 -- How a routed cell runs: ("click", face action), ("hold", our hold button's name: clicked down on the press and up
 -- on the release, like a face action), ("ring", ring id, a healer ring's too) or ("text", secure macro text); nil
 -- when the entry no longer resolves, and for a Healer mode copy without the Rings module (its slot fires natively).
@@ -845,7 +975,7 @@ end
 
 -- Writes one router's targets (unresolved collects the override kinds it could not resolve); returns the key's slot
 -- in a bar, nil for a paddle: it has none, so it has no native target, no targeting layer and no override bar.
-local function aim(router, actionBars, code, action, routes, mods, unresolved)
+local function aim(router, actionBars, code, action, mods, unresolved)
 	local slot = not NO_SLOT[code] and nativeSlot(CODE_KEY[code]) or nil
 	for layer, barKey in pairs(BARS) do
 		local target = slot and button(actionBars, barKey, slot)
@@ -859,14 +989,6 @@ local function aim(router, actionBars, code, action, routes, mods, unresolved)
 	router:SetAttribute("ps-top", top and top:GetName() or nil)
 	-- A face button's top target is a reserved button: its scripts act, not a slot.
 	if top and not action then SecureHandlerSetFrameRef(router, "slot-top", top) end
-	for cellLayer, route in pairs(routes) do
-		if route[1] == "click" then
-			local target = button(actionBars, "topBar", ACTION_SLOT[route[2]])
-			router:SetAttribute("ps-" .. CELL_LAYER[cellLayer], target and target:GetName())
-		elseif route[1] == "hold" then
-			router:SetAttribute("ps-" .. CELL_LAYER[cellLayer], route[2])
-		end
-	end
 	for role, index in pairs(mods) do router:SetAttribute("ps-i" .. role, index) end
 
 	for _, override in ipairs(slot and OVERRIDES or {}) do
@@ -888,7 +1010,7 @@ local driver, summary, retries, refresh = nil, "not applied yet", 0, nil
 
 -- Back and Inspect used to be PS: game macros (Actions.LEGACY_FACE). Once per character, with the Gamepad UI on and
 -- out of combat: routed cells with the old id become the face action, and crossbar slots holding the old macro become
--- routed cells (on every page, as routed cells are) and are cleared, so the registry deletes the macro.
+-- routed cells on that page and are cleared, so the registry deletes the macro.
 -- The 96 slots are scanned once; a write that failed (Clear, ReleaseShadow) is kept in legacyLeft for the session and
 -- only those are tried again on the next applies, so the scan and its chat lines don't repeat.
 local legacyLeft
@@ -912,14 +1034,21 @@ local function migrateLegacyFace(char)
 		local entry = Actions.Find(legacy[oldID])
 		return entry and { id = entry.id, name = entry.name, icon = entry.icon, kind = "face" }
 	end
-	local changed = false
-	for code, row in pairs(list) do
-		for layer, entry in pairs(row) do
-			if legacy[entry.id] then
-				row[layer], changed = faceEntry(entry.id) or entry, true
-				if not Actions.ReleaseShadow(code, layer) then legacyLeft[code .. "/" .. layer] = { code, layer } end
-			end
+	local changed, found = false, {}
+	Cells.EachCell(list, function(code, layer, entry, page)
+		if legacy[entry.id] then found[#found + 1] = { code, layer, entry, page } end
+	end)
+	for _, cell in ipairs(found) do
+		local code, layer, entry, page = cell[1], cell[2], cell[3], cell[4]
+		local new = faceEntry(entry.id) or entry
+		-- A paged cell still holding one entry keeps it for every page.
+		if Cells.Paged(code, layer) and not page then
+			list[code][layer] = new
+		else
+			setCell(list, code, layer, page, new)
 		end
+		changed = true
+		if not Actions.ReleaseShadow(code, layer) then legacyLeft[code .. "/" .. layer] = { code, layer } end
 	end
 	local util = GamepadActionBarBindingUtil
 	local storage = util and util.GetGamepadStorageSlotIndexFromPageAndPageUnitSlotID
@@ -935,8 +1064,8 @@ local function migrateLegacyFace(char)
 					if foreign then ns.log(("your macro %s on page %d (%s, %s bar) isn't one Controller Tweaks wrote, so it was left as is. To route %s there, pick it again in the Bindings window (/fct)."):format(foreign, page, CODE_KEY[code], CELL_LAYER[layer], foreign:sub(4))) end
 				end
 				if oldID and legacy[oldID] then
-					list[code] = list[code] or {}
-					list[code][layer], changed = list[code][layer] or faceEntry(oldID), true
+					setCell(list, code, layer, page, cellAt(list, code, layer, page) or faceEntry(oldID))
+					changed = true
 					if not Actions.Clear(slot) then legacyLeft[slot] = true end
 					ns.debug("face: %s on page %d moved from a macro slot to a routed cell %s/%s", oldID, page, code, layer)
 				end
@@ -954,12 +1083,10 @@ local function clearUnderRouted()
 	if not (list and GamepadActionBarBindingUtil) then return false end
 
 	local done = true
-	for code, row in pairs(list) do
-		for layer, entry in pairs(row) do
-			-- A Healer mode copy keeps its slot: Off gives the cell back to it.
-			if not entry.native and not clearUnder(code, layer) then done = false end
-		end
-	end
+	Cells.EachCell(list, function(code, layer, entry, page)
+		-- A Healer mode copy keeps its slot: Off gives the cell back to it.
+		if not entry.native and not clearUnder(code, layer, page, true) then done = false end
+	end)
 	return done
 end
 
@@ -972,7 +1099,8 @@ local function applyNow(ignorePanel)
 	local face, actionBars = Layout.Face(), bars()
 	local known = cells()
 	local list = known or {}
-	local enabled = ns.Active() and (ignorePanel or not ns.panelOpen) and (not sameFace(face) or next(list)) and actionBars and button(actionBars, "topBar", 5)
+	local ready = ns.Active() and (not sameFace(face) or next(list)) and actionBars and button(actionBars, "topBar", 5)
+	local enabled = ready and (ignorePanel or not ns.panelOpen)
 	local mods, unresolved, parts, short = modifierIndexes(), {}, {}, {}
 	-- Shadow slots are written only with the Gamepad UI on (bars 6-8 are the player's otherwise), out of combat and
 	-- not at combat start, and only with this pad's cells known: an unplugged or sleeping pad, or one without cells
@@ -983,41 +1111,63 @@ local function applyNow(ignorePanel)
 		ns.MigrateChar("legacyFaceDone", migrateLegacyFace)
 		ns.MigrateChar("routedUnderDone", clearUnderRouted)
 	end
+	local pages = pageCount()
 	for i, code in ipairs(CODES) do
-		local router, key, pos, row = routers[i], CODE_KEY[code], CODE_POS[code], list[code] or {}
+		local router, key, pos = routers[i], CODE_KEY[code], CODE_POS[code]
 		local action, label, routes = pos and face[pos], pos or code, {}
+		local faceMoved = pos and action ~= Layout.NATIVE_FACE[pos]
 		-- A paddle with a role keeps its cells, unrouted and without shadow slots, until it is freed again.
 		local carried = not PADDLES[code] or Face.PaddleFree(code)
 		for _, cellLayer in ipairs(CELL_LAYERS) do
-			local entry = carried and row[cellLayer] or nil
-			local how, value
-			if entry then how, value = resolve(entry) end
-			-- A slot kind fires its shadow slot; placed now unless combat starts (else it stays macro text).
-			local slotKind = entry and Actions and Actions.SLOT_KINDS[Actions.KindOf(entry)]
-			if how == "text" and slotKind then
-				local slot = Actions.ShadowSlot(code, cellLayer, entry.id)
-				if not slot and writable then slot = Actions.Shadow(code, cellLayer, entry) end
-				if slot then how, value = "action", slot end
+			-- routes[layer][page]: page 0 for a cell without a crossbar slot, one entry for every page.
+			local paged, byPage, keep = Cells.Paged(code, cellLayer), {}, false
+			for page = paged and 1 or 0, paged and pages or 0 do
+				local entry = carried and cellAt(list, code, cellLayer, page > 0 and page or nil) or nil
+				local how, value
+				if entry then how, value = resolve(entry) end
+				-- A slot kind fires its shadow slot; placed now unless combat starts (else it stays macro text). Shadow
+				-- slots are per cell, so a paged cell's (none since Face.Routable sends them to the storage slot) stays
+				-- macro text.
+				local slotKind = entry and Actions and Actions.SLOT_KINDS[Actions.KindOf(entry)]
+				if how == "text" and slotKind and not paged then
+					local slot = Actions.ShadowSlot(code, cellLayer, entry.id)
+					if not slot and writable then slot = Actions.Shadow(code, cellLayer, entry) end
+					if slot then how, value = "action", slot end
+				end
+				keep = keep or slotKind and not paged
+				local where = label .. (cellLayer == "T" and "" or "/" .. cellLayer) .. (page > 0 and " page " .. page or "")
+				if how then byPage[page] = { how, value, entry.name } end
+				if entry and not how then parts[#parts + 1] = string.format("%s entry %s unavailable", where, tostring(entry.id)) end
 			end
 			-- A cell that no longer holds a slot kind gives its shadow slot back.
-			if writable and not slotKind then Actions.ReleaseShadow(code, cellLayer) end
-			local where = label .. (cellLayer == "T" and "" or "/" .. cellLayer)
-			if how then routes[cellLayer] = { how, value, entry.name } end
-			if entry and not how then parts[#parts + 1] = string.format("%s entry %s unavailable", where, tostring(entry.id)) end
+			if writable and not keep then Actions.ReleaseShadow(code, cellLayer) end
+			routes[cellLayer] = next(byPage) and byPage or nil
 		end
-		local moved = enabled and (next(routes) or (pos and action ~= Layout.NATIVE_FACE[pos]))
-		local slot = moved and aim(router, actionBars, code, action, routes, mods, unresolved)
+		local wants = ready and (next(routes) or faceMoved)
+		local moved = enabled and wants
+		-- The keys the router would take with the window closed: the crossbar keeps drawing them while it is open.
+		Face.planKeys[i] = wants and key or nil
+		local slot = moved and aim(router, actionBars, code, action, mods, unresolved)
 		for cellLayer, layer in pairs(CELL_LAYER) do
-			local route = routes[cellLayer]
-			local how = moved and route and route[1]
-			router:SetAttribute("ps-entry-" .. layer, how == "text" and route[2] or nil)
-			router:SetAttribute("ps-action-" .. layer, how == "action" and route[2] or nil)
-			router:SetAttribute("ps-ring-" .. layer, how == "ring" and route[2] or nil)
-			shadowOf[code .. "/" .. cellLayer] = route and route[1] == "action" and route[2] or nil
+			local byPage = moved and routes[cellLayer] or NONE
+			local native = slot and Cells.Paged(code, cellLayer) and button(actionBars, CELL_BAR[cellLayer], slot)
+			local ids = {}
+			for page = 0, pages do
+				local route, suffix = byPage[page], page > 0 and "-" .. page or ""
+				local how = route and route[1]
+				router:SetAttribute("ps-entry-" .. layer .. suffix, how == "text" and route[2] or nil)
+				router:SetAttribute("ps-action-" .. layer .. suffix, how == "action" and route[2] or nil)
+				router:SetAttribute("ps-ring-" .. layer .. suffix, how == "ring" and route[2] or nil)
+				router:SetAttribute("ps-click-" .. layer .. suffix, clickTarget(route, actionBars))
+				ids[page] = page > 0 and native and storageId(page, native) or nil
+				if page > 0 then router:SetAttribute("ps-page-" .. layer .. suffix, ids[page]) end
+			end
+			local planned = wants and routes[cellLayer] or NONE
+			shadowOf[code .. "/" .. cellLayer] = planned[0] and planned[0][1] == "action" and planned[0][2] or nil
 			-- A moved face action on the base layer is a routed cell too.
-			local shown = how and route or slot and cellLayer == "T" and pos and action ~= Layout.NATIVE_FACE[pos] and { "click", action }
+			local shown = next(byPage) and byPage or slot and cellLayer == "T" and faceMoved and { [0] = { "click", action } }
 			local catcher = shown and slot and catcherFor(actionBars, code, cellLayer, slot) or catchers[code .. "/" .. cellLayer]
-			if catcher then aimCatcher(catcher, shown or nil, actionBars) end
+			if catcher then aimCatcher(catcher, shown or nil, actionBars, ids) end
 		end
 		header:SetAttribute("ps-key" .. i, moved and key or nil)
 		-- An open ring binds A and B but the key that opened it.
@@ -1025,9 +1175,16 @@ local function applyNow(ignorePanel)
 		if moved then
 			local cellParts = {}
 			for _, cellLayer in ipairs(CELL_LAYERS) do
-				local route = routes[cellLayer]
-				local what = route and route[3] or cellLayer == "T" and pos and action ~= Layout.NATIVE_FACE[pos] and action
-				if what then cellParts[#cellParts + 1] = (cellLayer == "T" and key or key .. "/" .. cellLayer) .. "=" .. what end
+				local byPage, cell = routes[cellLayer] or NONE, cellLayer == "T" and key or key .. "/" .. cellLayer
+				local base = byPage[0] and byPage[0][3] or cellLayer == "T" and faceMoved and action
+				if base then cellParts[#cellParts + 1] = cell .. "=" .. base end
+				-- A paged cell the same on every page reads as one.
+				local first, same = byPage[1] and byPage[1][3], true
+				for page = 2, pages do same = same and (byPage[page] and byPage[page][3]) == first end
+				for page = 1, first and same and 1 or pages do
+					local what = byPage[page] and byPage[page][3]
+					if what then cellParts[#cellParts + 1] = cell .. (same and "" or "@" .. page) .. "=" .. what end
+				end
 			end
 			for _, part in ipairs(cellParts) do short[#short + 1] = part end
 			parts[#parts + 1] = string.format("%s(%s%s) %s", label, key, slot and ", slot " .. slot or "", table.concat(cellParts, " "))
@@ -1097,10 +1254,9 @@ function Face.Slot(code, layer) return shadowOf[code .. "/" .. tostring(layer)] 
 function Face.ShadowNeeds()
 	local list, out = cells(), {}
 	for _, code in ipairs(CODES) do
-		local row = list and list[code]
 		local carried = not PADDLES[code] or Face.PaddleFree(code)
 		for _, layer in ipairs(CELL_LAYERS) do
-			local entry = carried and row and row[layer]
+			local entry = carried and not Cells.Paged(code, layer) and cellAt(list, code, layer)
 			if entry and not entry.healer and not entry.native and ns.Actions.SLOT_KINDS[ns.Actions.KindOf(entry)] then out[#out + 1] = { code = code, layer = layer, id = entry.id } end
 		end
 	end
@@ -1135,6 +1291,26 @@ end
 function Face.Catcher(code, layer)
 	local catcher = catchers[code .. "/" .. tostring(layer)]
 	return catcher and catcher:GetAttribute("ps-on") and catcher or nil
+end
+
+-- For testers in /fct status: what the stance test reads now, beside the macro options and Blizzard's own rule, and
+-- the stance bar's layer and page from its CVar.
+function Face.FormLine()
+	local function read(fn, ...)
+		local ok, value = pcall(fn, ...)
+		return ok and tostring(value) or "n/a"
+	end
+	local has = C_ActionBar and C_ActionBar.HasBonusActionBar
+	local layer, page = overrideLayer("GamepadStanceBarOverride")
+	return ("form: GetBonusBarOffset %s, [bonusbar] %s, [bonusbar:1/2/3/4/5] %s, HasBonusActionBar %s, stance bar on %s page %s"):format(
+		read(GetBonusBarOffset), read(SecureCmdOptionParse, "[bonusbar] on"), read(SecureCmdOptionParse, "[bonusbar:1/2/3/4/5] on"),
+		has and read(has) or "n/a", layer == false and "none" or tostring(layer), page and tostring(page) or "special")
+end
+
+local statusCommand = ns.commands.status
+function ns.commands.status(args)
+	if statusCommand then statusCommand(args) end
+	ns.log(Face.FormLine())
 end
 
 -- Applies now when the pad is free, so the queue isn't used for nothing.

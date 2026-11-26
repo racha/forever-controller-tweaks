@@ -146,7 +146,7 @@ check(ann.profiles[DS].name == "Couch pad", "a typed name is kept")
 node(ST.COPY).select()
 W.advance(0.2)
 local copyId = P.CurrentId()
-check(copyId ~= DS and ann.profiles[copyId].name == "Couch pad 2" and ann.cells[copyId].FB.R.id == "spell:133" and ann.profiles[copyId].roles.L1 == "rightmod", "Copy: this profile's layout and bindings, a unique name")
+check(copyId ~= DS and ann.profiles[copyId].name == "Couch pad 2" and ann.cells[copyId].FB.R[2].id == "spell:133" and ann.profiles[copyId].roles.L1 == "rightmod", "Copy: this profile's layout and bindings (per page), a unique name")
 
 -- Another controller id: no question, the same profile and bindings.
 W.raw = pad("Xbox Wireless Controller", 0x045e, 0x0b13)

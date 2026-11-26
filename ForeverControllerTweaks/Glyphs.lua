@@ -287,11 +287,15 @@ local function fillEntry(entry, native)
 	return true
 end
 
-local function active()
+-- Mirrors stay while the addon's window is open (the crossbar keeps showing the player's bindings); everything else
+-- goes native then, as Remap does.
+local function mirrorsOn()
 	local db, device = ns.db, ns.Device
-	if failed or not (db and db.options.glyphs and ns.Active()) or ns.panelOpen then return false end
+	if failed or not (db and db.options.glyphs and ns.Active()) then return false end
 	return not (device and device.Detecting and device.Detecting())
 end
+
+local function active() return not ns.panelOpen and mirrorsOn() end
 
 -- The tabs to draw instead of Blizzard's, in markerPlan (on = false when Blizzard's are right).
 local function planMarkers()
@@ -315,14 +319,16 @@ local function planMarkers()
 	rows[friendlySide] = STACK[friendly] <= STACK[hostile] and FRIENDLY_HOSTILE or HOSTILE_FRIENDLY
 end
 
-local function faceRouted()
+-- open: the window holds the pad, so the router is off on purpose and only the state (vehicle, override...) counts.
+local function faceRouted(open)
 	local header = ForeverControllerTweaksFaceHeader
-	return header and header:GetAttribute("state-face") == "routed" and header:GetAttribute("ps-enabled") and header
+	return header and header:GetAttribute("state-face") == "routed" and (open or header:GetAttribute("ps-enabled")) and header
 end
 
 local function cellEntry(code, layer) return ns.Face and ns.Face.CellEntry and ns.Face.CellEntry(code, layer) end
 
--- True while the face layout or a routed entry differs from native, so the router may route.
+-- True while the face layout or a routed entry differs from native, so the router may route. An entry on any page
+-- keeps the poll awake: a page flip has no event of ours, and the mirrors follow the page shown.
 local function faceCustom()
 	local face = Layout.Face()
 	for _, pos in ipairs(Layout.FACE_POSITIONS) do
@@ -330,7 +336,7 @@ local function faceCustom()
 	end
 	for code in pairs(CELL_KEY) do
 		for layer in pairs(CELL_BARS) do
-			if cellEntry(code, layer) then return true end
+			if ns.Face and ns.Face.AnyEntry and ns.Face.AnyEntry(code, layer) then return true end
 		end
 	end
 	return false
@@ -458,14 +464,17 @@ local function poll()
 		end
 	end
 
-	-- Mirrors follow the face router itself: it is off in vehicles, override bars and while the panel is open.
-	local unit, header = pageUnit(), on and faceRouted()
+	-- Mirrors follow the face router itself: it is off in vehicles and override bars. While the window is open the
+	-- router is off too, but they follow the keys it would take (Face.planKeys).
+	local open, mirroring = ns.panelOpen, mirrorsOn()
+	local unit, header = pageUnit(), mirroring and faceRouted(open)
 	local actionBars = header and unit and unit.actionBars
 	local right = actionBars and actionBars.topBar and actionBars.topBar.Right
 	local face = right and Layout.Face()
 	wipe(routedKeys)
+	local planKeys = open and ns.Face and ns.Face.planKeys
 	for i = 1, ROUTER_KEYS do
-		local key = right and header:GetAttribute("ps-key" .. i)
+		local key = right and (planKeys and planKeys[i] or not open and header:GetAttribute("ps-key" .. i))
 		if key then routedKeys[key] = true end
 	end
 	-- Each routed cell: a moved base face action, or an entry on any layer. A face action entry ("face:jump") is run
@@ -493,7 +502,7 @@ local function poll()
 	end
 
 	-- Idle when nothing can be wanted until an event says otherwise (refresh wakes it).
-	local busy = next(wanted) or next(faces) or markerPlan.on or on and (ns.Remap.State() == "ours" or faceCustom())
+	local busy = next(wanted) or next(faces) or markerPlan.on or on and ns.Remap.State() == "ours" or mirroring and faceCustom()
 	if driver then driver:SetShown(not not busy) end
 
 	if not ns.db.options.debug then return end
@@ -681,6 +690,9 @@ local function restOf(button)
 end
 
 local function pressedOf(mirrorFace)
+	-- The window takes the presses: nothing casts, so no mirror dents.
+	if ns.panelOpen then return false, false end
+
 	local face = ns.Face
 	local pad = face and face.Pressed and face.Pressed(mirrorFace.code, mirrorFace.layer)
 	local catcher = face and face.Catcher and face.Catcher(mirrorFace.code, mirrorFace.layer)

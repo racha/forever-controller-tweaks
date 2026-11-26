@@ -60,11 +60,12 @@ local L = {
 Sync.L = L
 
 -- 2 (1.5.1): profiles. 3 (1.5.2): rings per character (r:), touch buttons per profile (tb:). 4 (1.5.4): profiles per
--- character (cp:), no account profiles or controller picks. An older machine pauses on a newer one ("newer") and writes
--- nothing; a format 2 or 3 set reads here without its account sections (rings, prof:, map) and its name-keyed ones (an
--- older export still imports: its rings go to this character, its touch buttons and layout to this character's
--- profile).
-local FORMAT, MAX_PARTS, BODY_MAX = 4, 20, 255
+-- character (cp:), no account profiles or controller picks. 5 (1.5.5): a b: cell with a crossbar slot is a page list
+-- { [page] = entry } (ns.Cells). An older machine pauses on a newer one ("newer") and writes nothing; a format 2 or 3
+-- set reads here without its account sections (rings, prof:, map) and its name-keyed ones (an older export still
+-- imports: its rings go to this character, its touch buttons and layout to this character's profile); an older set's
+-- one entry on a paged cell goes to every page.
+local FORMAT, MAX_PARTS, BODY_MAX = 5, 20, 255
 local HEADER = "#FCT%d %d/%d %s "
 -- The gen is the write's server time since GEN_EPOCH (2025-01-01) in base36: 6 letters until 2094. The header is
 -- then at most 19 letters ("#FCT1 20/20 " and the gen and a space).
@@ -268,12 +269,20 @@ local function slimEntry(entry)
 	return flags and out or entry.id
 end
 
--- rows[row][slot] = entry, the cells' and a touch side's shape.
+-- A paged cell's { [page] = entry } (ns.Cells), slim; nil for anything else.
+local function slimPages(pages)
+	if type(pages) ~= "table" or type(pages.id) == "string" then return nil end
+	local out = {}
+	for page, entry in pairs(pages) do if type(page) == "number" then out[page] = slimEntry(entry) end end
+	return next(out) and out or nil
+end
+
+-- rows[row][slot] = entry, the cells' (a paged cell's page list in the slot) and a touch side's shape.
 local function slimGrid(rows)
 	local out = {}
 	for row, slots in pairs(type(rows) == "table" and rows or NONE) do
 		local kept = {}
-		for slot, entry in pairs(type(slots) == "table" and slots or NONE) do kept[slot] = slimEntry(entry) end
+		for slot, entry in pairs(type(slots) == "table" and slots or NONE) do kept[slot] = slimEntry(entry) or slimPages(entry) end
 		if next(kept) then out[row] = kept end
 	end
 	return out
@@ -362,11 +371,21 @@ end
 -- read from outside, and a player or another addon may have written them.
 local function validEntry(entry) return type(entry) == "string" or type(entry) == "table" and type(entry.id) == "string" end
 
+-- An entry, or a paged cell's page list of them.
+local function validCell(cell)
+	if validEntry(cell) then return true end
+	if type(cell) ~= "table" then return false end
+	for page, entry in pairs(cell) do
+		if not (finite(page) and validEntry(entry)) then return false end
+	end
+	return true
+end
+
 local function validGrid(rows)
 	if type(rows) ~= "table" then return false end
 	for _, slots in pairs(rows) do
 		if type(slots) ~= "table" then return false end
-		for _, entry in pairs(slots) do if not validEntry(entry) then return false end end
+		for _, entry in pairs(slots) do if not validCell(entry) then return false end end
 	end
 	return true
 end
@@ -591,12 +610,21 @@ local function fatEntry(wire, old, index)
 	return entry
 end
 
+-- A wire page list (a table without an id) back to { [page] = entry }; nil when no page holds one.
+local function fatPages(wire, old, index)
+	if type(wire) ~= "table" or type(wire.id) == "string" then return nil end
+	local out = {}
+	old = type(old) == "table" and old or NONE
+	for page, entry in pairs(wire) do if type(page) == "number" then out[page] = fatEntry(entry, old[page], index) end end
+	return next(out) and out or nil
+end
+
 local function fatGrid(rows, oldRows, index)
 	local out = {}
 	oldRows = type(oldRows) == "table" and oldRows or NONE
 	for row, slots in pairs(type(rows) == "table" and rows or NONE) do
 		local kept, old = {}, type(oldRows[row]) == "table" and oldRows[row] or NONE
-		for slot, wire in pairs(type(slots) == "table" and slots or NONE) do kept[slot] = fatEntry(wire, old[slot], index) end
+		for slot, wire in pairs(type(slots) == "table" and slots or NONE) do kept[slot] = fatEntry(wire, old[slot], index) or fatPages(wire, old[slot], index) end
 		if next(kept) then out[row] = kept end
 	end
 	return out
@@ -736,6 +764,8 @@ local function put(db, key, data, index)
 	if name then
 		local char = charOf(db, name)
 		char.cells = type(char.cells) == "table" and char.cells or {}
+		-- An older set's (or backup's) one entry on a paged cell: every page's.
+		if type(data) == "table" then ns.Cells.ExpandPages(data) end
 		char.cells[cellsId] = data ~= nil and fatGrid(data, char.cells[cellsId], index) or nil
 		return adopt(char, cellsId, data)
 	end
@@ -880,7 +910,27 @@ function Sync.Repair(db, fix)
 	for key in pairs(s.backup and s.backup.s or NONE) do if key == "map" or key:find("^prof:") then s.backup.s[key] = nil end end
 	if s.backup and not next(s.backup.s) then s.backup = nil end
 	Sync.SplitDevices(db, s)
+	Sync.ExpandBase(db, s)
 	return s
+end
+
+-- Base, marks and the backup from before 1.5.5 (format 4) hold a paged cell's one entry, every page's since
+-- (MIGRATIONS[6]): expanded the same way, so the first merge after the update compares like with like. A section
+-- changed here since its last stamp keeps that stamp. Runs on every load; idempotent.
+function Sync.ExpandBase(db, s)
+	local now
+	for key, text in pairs(s.base) do
+		local data = bindingsKey(key) and Sync.Decode(text)
+		if type(data) == "table" and ns.Cells.ExpandPages(data) then
+			now = now or Sync.Sections(db)
+			local pending = s.marks[key] ~= nil and s.marks[key] ~= hash(text)
+			s.base[key] = enc(data)
+			s.marks[key] = pending and now[key] ~= nil and hash(enc(now[key])) or hash(s.base[key])
+		end
+	end
+	for key, item in pairs(s.backup and s.backup.s or NONE) do
+		if bindingsKey(key) and type(item.d) == "table" then ns.Cells.ExpandPages(item.d) end
+	end
 end
 
 -- Base, marks and the backup from before profiles (1.5.0) held a pad's roles and face in dev:<pad>: they are the
@@ -1010,6 +1060,8 @@ function Sync.ReadRemote()
 	for key, item in pairs(payload.s) do
 		if type(key) == "string" and type(item) == "table" and not dropped(key) and validRow(kindOf(key), item.d) then sections[key] = { t = finite(item.t) and item.t or 0, d = item.d } end
 	end
+	-- A format 4 set's paged cells, as this machine stores them: the merge compares like with like.
+	for key, item in pairs(sections) do if bindingsKey(key) then ns.Cells.ExpandPages(item.d) end end
 	payload.s = sections
 	return payload, best.total
 end
@@ -1468,6 +1520,7 @@ function Sync.ReadExport(text)
 	for _, row in ipairs(EXPORT_ROWS) do
 		if payload.s[row] ~= nil and not validRow(row, payload.s[row]) then return nil, "bad" end
 	end
+	if payload.s.bindings then ns.Cells.ExpandPages(payload.s.bindings) end
 	return payload
 end
 

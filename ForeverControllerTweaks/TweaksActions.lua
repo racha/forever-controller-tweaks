@@ -12,7 +12,8 @@
 --                       after combat and when the group changes.
 --   Best healing potion, Best mana potion, Best grenade
 --                       /use of the best of that kind in the bags (Gear.Best's one pass, see Gear.Dirty), written out
---                       of combat on bag changes.
+--                       of combat on bag changes and when an item the game hadn't loaded arrives. A press with none
+--                       says so in chat, out of combat.
 --   Minimap zoom        our secure button clicks the minimap's own zoom-in button, then zoom-out once fully in, and
 --                       back. Blizzard's button does the zooming; nothing of the minimap is written here.
 --   Zoom in, Zoom out   the camera one step on the press (CameraZoomIn/Out); held, it keeps moving (MoveViewIn/
@@ -24,7 +25,12 @@ local Tweaks = ns.Tweaks
 local Gear = Tweaks.Gear
 local call, secret = Tweaks.Call, Tweaks.Secret
 
-local T = { TRACKING = "Tracking: %s", NO_QUEST = "Track nearest quest: no quest with a place on the map." }
+local T = {
+	TRACKING = "Tracking: %s", NO_QUEST = "Track nearest quest: no quest with a place on the map.",
+	NO_HEAL = "Best healing potion: no healing potion in your bags for your level.",
+	NO_MANA = "Best mana potion: no mana potion in your bags for your level.",
+	NO_GRENADE = "Best grenade: no grenade in your bags for your level.",
+}
 Tweaks.ActionsT = T
 
 ---------------------------------------------------------------------------------------------------------------------
@@ -134,7 +140,7 @@ ns.On("GROUP_ROSTER_UPDATE", markFromSkull)
 ---------------------------------------------------------------------------------------------------------------------
 -- Potions and grenades (in combat too: that is what they are for).
 -- ponytail: told apart by English item and spell names ("Heal", "Mana", "Grenade"...); on another client language
--- nothing is found and the press does nothing.
+-- nothing is found and the press says so.
 
 local ITEM_CLASS, SUBCLASS = Enum and Enum.ItemClass or {}, Enum and Enum.ItemConsumableSubclass or {}
 local CONSUMABLE, TRADE_GOODS = ITEM_CLASS.Consumable or 0, ITEM_CLASS.Tradegoods or 7
@@ -143,7 +149,15 @@ local POTION = SUBCLASS.Potion or 1
 -- trade goods' Explosives (2). A grenade also has a use spell, which the reagents that share a name lack.
 local EXPLOSIVE = { [CONSUMABLE] = { [SUBCLASS.Generic or 0] = true, [SUBCLASS.Device or 14] = true }, [TRADE_GOODS] = { [2] = true } }
 
-local function potionOf(word) return function(item) return item.classID == CONSUMABLE and item.subClassID == POTION and (item.spell:find(word) or item.name:find(word)) ~= nil end end
+-- A potion filed under another consumable subclass still counts when "Potion" is in its name (bandages and
+-- Healthstones never are).
+local function potionOf(word)
+	return function(item)
+		local name, spell = item.name, item.spell
+		if item.classID ~= CONSUMABLE or item.subClassID ~= POTION and not name:find("Potion") then return false end
+		return (spell:find(word) or name:find(word)) ~= nil
+	end
+end
 function Tweaks.Explosive(item)
 	local filed = EXPLOSIVE[item.classID]
 	if not (filed and filed[item.subClassID] and item.spell ~= "") then return false end
@@ -160,6 +174,10 @@ local items = {
 	grenade = Gear.SecureButton("ForeverControllerTweaksGrenade"),
 }
 Tweaks.ItemButtons = items
+local NONE = { heal = T.NO_HEAL, mana = T.NO_MANA, grenade = T.NO_GRENADE }
+for kind, button in pairs(items) do
+	button:SetScript("PreClick", function(self, _, down) if not down and (self.text or "") == "" and not InCombatLockdown() then ns.log(NONE[kind]) end end)
+end
 
 function Tweaks.RefreshItems(best)
 	for kind, button in pairs(items) do Gear.SetText(button, best[kind] and "/use item:" .. best[kind].id or "") end

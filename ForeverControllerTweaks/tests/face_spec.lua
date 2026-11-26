@@ -131,6 +131,14 @@ local function cond(name, on)
 	W.secure = was
 end
 
+-- A form, stealth or stance: Blizzard's bonus bar offset (what the press reads), and the numbered macro option a state
+-- driver reads. Forever's bare [bonusbar] answers no even then (W.conds.bonusbar stays unset unless a check sets it).
+function GetBonusBarOffset() return W.bonus or 0 end
+local function form(on)
+	W.bonus = on and 1 or 0
+	cond("bonusbar:1/2/3/4/5", on)
+end
+
 local INDEX = { PAD1 = 0, PAD2 = 1, PAD3 = 2, PAD4 = 3, PADLSHOULDER = 9, PADRSHOULDER = 10, PADLTRIGGER = 13, PADRTRIGGER = 14 }
 function GetGamePadState() return { buttons = W.held } end
 C_GamePad = { ButtonBindingToIndex = function(k) return INDEX[k] end }
@@ -366,7 +374,7 @@ cond("vehicleui", false)
 check(press("PAD1", false) == false, "release after a state change is dropped")
 W.combat = false
 
--- Stance bar on page 1 left: L2 + A goes to the stance bar while [bonusbar] holds and the bars are on page 1, however
+-- Stance bar on page 1 left: L2 + A goes to the stance bar while a bonus bar is up and the bars are on page 1, however
 -- Blizzard draws it (compact layout, hidden empty bars, the frame after a shapeshift), as Blizzard's binding does.
 GamepadActionBarBindingUtil = PAGE_UTIL
 onPage("leftBar", 1)
@@ -376,7 +384,7 @@ W.combat = true
 hold("PADLTRIGGER")
 check(press("PAD1", true):find("LeftCenteredAnchorLeftBar", 1, true), "no bonus bar: left bar")
 -- The condition is read at the press: no state driver to lag the shapeshift.
-W.conds.bonusbar = true
+W.bonus = 1
 check(press("PAD1", true) == "/click " .. name("TopCenteredAnchorStanceBar", 8) .. " LeftButton 1", "in form, stance bar not shown yet: stance 8")
 actionBars.stanceBar.shown = true
 check(press("PAD1", true) == "/click " .. name("TopCenteredAnchorStanceBar", 8) .. " LeftButton 1", "stance shown: stance 8")
@@ -391,6 +399,16 @@ hold("PADLTRIGGER")
 check(press("PAD1", true):find("LeftCenteredAnchorLeftBar", 1, true), "page 2 in form: the left bar")
 onPage("leftBar", 1)
 check(press("PAD1", true) == "/click " .. name("TopCenteredAnchorStanceBar", 8) .. " LeftButton 1", "back on page 1: stance 8")
+check(W.conds.bonusbar == nil, "Forever's bare [bonusbar] is false in the form: the offset decided")
+-- A macro in a stance slot fires as that slot (11.0.2 drops a /click of a macro button): the stance button's ID is its
+-- storage slot.
+local stance8 = actionBars.stanceBar.actionButtons[8]
+stance8.id, slots[300] = 300, { kind = "macro", id = 2, name = "Heal" }
+check(press("PAD1", true) == "use 300" and frames.ForeverControllerTweaksFaceBottom.attrs.checkmouseovercast == true, "a macro in the stance slot: fired as its action slot")
+stance8.id, slots[300] = nil, nil
+W.bonus = 0
+W.conds.bonusbar = true
+check(press("PAD1", true):find("LeftCenteredAnchorLeftBar", 1, true), "offset 0: the left bar, whatever [bonusbar] says")
 W.conds.bonusbar = nil
 check(press("PAD1", true):find("LeftCenteredAnchorLeftBar", 1, true), "out of form, bar still drawn: left bar")
 actionBars.stanceBar.shown = false
@@ -399,12 +417,12 @@ W.combat = false
 GamepadActionBarBindingUtil = nil
 ns.Fire("GAMEPAD_STANCE_BAR_OVERRIDE_CHANGED")
 W.combat = true
-W.conds.bonusbar = true
+W.bonus = 1
 check(press("PAD1", true):find("LeftCenteredAnchorLeftBar", 1, true), "no page, stance hidden: left bar")
 actionBars.stanceBar.shown = true
 check(press("PAD1", true) == "/click " .. name("TopCenteredAnchorStanceBar", 8) .. " LeftButton 1", "no page, stance shown: stance 8")
 actionBars.stanceBar.shown = false
-W.conds.bonusbar = nil
+W.bonus = 0
 hold()
 onPage("leftBar", nil)
 W.combat = false
@@ -428,7 +446,7 @@ hold("PADRTRIGGER")
 press("PAD1", true)
 check(opened[1] == "_open:1", "out of form: RT + A opens the ring")
 press("PAD1", false)
-W.conds.bonusbar = true
+W.bonus = 1
 check(press("PAD1", true) == "/click " .. name("TopCenteredAnchorStanceBar", 8) .. " LeftButton 1", "in form, stance bar hidden: stance 8, not the ring or the right bar")
 check(press("PAD1", false) == "/click " .. name("TopCenteredAnchorStanceBar", 8) .. " LeftButton", "in form: release on stance 8")
 onPage("rightBar", 2)
@@ -436,7 +454,7 @@ opened = {}
 press("PAD1", true)
 check(opened[1] == "_open:1", "in form on page 2: the ring")
 press("PAD1", false)
-W.conds.bonusbar = nil
+W.bonus = 0
 hold()
 W.combat = false
 onPage("rightBar", nil)
@@ -446,14 +464,81 @@ GamepadActionBarBindingUtil = nil
 W.cvars.GamepadStanceBarOverride = "2"
 ns.Fire("FCT_LAYOUT_CHANGED", "layout")
 
--- Unresolvable stance bar (unprotected button): face keys native while [bonusbar].
+-- Routed cells per crossbar page (1.5.5): RT + Up holds a ring on page 2 and Jump on page 3, nothing on page 1. The
+-- press reads the page from the right bar's own Up button (Blizzard re-IDs it per page), in combat too; a page
+-- without an entry, or no page found (the special page), fires the native slot.
+local RIGHT = "RightCenteredAnchorRightBar"
+local paged = ns.Cells.Paged
+check(paged("DU", "T") and paged("DU", "R") and paged("FB", "L") and paged("FT", "B"), "cells with a crossbar slot are paged")
+check(not paged("FB", "T") and not paged("FT", "T") and not paged("L3", "R") and not paged("R3", "T") and not paged("P1", "L") and not paged("P4", "B") and not paged("XX", "T"), "reserved face slots, stick presses, paddles: page-less")
+opened = {}
+ns.Rings = { Get = function(id) return (id == 1 or id == 2) and {} end, Frame = function() return ringFrame end, HealerRing = function() end }
+GamepadActionBarBindingUtil = PAGE_UTIL
+onPage("rightBar", 1)
+assert(ns.Face.SetCellEntry("DU", "R", { id = "ring:2", name = "Pots", kind = "ring" }, 2))
+assert(ns.Face.SetCellEntry("DU", "R", { id = "face:jump", name = "Jump", kind = "face" }, 3))
+local upRouter, upRight = frames.ForeverControllerTweaksDpadUp, actionBars.rightBar.actionButtons[2]
+check(upRouter.attrs["ps-ring-right-2"] == 2 and upRouter.attrs["ps-click-right-3"] == name(TOP, 8) and upRouter.attrs["ps-ring-right"] == nil and upRouter.attrs["ps-ring-right-1"] == nil, "per-page router attributes, none page-less")
+check(upRouter.attrs["ps-page-right-2"] == PAGE_UTIL.GetGamepadStorageSlotIndexFromPageAndPageUnitSlotID(2, 18), "page 2's storage slot of the right Up button")
+W.combat = true
+hold("PADRTRIGGER")
+check(press("PADDUP", true) == "/click " .. name(RIGHT, 2) .. " LeftButton 1" and not opened[1], "page 1, empty: the native right Up slot")
+press("PADDUP", false)
+onPage("rightBar", 2)
+press("PADDUP", true)
+check(opened[1] == "_open:2" and upRouter.attrs["ps-curring"] == 2 and ns.Face.Pressed("DU", "R"), "page 2 in combat: its ring")
+press("PADDUP", false)
+onPage("rightBar", 3)
+check(press("PADDUP", true) == "/click " .. name(TOP, 8) .. " LeftButton 1" and upRouter.attrs["ps-curring"] == nil, "page 3: its Jump")
+press("PADDUP", false)
+onPage("rightBar", nil)
+check(press("PADDUP", true) == "/click " .. name(RIGHT, 2) .. " LeftButton 1", "no page found: native")
+press("PADDUP", false)
+hold()
+-- The catcher stays over the cell while any page has an entry; its click wrap takes the page its slot shows.
+local upCatcherR = ns.Face.Catcher("DU", "R")
+local function clickCatcher(c)
+	local was = W.secure
+	W.secure = true
+	run(c.wrap.header.env, "self,button,down", c.wrap.pre, c, "LeftButton", true)
+	W.secure = was
+	return c.attrs
+end
+check(upCatcherR and upCatcherR.parent == upRight and upCatcherR.attrs["ps-paged"] and upCatcherR.attrs.clickbutton == upRight, "one catcher for the paged cell, clicking through to its slot")
+onPage("rightBar", 1)
+check(clickCatcher(upCatcherR).type == "click", "page 1 click: the native slot")
+onPage("rightBar", 3)
+check(clickCatcher(upCatcherR).type == "macro" and upCatcherR.attrs.macrotext == both(name(TOP, 8)), "page 3 click: Jump")
+onPage("rightBar", 2)
+check(clickCatcher(upCatcherR).type == nil and upCatcherR.attrs.macrotext == nil, "page 2 click: a ring opens from the pad only, as before")
+W.combat = false
+-- Markers and the panel read the page shown; a page given back leaves the others.
+GamepadMainActionBarFrame.PageUnit.GetCurrentPage = function() return 2 end
+check(ns.Face.CellEntry("DU", "R").id == "ring:2" and ns.Face.CellEntry("DU", "R", 3).id == "face:jump" and ns.Face.CellEntry("DU", "R", 1) == nil and ns.Face.AnyEntry("DU", "R"), "CellEntry: the page shown, or the one asked")
+GamepadMainActionBarFrame.PageUnit.GetCurrentPage = function() return 4 end
+check(ns.Face.ShownPage() == nil and ns.Face.CellEntry("DU", "R") == nil, "special page: no page, no paged entry")
+GamepadMainActionBarFrame.PageUnit.GetCurrentPage = nil
+assert(ns.Face.SetCellEntry("DU", "R", nil, 2))
+check(ns.Face.CellEntry("DU", "R", 3).id == "face:jump" and upRouter.attrs["ps-ring-right-2"] == nil, "page 2 given back, page 3 kept")
+-- A page-less cell ignores the page it was edited on.
+assert(ns.Face.SetCellEntry("FB", "T", { id = "face:jump", name = "Jump", kind = "face" }, 2))
+check(ns.db.chars["Player-0-Ann"].cells["054c/0ce6"].FB.T.id == "face:jump" and ns.Face.CellEntry("FB", "T", 3).id == "face:jump", "reserved face slot: one entry for every page")
+assert(ns.Face.SetCellEntry("FB", "T", nil))
+assert(ns.Face.SetCellEntry("DU", "R", nil, 3))
+check(ns.db.chars["Player-0-Ann"].cells["054c/0ce6"].DU == nil and not ns.Face.AnyEntry("DU", "R"), "all pages empty: the row dropped")
+onPage("rightBar", nil)
+ns.Rings = nil
+GamepadActionBarBindingUtil = nil
+ns.Fire("FCT_LAYOUT_CHANGED", "layout")
+
+-- Unresolvable stance bar (unprotected button): face keys native while [bonusbar:1/2/3/4/5].
 for _, b in ipairs(actionBars.stanceBar.actionButtons) do b.protected = false end
 ns.Fire("GAMEPAD_STANCE_BAR_OVERRIDE_CHANGED")
 W.combat = true
 check(count() == 2, "unresolved stance, no bonus bar: routed")
-cond("bonusbar", true)
+form(true)
 check(count() == 0, "unresolved stance + bonus bar: native")
-cond("bonusbar", false)
+form(false)
 check(count() == 2, "bonus bar gone: routed")
 W.combat = false
 for _, b in ipairs(actionBars.stanceBar.actionButtons) do b.protected = true end
@@ -631,8 +716,11 @@ check(not noBind and bindWhy == "needs a key binding" and ns.Face.CellEntry("FB"
 local refused, why = ns.Face.SetCellEntry("FB", "L", { id = "spell:133", name = "Fireball", kind = "spell" })
 check(not refused and why:find("crossbar slot") and ns.Face.CellEntry("FB", "L") == nil, "slot entry refused by the router")
 
+-- A cell with a crossbar slot holds its entry per page; the router finds the page from the layer's native button.
+GamepadActionBarBindingUtil = PAGE_UTIL
+for _, key in ipairs({ "topBar", "leftBar", "rightBar", "bottomBar" }) do onPage(key, 1) end
 assert(ns.Face.SetCellEntry("DU", "L", { id = "face:jump", name = "Jump", icon = 1, kind = "face" }))
-check(lastDebug():find("DU(PADDUP, slot 2) PADDUP/L=Jump", 1, true), "debug line per routed key")
+check(lastDebug():find("DU(PADDUP, slot 2) PADDUP/L@1=Jump", 1, true), "debug line per routed key, page 1 only")
 check(W.bindings.PADDUP and W.bindings.PADDUP.click == "ForeverControllerTweaksDpadUp:LeftButton", "D-pad up bound to its router")
 check(ns.Face.CellEntry("DU", "L").kind == "face" and ns.Face.CellEntry("DU", "R") == nil, "CellEntry")
 check(not W.bindings.PADDDOWN and not W.bindings.PADDLEFT, "other D-pad keys stay native")
@@ -645,7 +733,7 @@ hold("PADRTRIGGER")
 check(press("PADDUP", true) == "/click " .. name("RightCenteredAnchorRightBar", 2) .. " LeftButton 1", "R2 + up -> native right slot 2")
 hold("PADLTRIGGER", "PADRTRIGGER")
 check(press("PADDUP", true) == "/click " .. name("BottomCenteredAnchorBottomBar", 2) .. " LeftButton 1", "L2+R2 + up -> native bottom slot 2")
-check(ns.Face.State():find("PADDUP/L=Jump", 1, true), "State lists the cell")
+check(ns.Face.State():find("PADDUP/L@1=Jump", 1, true), "State lists the cell and its page")
 
 -- Pressed: true while the key is held and only on the layer its press went to.
 hold("PADLTRIGGER")
@@ -700,6 +788,26 @@ check(press("PAD4", true) == "/click " .. name(TOP, 8) .. " LeftButton 1", "L2 +
 hold()
 local ySlot = ns.Face.Slot("FT", "T")
 check(press("PAD4", true) == "use " .. ySlot and press("PAD4", false) == "release " .. ySlot, "Y base keeps its entry")
+-- Window open: the router lets go of every key, but Face.planKeys keeps the keys it would route and the shadow slots
+-- stay, so Glyphs keeps drawing the bindings; the header's state driver still says when a vehicle takes the bar.
+local header = frames.ForeverControllerTweaksFaceHeader
+check(ns.Face.planKeys[4] == "PAD4" and header.attrs["ps-key4"] == "PAD4" and ns.Face.planKeys[5] == "PADDUP", "window closed: the plan is the router's keys")
+ns.SetPanelOpen(true)
+check(count() == 0 and header.attrs["ps-key4"] == nil and header.attrs["ps-key5"] == nil and not header.attrs["ps-enabled"], "window open: no router keys")
+check(topRouter.attrs["ps-action-top"] == nil and topRouter.attrs["ps-key"] == nil, "window open: Y's router aims at nothing")
+check(ns.Face.planKeys[4] == "PAD4" and ns.Face.planKeys[5] == "PADDUP" and ns.Face.Slot("FT", "T") == ySlot, "window open: the plan and Y's shadow slot stay")
+assert(ns.Face.SetCellEntry("FR", "T", { id = "face:jump", name = "Jump" }))
+check(ns.Face.planKeys[2] == "PAD2" and header.attrs["ps-key2"] == nil, "window open: an edit joins the plan, still unrouted")
+assert(ns.Face.SetCellEntry("FR", "T", nil))
+check(ns.Face.planKeys[2] == nil, "window open: a cleared cell leaves the plan")
+check(header.attrs["state-face"] == "routed", "window open: the state reads routed")
+W.combat = true
+cond("vehicleui", true)
+check(header.attrs["state-face"] == "native", "window open in a vehicle: the state reads native")
+cond("vehicleui", false)
+W.combat = false
+ns.SetPanelOpen(false)
+check(header.attrs["ps-key4"] == "PAD4" and topRouter.attrs["ps-action-top"] == ySlot and count() > 0, "window closed: routed again")
 hold("PADRTRIGGER")
 check(press("PAD4", true) == "/click " .. name("RightCenteredAnchorRightBar", 6) .. " LeftButton 1", "R2 + Y stays native")
 assert(ns.Face.SetCellEntry("DD", "T", { id = "face:interact", name = "Interact" }))
@@ -724,13 +832,15 @@ check(press("PADDDOWN", true) == "/click " .. name("RightCenteredAnchorRightBar"
 check(press("PADDDOWN", false) == "/click " .. name("RightCenteredAnchorRightBar", 4) .. " LeftButton", "spell release on the native button")
 hold("PADLTRIGGER", "PADRTRIGGER")
 check(press("PADDDOWN", true) == "/click " .. name("BottomCenteredAnchorBottomBar", 4) .. " LeftButton 1", "an empty slot (ID 0): the native button")
--- A face action routed on the macro's layer wins over the slot under it.
+-- A face action routed on the macro's layer wins over the slot under it, which that page gives up.
+onPage("leftBar", 1)
+slots[leftDown.id] = { kind = "macro", id = 2, name = "Heal" }
 assert(ns.Face.SetCellEntry("DD", "L", { id = "face:jump", name = "Jump" }))
 hold("PADLTRIGGER")
-check(press("PADDDOWN", true) == "/click " .. name(TOP, 8) .. " LeftButton 1", "a routed cell on that layer still wins")
+check(slots[leftDown.id] == nil and press("PADDDOWN", true) == "/click " .. name(TOP, 8) .. " LeftButton 1", "a routed cell on that layer still wins")
 assert(ns.Face.SetCellEntry("DD", "L", nil))
 -- A face button's modified layer has the same native replay.
-actionBars.leftBar.actionButtons[6].id, slots[262] = 262, { kind = "macro", id = 2, name = "Heal" }
+slots[actionBars.leftBar.actionButtons[6].id] = { kind = "macro", id = 2, name = "Heal" }
 check(press("PAD4", true) == "/click " .. name(TOP, 8) .. " LeftButton 1", "L2 + Y: its routed Jump")
 actionBars.leftBar.actionButtons[8].id, slots[264] = 264, { kind = "macro", id = 2, name = "Heal" }
 check(press("PAD1", true) == "use 264", "L2 + A, a macro under a moved face: its action slot")
@@ -740,15 +850,17 @@ hold()
 W.cvars.GamepadStanceBarOverride = "2"
 ns.Fire("GAMEPAD_STANCE_BAR_OVERRIDE_CHANGED")
 W.combat = true
-cond("bonusbar", true)
+form(true)
 actionBars.stanceBar.shown = true
 hold("PADLTRIGGER")
 actionBars.stanceBar.actionButtons[2].id, slots[2] = 2, { kind = "macro", id = 2, name = "Heal" }
-check(press("PADDUP", true) == "/click " .. name("TopCenteredAnchorStanceBar", 2) .. " LeftButton 1", "stance shown: the stance slot wins")
+check(press("PADDUP", true) == "use 2", "stance shown: the stance slot wins, its macro fired as its action slot")
 actionBars.stanceBar.actionButtons[2].id, slots[2] = nil, nil
 actionBars.stanceBar.shown = false
-check(press("PADDUP", true) == "/click " .. name(TOP, 8) .. " LeftButton 1", "stance hidden: the cell again")
-cond("bonusbar", false)
+-- Its page is known (the left bar shows page 1), so a hidden stance bar still takes the layer, as Blizzard decides.
+check(press("PADDUP", true) == "/click " .. name("TopCenteredAnchorStanceBar", 2) .. " LeftButton 1", "stance hidden, on its page: still the stance slot")
+form(false)
+check(press("PADDUP", true) == "/click " .. name(TOP, 8) .. " LeftButton 1", "stance gone: the cell again")
 
 -- In combat nothing changes; nil gives the cells back.
 check(not ns.Face.SetCellEntry("DU", "L", nil), "combat: refused")
@@ -770,11 +882,14 @@ local backSlot = 181 + 32 + 8 + 7
 W.slots[backSlot] = { kind = "macro", id = #macros, name = "PS:Back" }
 ns.db.chars["Player-0-Ann"].cells["054c/0ce6"].DD = { L = { id = "game:inspect", name = "Inspect", kind = "game" } }
 ns.db.chars["Player-0-Ann"].legacyFaceDone = nil
+onPage("leftBar", 2)
 ns.Fire("PLAYER_ENTERING_WORLD")
+-- Gives a cell back on every page.
+local function clearCell(code, layer) for page = 1, 3 do assert(ns.Face.SetCellEntry(code, layer, nil, page)) end end
 local function hasMacro(macroName)
 	for _, m in ipairs(macros) do if m[1] == macroName then return true end end
 end
-check(ns.Face.CellEntry("FR", "L").id == "face:back" and ns.Face.CellEntry("FR", "L").kind == "face", "page 2 L2 + Circle macro slot -> routed Back cell")
+check(ns.Face.CellEntry("FR", "L", 2).id == "face:back" and ns.Face.CellEntry("FR", "L", 2).kind == "face" and ns.Face.CellEntry("FR", "L", 1) == nil, "page 2 L2 + Circle macro slot -> routed Back cell on page 2")
 check(W.slots[backSlot] == nil and not hasMacro("PS:Back") and ns.db.macros["PS:Back"] == nil, "slot cleared, PS:Back deleted")
 check(ns.Face.CellEntry("DD", "L").id == "face:inspect" and ns.Face.CellEntry("DD", "L").kind == "face", "old cell id -> the face action")
 check(ns.db.chars["Player-0-Ann"].legacyFaceDone, "done once per character")
@@ -790,8 +905,8 @@ W.slots[backSlot] = { kind = "spell", id = 133 }
 ns.Fire("PLAYER_ENTERING_WORLD")
 check(W.slots[backSlot].id == 133, "migration doesn't run again")
 W.slots[backSlot] = nil
-assert(ns.Face.SetCellEntry("FR", "L", nil))
-assert(ns.Face.SetCellEntry("DD", "L", nil))
+clearCell("FR", "L")
+clearCell("DD", "L")
 
 -- An unregistered PS:Back from a build before the registry (body "/click <Back>", a release Back ignores): adopted
 -- because the addon wrote it word for word, then moved and deleted like a registered one.
@@ -799,15 +914,15 @@ macros[#macros + 1] = { "PS:Back", 1, "/click " .. name(TOP, 7) }
 W.slots[backSlot] = { kind = "macro", id = #macros, name = "PS:Back" }
 ns.db.chars["Player-0-Ann"].legacyFaceDone = nil
 ns.Fire("PLAYER_ENTERING_WORLD")
-check(ns.Face.CellEntry("FR", "L").id == "face:back" and W.slots[backSlot] == nil and not hasMacro("PS:Back") and ns.db.macros["PS:Back"] == nil, "old-build PS:Back: adopted, routed, deleted")
-assert(ns.Face.SetCellEntry("FR", "L", nil))
+check(ns.Face.CellEntry("FR", "L", 2).id == "face:back" and W.slots[backSlot] == nil and not hasMacro("PS:Back") and ns.db.macros["PS:Back"] == nil, "old-build PS:Back: adopted, routed, deleted")
+clearCell("FR", "L")
 -- A PS:Back with the player's own text is theirs: left on its slot, and they're told in chat.
 macros[#macros + 1] = { "PS:Back", 1, "/stopcasting\n/cleartarget" }
 W.slots[backSlot] = { kind = "macro", id = #macros, name = "PS:Back" }
 ns.db.chars["Player-0-Ann"].legacyFaceDone = nil
 local said = #printed
 ns.Fire("PLAYER_ENTERING_WORLD")
-check(W.slots[backSlot].name == "PS:Back" and hasMacro("PS:Back") and ns.db.macros["PS:Back"] == nil and ns.Face.CellEntry("FR", "L") == nil, "foreign PS:Back: untouched, not registered")
+check(W.slots[backSlot].name == "PS:Back" and hasMacro("PS:Back") and ns.db.macros["PS:Back"] == nil and ns.Face.CellEntry("FR", "L", 2) == nil, "foreign PS:Back: untouched, not registered")
 check(#printed == said + 1 and printed[#printed]:find("PS:Back on page 2", 1, true) and printed[#printed]:find("left as is", 1, true), "the player is told once in chat")
 ns.Fire("PLAYER_ENTERING_WORLD")
 check(#printed == said + 1, "not told again")
@@ -822,7 +937,7 @@ W.slots[backSlot] = { kind = "macro", id = #macros, name = "PS:Back" }
 ns.db.chars["Player-0-Ann"].legacyFaceDone = nil
 W.cursor = { kind = "item", id = 1 }
 ns.Fire("PLAYER_ENTERING_WORLD")
-check(W.slots[backSlot] and ns.Face.CellEntry("FR", "L").id == "face:back" and not ns.db.chars["Player-0-Ann"].legacyFaceDone, "cursor held: routed, the slot kept, not done")
+check(W.slots[backSlot] and ns.Face.CellEntry("FR", "L", 2).id == "face:back" and not ns.db.chars["Player-0-Ann"].legacyFaceDone, "cursor held: routed, the slot kept, not done")
 local realAdopt, scans = ns.Actions.AdoptLegacy, 0
 ns.Actions.AdoptLegacy = function(...) scans = scans + 1 return realAdopt(...) end
 said = #printed
@@ -832,10 +947,11 @@ W.cursor = nil
 ns.Fire("PLAYER_ENTERING_WORLD")
 check(scans == 0 and W.slots[backSlot] == nil and not hasMacro("PS:Back") and ns.db.chars["Player-0-Ann"].legacyFaceDone, "cursor free: only that slot cleared, done")
 ns.Actions.AdoptLegacy = realAdopt
-assert(ns.Face.SetCellEntry("FR", "L", nil))
+clearCell("FR", "L")
+onPage("leftBar", 1)
 
--- A routed entry empties the cell's storage slot on the page being edited, whatever it holds; on the other pages only
--- The addon's own FCT: macros go (through the registry), never the player's actions.
+-- A routed entry empties the cell's storage slot on the page being edited, whatever it holds; the other pages keep
+-- their slots, the addon's own FCT: macros too (they are those pages' actions now).
 local function storage(page, layer, key) return 181 + (page - 1) * 32 + ({ T = 0, L = 8, R = 16, B = 24 })[layer] + key end
 local under1, under2, under3 = storage(1, "L", 7), storage(2, "L", 7), storage(3, "L", 7)
 local back = ns.Actions.Find("face:back")
@@ -847,16 +963,18 @@ W.cursor = { kind = "spell", id = 133 }
 check(not ns.Face.SetCellEntry("FR", "L", back, 1) and ns.Face.CellEntry("FR", "L") == nil and W.slots[under1] and W.slots[under2], "cursor busy: refused, nothing changed")
 W.cursor = nil
 assert(ns.Face.SetCellEntry("FR", "L", back, 1))
-check(W.slots[under1] == nil and W.slots[under2] == nil and not hasMacro("FCT:ClearTarget"), "routed Back on page 1: page 1 emptied, FCT:ClearTarget on page 2 deleted")
+check(W.slots[under1] == nil and W.slots[under2] and hasMacro("FCT:ClearTarget"), "routed Back on page 1: page 1 emptied, FCT:ClearTarget on page 2 kept")
 check(W.slots[under3] and W.slots[under3].id == 133, "the player's spell on page 3 kept")
+check(ns.Face.CellEntry("FR", "L", 1).id == "face:back" and ns.Face.CellEntry("FR", "L", 2) == nil and ns.Face.CellEntry("FR", "L", 3) == nil, "the entry is page 1's only")
+-- Editing page 2 leaves pages 1 and 3.
+local inspect = ns.Actions.Find("face:inspect")
+assert(ns.Face.SetCellEntry("FR", "L", inspect, 2))
+check(W.slots[under2] == nil and not hasMacro("FCT:ClearTarget") and W.slots[under3].id == 133, "page 2: its slot emptied (the FCT: macro deleted), page 3 kept")
+check(ns.Face.CellEntry("FR", "L", 1).id == "face:back" and ns.Face.CellEntry("FR", "L", 2).id == "face:inspect" and ns.Face.CellEntry("FR", "L", 3) == nil, "pages 1 and 3 unchanged")
+assert(ns.Face.SetCellEntry("FR", "L", nil, 2))
+check(ns.Face.CellEntry("FR", "L", 1).id == "face:back" and ns.Face.CellEntry("FR", "L", 2) == nil, "page 2 given back, page 1 kept")
 assert(ns.Face.SetCellEntry("FR", "L", nil))
-check(W.slots[under1] == nil and W.slots[under3].id == 133, "given back: page 1 stays empty, page 3 has its spell again")
--- Without a page (older callers) only the addon's own macros go.
-W.slots[under1] = { kind = "spell", id = 133 }
-assert(ns.Actions.Assign(under2, ns.Actions.Find("game:cleartarget")))
-assert(ns.Face.SetCellEntry("FR", "L", back))
-check(W.slots[under1].id == 133 and W.slots[under2] == nil and not hasMacro("FCT:ClearTarget"), "no page: the player's spell kept, the FCT: macro deleted")
-assert(ns.Face.SetCellEntry("FR", "L", nil))
+check(W.slots[under1] == nil and W.slots[under3].id == 133 and (ns.db.chars["Player-0-Ann"].cells["054c/0ce6"].FR or {}).L == nil, "given back: page 1 stays empty, page 3 has its spell, the page list dropped")
 W.slots[under1], W.slots[under3] = nil, nil
 -- The other way, as the picker does it: the slot is assigned, then the routed cell given back; the slot keeps it.
 assert(ns.Face.SetCellEntry("FR", "L", back, 1))
@@ -1022,19 +1140,19 @@ W.cvars.GamepadStanceBarOverride = "2"
 for _, b in ipairs(actionBars.stanceBar.actionButtons) do b.protected = false end
 ns.Fire("GAMEPAD_STANCE_BAR_OVERRIDE_CHANGED")
 W.combat = true
-cond("bonusbar", true)
+form(true)
 actionBars.stanceBar.shown = true
 hold("PADLTRIGGER")
-check(W.bindings.PADPADDLE1 == nil, "unresolved stance bar while [bonusbar]: every routed key native, paddles too")
-cond("bonusbar", false)
+check(W.bindings.PADPADDLE1 == nil, "unresolved stance bar in a form: every routed key native, paddles too")
+form(false)
 W.combat = false
 for _, b in ipairs(actionBars.stanceBar.actionButtons) do b.protected = true end
 ns.Fire("GAMEPAD_STANCE_BAR_OVERRIDE_CHANGED")
 W.combat = true
-cond("bonusbar", true)
+form(true)
 check(press("PADPADDLE1", true) == "/click " .. name(TOP, 5) .. " LeftButton 1", "stance shown on LT's layer: the paddle keeps its cell")
 actionBars.stanceBar.shown = false
-cond("bonusbar", false)
+form(false)
 -- Vehicles, override and possess bars and pet battles: native, in combat too.
 for _, c in ipairs({ "vehicleui", "overridebar", "possessbar", "bonusbar:5", "petbattle" }) do
 	cond(c, true)
@@ -1138,5 +1256,13 @@ assert(ns.Layout.Reset())
 W.window = nil
 tickAll()
 check(count() == 0, "reset applied once the pad is free")
+
+-- /fct status: the stance test's inputs for testers, the bare and numbered options side by side.
+W.bonus, W.conds["bonusbar:1/2/3/4/5"], W.cvars.GamepadStanceBarOverride = 2, true, "2"
+C_ActionBar.HasBonusActionBar = function() return true end
+local said = #printed
+SlashCmdList.FOREVERCONTROLLERTWEAKS("status")
+check(printed[#printed] and printed[#printed]:find("form: GetBonusBarOffset 2, [bonusbar] nil, [bonusbar:1/2/3/4/5] on, HasBonusActionBar true, stance bar on left page 1", 1, true) and #printed > said, "status: the form line")
+W.bonus, W.conds["bonusbar:1/2/3/4/5"], C_ActionBar.HasBonusActionBar = 0, nil, nil
 
 io.stdout:write(("face_spec: %d checks passed\n"):format(checks))

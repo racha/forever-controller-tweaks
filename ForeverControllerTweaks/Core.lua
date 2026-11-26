@@ -59,7 +59,7 @@
 local addonName, ns = ...
 ForeverControllerTweaks = ns
 
-local VERSION, DEBUG_CAP = 5, 500
+local VERSION, DEBUG_CAP = 6, 500
 ns.DB_VERSION = VERSION
 local PREFIX = "|cff33ff99Controller Tweaks|r "
 
@@ -309,6 +309,68 @@ ns.On("ADDON_ACTION_FORBIDDEN", function(addon, func) ns.OnBlocked("ADDON_ACTION
 BINDING_HEADER_FOREVERCONTROLLERTWEAKS = "Forever Controller Tweaks"
 BINDING_NAME_FOREVERCONTROLLERTWEAKS_TOGGLE = "Toggle Controller Tweaks"
 
+-- Routed cells (Face.lua), cells[profileId][code][layer]: their shape, for every module that reads or carries them.
+local CELL_LAYERS = { T = true, L = true, R = true, B = true }
+-- Row codes: "face" buttons (their top-bar slot is reserved), "dpad", and "none" for the buttons without a crossbar
+-- slot (the paddles, the stick presses).
+local CELL_CODES = { FB = "face", FR = "face", FL = "face", FT = "face", DU = "dpad", DL = "dpad", DR = "dpad", DD = "dpad", P1 = "none", P2 = "none", P3 = "none", P4 = "none", L3 = "none", R3 = "none" }
+local Cells = {}
+ns.Cells = Cells
+
+function Cells.PageCount() return ns.Actions and ns.Actions.STANDARD_PAGES or 3 end
+
+-- True for a cell with a crossbar slot, whose entry is per crossbar page (1.5.5): cells[profileId][code][layer] =
+-- { [page] = entry }, a page without one nil. The cells without one (the paddles, the stick presses, the reserved
+-- top-bar face slots) keep the entry itself, one for every page. The row stays keyed by layer, so every reader still
+-- finds a cell by code and layer, and a page list has no id, so it is never taken for an entry: readers, the claim's
+-- fill-only merge (page by page) and sync tell the two apart by shape. A static rule (no game bars needed), so the
+-- migration, sync and a machine without the Gamepad UI agree.
+function Cells.Paged(code, layer)
+	local kind = CELL_CODES[code]
+	if not (kind and CELL_LAYERS[layer]) or kind == "none" then return false end
+	return not (layer == "T" and kind == "face")
+end
+
+function Cells.IsEntry(value) return type(value) == "table" and type(value.id) == "string" end
+local isEntry = Cells.IsEntry
+
+-- fn(code, layer, entry, page) for every entry of a cells[profileId] table; page nil for a page-less one.
+function Cells.EachCell(rows, fn)
+	for code, row in pairs(type(rows) == "table" and rows or NONE) do
+		for layer, value in pairs(type(row) == "table" and row or NONE) do
+			if isEntry(value) then
+				fn(code, layer, value)
+			elseif type(value) == "table" then
+				for page, entry in pairs(value) do if isEntry(entry) then fn(code, layer, entry, page) end end
+			end
+		end
+	end
+end
+
+-- Puts the one entry of each paged cell on every page, in place: the stored or wire shape (a wire entry is the id
+-- alone or a table with it) from before 1.5.5 and sync format 5. Idempotent; page-less cells are left as they are.
+-- Returns true when it changed something.
+function Cells.ExpandPages(rows)
+	local changed = false
+	for code, row in pairs(type(rows) == "table" and rows or NONE) do
+		for layer, value in pairs(type(row) == "table" and row or NONE) do
+			if Cells.Paged(code, layer) and (type(value) == "string" or isEntry(value)) then
+				local pages = {}
+				for page = 1, Cells.PageCount() do
+					local copy = value
+					if type(value) == "table" then
+						copy = {}
+						for key, field in pairs(value) do copy[key] = field end
+					end
+					pages[page] = copy
+				end
+				row[layer], changed = pages, true
+			end
+		end
+	end
+	return changed
+end
+
 -- Migrations keyed by the version they upgrade to; each runs once, on a repaired db.
 local MIGRATIONS = {
 	-- 2: a pad must be confirmed before the addon writes a config for it. Raw sources learned before v2 confirm it.
@@ -332,6 +394,14 @@ local MIGRATIONS = {
 	end,
 	-- 5 (1.5.4): profiles belong to the characters (Profile.lua); a controller never picks one.
 	[5] = function(db) if ns.Profile then ns.Profile.MoveToChars(db) end end,
+	-- 6 (1.5.5): a cell with a crossbar slot holds its entry per crossbar page (Cells.Paged); the one it had goes to
+	-- every page, so nothing changes until a page is edited. Every record, claimed or not, in every profile; the
+	-- cells without a slot stay as they are. Each page gets a copy before the entry is replaced.
+	[6] = function(db)
+		for _, char in pairs(type(db.chars) == "table" and db.chars or NONE) do
+			for _, rows in pairs(type(char) == "table" and type(char.cells) == "table" and char.cells or NONE) do Cells.ExpandPages(rows) end
+		end
+	end,
 }
 
 local function copy(value)
@@ -433,7 +503,8 @@ local function stringList(value)
 	return true
 end
 
--- Drops every value that isn't a table, down to depth levels (cells[device][code][layer] is 3).
+-- Drops every value that isn't a table, down to depth levels (cells[device][code][layer] is 3; a page list's entries
+-- are checked by their readers).
 local function tablesDown(map, depth, path, fix)
 	for key, value in pairs(map) do
 		if type(value) ~= "table" then

@@ -362,9 +362,13 @@ Gear.eat = eat
 
 -- The best bag item of each kind: kinds = { kind = fits(item) }, item = { id, classID, subClassID, name, spell }. Best
 -- is the highest required level the character meets, then the higher item level. One pass serves every kind
--- (Gear.KINDS: food and drink here, potions and grenades in TweaksActions.lua).
+-- (Gear.KINDS: food and drink here, potions and grenades in TweaksActions.lua). An item the game hasn't loaded yet
+-- (no name at login) can't be told apart: it is asked for, and its arrival marks the bags dirty again.
+local loading = {}
+
 function Gear.Best(kinds)
 	local best, level = {}, call(UnitLevel, "player") or 0
+	loading = {}
 	for bag = 0, NUM_BAG_SLOTS or 4 do
 		for slot = 1, call(C_Container.GetContainerNumSlots, bag) or 0 do
 			local info = call(C_Container.GetContainerItemInfo, bag, slot)
@@ -372,6 +376,10 @@ function Gear.Best(kinds)
 			local _, _, _, _, _, classID, subClassID = call(C_Item.GetItemInfoInstant, id)
 			local name, _, _, ilvl, minLevel = call(C_Item.GetItemInfo, id)
 			local spell = classID and call(C_Item.GetItemSpell, id)
+			if id and not secret(name) and name == nil then
+				loading[id] = true
+				call(C_Item.RequestLoadItemDataByID, id)
+			end
 			local item = { id = id, classID = classID, subClassID = subClassID, name = not secret(name) and type(name) == "string" and name or "", spell = not secret(spell) and type(spell) == "string" and spell or "" }
 			minLevel, ilvl = minLevel or 0, ilvl or 0
 			for kind, fits in pairs(kinds) do
@@ -471,6 +479,12 @@ function Gear.Dirty(part)
 end
 
 local function bagsDirty() Gear.Dirty("bags") end
+-- The first arrival clears the list: the rescan asks again for any still missing, so a burst rescans once.
+ns.On("GET_ITEM_INFO_RECEIVED", function(id, ok)
+	if ok == false or not loading[id] then return end
+	loading = {}
+	bagsDirty()
+end)
 local function questDirty() Gear.Dirty("quest") end
 ns.On("PLAYER_REGEN_ENABLED", Gear.Flush)
 for _, event in ipairs({ "BAG_UPDATE_DELAYED", "PLAYER_LEVEL_UP", "PLAYER_ENTERING_WORLD" }) do ns.On(event, bagsDirty) end

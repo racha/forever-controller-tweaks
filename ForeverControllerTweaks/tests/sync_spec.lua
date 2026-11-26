@@ -227,7 +227,7 @@ do
 	local longest, joined = 0, {}
 	for i, body in ipairs(bodies) do
 		longest = math.max(longest, #body)
-		local part, total, gen, data = body:match("^#FCT4 (%d+)/(%d+) (%w+) (%S*)$")
+		local part, total, gen, data = body:match("^#FCT5 (%d+)/(%d+) (%w+) (%S*)$")
 		check("body " .. i .. " parses", tonumber(part) == i and tonumber(total) == #bodies and tonumber(gen, 36) + 1735689600 == 1795212345)
 		joined[#joined + 1] = data
 	end
@@ -297,8 +297,9 @@ do
 	for key in pairs(s) do keys[#keys + 1] = key end
 	check("no account profiles or controller picks", not Sync.Encode(keys):find("prof:") and s.map == nil)
 	local cells = s["b:Player-0-Ann:054c/0ce6"]
-	check("slim entries keep the id and flags", cells.FB.R.id == "spellgroup:Holy Light" and cells.FB.R.healer and cells.FB.R.healerLast and cells.FB.R.name == nil and cells.FB.R.kind == nil)
-	check("a plain slim entry is its id", cells.DR.T == "ring:1" and s["r:Player-0-Ann"].list[1].slots[1] == "spell:20271")
+	local holy = cells.FB.R[1]
+	check("slim entries keep the id and flags, per page", holy.id == "spellgroup:Holy Light" and holy.healer and holy.healerLast and holy.name == nil and holy.kind == nil and cells.FB.R[3].id == holy.id)
+	check("a plain slim entry is its id", cells.DR.T[2] == "ring:1" and s["r:Player-0-Ann"].list[1].slots[1] == "spell:20271")
 	check("a kind the id doesn't say is kept", s["tb:Player-0-Ann:054c/0ce6"].bars.left[1].T.kind == "game" and s["t:Player-0-Ann"].bars == nil)
 	check("no empty bindings section until it synced once", Sync.Sections({ chars = { ["Player-0-X"] = { cells = { ["054c/0ce6"] = {} } } } }, {})["b:Player-0-X:054c/0ce6"] == nil and Sync.Sections({ chars = { ["Player-0-X"] = { cells = { ["054c/0ce6"] = {} } } } }, { ["b:Player-0-X:054c/0ce6"] = "{}" })["b:Player-0-X:054c/0ce6"] ~= nil)
 end
@@ -322,8 +323,8 @@ local settledBefore
 B.ns.On("FCT_SYNC_SETTLED", function() settledBefore = B.ns.db.chars and B.ns.db.chars["Player-0-Ann"] and B.ns.db.chars["Player-0-Ann"].cells end)
 B.login()
 local bdb = B.ns.db
-local bcell = bdb.chars["Player-0-Ann"].cells["054c/0ce6"].FB.R
-check("B took the bindings", bcell.id == "spellgroup:Holy Light" and bcell.healer and bcell.healerLast)
+local bcell = bdb.chars["Player-0-Ann"].cells["054c/0ce6"].FB.R[2]
+check("B took the bindings, per page", bcell.id == "spellgroup:Holy Light" and bcell.healer and bcell.healerLast)
 check("the bindings are applied before FCT_SYNC_SETTLED", settledBefore ~= nil)
 check("B rebuilt names and icons from its catalog", bcell.name == "Holy Light" and bcell.icon == "icon-holy" and bcell.kind == "spellgroup", bcell.name)
 check("B took rings, touch, tweaks, keyboard, layout, setup", bdb.chars["Player-0-Ann"].rings.list[1].slots[3].name == "Backpack" and bdb.chars["Player-0-Ann"].touchBars["054c/0ce6"].left[1].T.kind == "game" and bdb.tweaks.lightBar == "class" and bdb.keyboard.phrases.anywhere[1] == "hi all" and bdb.chars["Player-0-Ann"].profiles["054c/0ce6"].roles.L1 == "rightmod" and bdb.devices["054c/0ce6"].roles == nil and bdb.onboarded["054c/0ce6"])
@@ -398,7 +399,7 @@ do
 	check("waiting for the choice: not in step", not C.ns.Sync.InStep())
 	C.ns.Sync.Choose(true)
 	run(1)
-	check("Use synced applied the other copy", C.ns.db.tweaks.lightBar ~= "game" and C.ns.db.chars["Player-0-Ann"].cells["054c/0ce6"].FB.R.id == "spellgroup:Holy Light")
+	check("Use synced applied the other copy", C.ns.db.tweaks.lightBar ~= "game" and C.ns.db.chars["Player-0-Ann"].cells["054c/0ce6"].FB.R[1].id == "spellgroup:Holy Light")
 	check("Use synced kept this machine's copy for Undo", C.db.sync.backup and C.db.sync.backup.s.tweaks.d.lightBar == "game")
 	check("settled after the choice", C.ns.Sync.Settled() and C.settled == 1)
 
@@ -446,7 +447,7 @@ do
 	-- The player's own FCT:Sync 3 with another body: never touched, our parts skip 3.
 	account = { { name = "FCT:Sync 3", icon = "x", body = "/say mine" } }
 	local big = settingsA()
-	for i = 1, 40 do big.chars["Player-0-Ann"].cells["054c/0ce6"]["K" .. i] = { T = { id = "spell:" .. (1000 + i), name = "S" .. i } } end
+	for i = 1, 20 do big.chars["Player-0-Ann"].cells["054c/0ce6"]["K" .. i] = { T = { id = "spell:" .. (1000 + i), name = "S" .. i } } end
 	local J = machine(big)
 	J.login()
 	run(6)
@@ -459,7 +460,7 @@ do
 	check("our parts skip 3", names["FCT:Sync 4"] and names["FCT:Sync 2"] and ourMacros() >= 3, ourMacros())
 	local K = machine({})
 	K.login()
-	check("parts are read by body, not by number", K.ns.db.chars["Player-0-Ann"].cells["054c/0ce6"].K40.T.id == "spell:1040")
+	check("parts are read by body, not by number", K.ns.db.chars["Player-0-Ann"].cells["054c/0ce6"].K20.T.id == "spell:1020")
 
 	-- A full list: no partial write, the pause says how many to free.
 	account = {}
@@ -480,7 +481,7 @@ do
 	check("the player's macros are never deleted", players == 89)
 
 	-- A newer format on the server: no apply, no write.
-	account = { { name = "FCT:Sync 1", icon = "x", body = "#FCT5 1/1 abcdef XYZ" } }
+	account = { { name = "FCT:Sync 1", icon = "x", body = "#FCT6 1/1 abcdef XYZ" } }
 	local writes = creates + edits + deletes
 	local N = machine(settingsA())
 	N.login()
@@ -524,12 +525,12 @@ do
 	local X = machine(settingsA())
 	X.login()
 	local text, held = X.ns.Sync.Export()
-	check("an export starts FCT4:", text and text:find("^FCT4:"))
+	check("an export starts FCT5:", text and text:find("^FCT5:"))
 	local plain = C_EncodingUtil.DecodeBase64(text:sub(6))
 	check("no character or realm name in an export", not plain:find("Ann") and not plain:find("Realm"))
-	check("an export holds this profile's bindings and layout, and its name", held.bindings.FB.R.healer and held.layout.roles.L1 == "rightmod" and held.layout.raw == nil and held.layout.name == X.ns.db.chars["Player-0-Ann"].profiles["054c/0ce6"].name)
+	check("an export holds this profile's bindings and layout, and its name", held.bindings.FB.R[1].healer and held.bindings.FB.R[2].healer and held.layout.roles.L1 == "rightmod" and held.layout.raw == nil and held.layout.name == X.ns.db.chars["Player-0-Ann"].profiles["054c/0ce6"].name)
 	check("a bad prefix is bad", select(2, X.ns.Sync.ReadExport("hello")) == "bad" and select(2, X.ns.Sync.ReadExport("FCT1:00ZZ")) == "bad")
-	check("a newer export is newer", select(2, X.ns.Sync.ReadExport("FCT5:ABCD")) == "newer")
+	check("a newer export is newer", select(2, X.ns.Sync.ReadExport("FCT6:ABCD")) == "newer")
 	local spaced = text:sub(1, 30) .. "\n  " .. text:sub(31, 300) .. "\t" .. text:sub(301)
 	local payload = X.ns.Sync.ReadExport(spaced)
 	check("whitespace anywhere is ignored", payload and payload.kind == "export")
@@ -549,7 +550,7 @@ do
 	Y.ns.Sync.Import(payload, { "bindings", "layout", "rings" })
 	run(1)
 	local ydb = Y.ns.db
-	check("import replaced the ticked parts", ydb.chars["Player-0-Ann"].cells["054c/0ce6"].FB.R.id == "spellgroup:Holy Light" and ydb.chars["Player-0-Ann"].cells["054c/0ce6"].FT == nil and ydb.chars["Player-0-Ann"].rings.list[1].name == "Ring 1" and ydb.chars["Player-0-Ann"].profiles["054c/0ce6"].roles.L1 == "rightmod")
+	check("import replaced the ticked parts", ydb.chars["Player-0-Ann"].cells["054c/0ce6"].FB.R[3].id == "spellgroup:Holy Light" and ydb.chars["Player-0-Ann"].cells["054c/0ce6"].FT == nil and ydb.chars["Player-0-Ann"].rings.list[1].name == "Ring 1" and ydb.chars["Player-0-Ann"].profiles["054c/0ce6"].roles.L1 == "rightmod")
 	check("import goes into this character's profile and keeps its name", ydb.chars["Player-0-Ann"].profiles["054c/0ce6"].name == "My pad" and ydb.devices["054c/0ce6"].roles == nil and ydb.profiles == nil)
 	check("import kept the raw learn data", ydb.devices["054c/0ce6"].raw.L1 == 3)
 	check("import left unticked parts alone", ydb.tweaks == nil)
@@ -588,7 +589,7 @@ do
 	local H = machine({}, { pad = "054c/0ce6" })
 	H.login()
 	local hann = H.ns.db.chars["Player-0-Ann"]
-	check("round-trip: names, layouts, the bindings of a copy", hann.profiles[copyId].name == "Couch" and hann.profiles[newId].name == "Sofa" and hann.profiles[copyId].roles.L1 == "rightmod" and hann.cells[copyId].FB.R.id == "spellgroup:Holy Light")
+	check("round-trip: names, layouts, the bindings of a copy", hann.profiles[copyId].name == "Couch" and hann.profiles[newId].name == "Sofa" and hann.profiles[copyId].roles.L1 == "rightmod" and hann.cells[copyId].FB.R[2].id == "spellgroup:Holy Light")
 	check("round-trip: the character's pick; a fresh computer makes no Default", H.ns.Profile.CurrentId() == newId and hann.profiles.p1 == nil)
 	W.server = W.server + 100
 	H.ns.Profile.Delete(copyId)
@@ -605,7 +606,7 @@ do
 end
 
 -- A format 3 set (1.5.2-1.5.3): its account profiles and controller picks are dropped, its bindings still apply and
--- get a profile of the character's; a base or backup holding them is cleaned at load; the next write is format 4.
+-- get a profile of the character's; a base or backup holding them is cleaned at load; the next write is format 5.
 do
 	account = {}
 	local m = machine({})
@@ -618,7 +619,7 @@ do
 		tweaks = { t = 10, d = { sellJunk = true } },
 	}
 	local text = Sync.Pack({ v = 3, db = 4, at = W.server - 50, by = "old", host = "Old Mac", pads = {}, s = sections })
-	for i, body in ipairs(Sync.Bodies(text, W.server - 50)) do account[#account + 1] = { name = "FCT:Sync " .. i, icon = "x", body = (body:gsub("^#FCT4", "#FCT3")) } end
+	for i, body in ipairs(Sync.Bodies(text, W.server - 50)) do account[#account + 1] = { name = "FCT:Sync " .. i, icon = "x", body = (body:gsub("^#FCT5", "#FCT3")) } end
 	local remote = Sync.ReadRemote()
 	check("format 3: prof: and map dropped on read, bindings kept", remote and remote.s["prof:p7"] == nil and remote.s.map == nil and remote.s["b:Player-0-Ann:p7"] and remote.s.tweaks)
 	local F = machine({ version = 5, sync = { base = { ["prof:p7"] = "x", map = "y", tweaks = "z" }, stamps = { ["prof:p7"] = 1, map = 1 }, marks = { map = 1 }, backup = { at = 1, s = { ["prof:p7"] = { d = {} } } } } })
@@ -630,7 +631,69 @@ do
 	run(40)
 	local fmt = account[1] and account[1].body:match("^#FCT(%d+)")
 	local again = Sync.ReadRemote()
-	check("written again in format 4, with cp: and without prof: or map", fmt == "4" and again and again.s["cp:Player-0-Ann"] and again.s["prof:p7"] == nil and again.s.map == nil, fmt)
+	check("written again in format 5, with cp: and without prof: or map", fmt == "5" and again and again.s["cp:Player-0-Ann"] and again.s["prof:p7"] == nil and again.s.map == nil, fmt)
+	W.timers, W.tickers = {}, {}
+end
+
+-- Format 5 (1.5.5): a cell with a crossbar slot is a page list. A format 4 set (1.5.4) holds one entry there: read as
+-- every page's, so it merges with this machine's migrated cells like with like; page-less cells stay one entry.
+do
+	account = {}
+	local m = machine({})
+	local Sync = m.ns.Sync
+	local cellsV4 = { DU = { L = "ring:1", T = { id = "face:jump", healer = true } }, FB = { T = "spell:20271" }, P1 = { R = "spell:9" }, L3 = { B = "ring:1" } }
+	local sections = { ["b:Player-0-Ann:p7"] = { t = 10, d = cellsV4 }, tweaks = { t = 10, d = { sellJunk = true } } }
+	local text = Sync.Pack({ v = 4, db = 5, at = W.server - 50, by = "old", host = "Old Mac", pads = {}, s = sections })
+	for i, body in ipairs(Sync.Bodies(text, W.server - 50)) do account[#account + 1] = { name = "FCT:Sync " .. i, icon = "x", body = (body:gsub("^#FCT5", "#FCT4")) } end
+	local remote = Sync.ReadRemote()
+	local rd = remote and remote.s["b:Player-0-Ann:p7"].d
+	check("format 4 read: a paged cell's entry on every page", rd and rd.DU.L[1] == "ring:1" and rd.DU.L[3] == "ring:1" and rd.DU.T[2].healer)
+	check("format 4 read: page-less cells as they were", rd.FB.T == "spell:20271" and rd.P1.R == "spell:9" and rd.L3.B == "ring:1")
+	local F = machine({ version = 6 })
+	F.login()
+	local fcells = F.ns.db.chars["Player-0-Ann"].cells.p7
+	check("format 4 put: per page here", fcells.DU.L[2].id == "ring:1" and fcells.DU.T[3].id == "face:jump" and fcells.DU.T[3].healer and fcells.FB.T.id == "spell:20271" and fcells.P1.R.id == "spell:9")
+	run(40)
+	check("written again in format 5", account[1] and account[1].body:match("^#FCT(%d+)") == "5")
+	local again = Sync.ReadRemote()
+	local ad = again and again.s["b:Player-0-Ann:p7"].d
+	check("format 5 round trip: page lists on the wire, page-less entries alone", ad and ad.DU.L[1] == "ring:1" and ad.DU.L[2] == "ring:1" and ad.FB.T == "spell:20271")
+	W.timers, W.tickers = {}, {}
+
+	-- A machine updated from 1.5.4 that agreed with that set: its base expands as its cells did, so nothing conflicts.
+	account = {}
+	for i, body in ipairs(Sync.Bodies(text, W.server - 50)) do account[#account + 1] = { name = "FCT:Sync " .. i, icon = "x", body = (body:gsub("^#FCT5", "#FCT4")) } end
+	local fat = { DU = { L = { id = "ring:1", name = "Open ring: Ring 1", kind = "ring" }, T = { id = "face:jump", name = "Jump", kind = "face", healer = true } }, FB = { T = { id = "spell:20271", name = "Judgement", kind = "spell" } }, P1 = { R = { id = "spell:9", name = "S", kind = "spell" } }, L3 = { B = { id = "ring:1", name = "Open ring: Ring 1", kind = "ring" } } }
+	local old = { version = 5, chars = { ["Player-0-Ann"] = { profile = "p7", profiles = { p7 = { name = "Old", roles = {}, face = {} } }, cells = { p7 = fat } } }, tweaks = { sellJunk = true },
+		sync = { base = { ["b:Player-0-Ann:p7"] = Sync.Encode(cellsV4), tweaks = Sync.Encode({ sellJunk = true }) }, stamps = { ["b:Player-0-Ann:p7"] = 10, tweaks = 10 }, marks = {}, pads = {}, wrote = { at = W.server - 50 } } }
+	local U = machine(old)
+	U.login()
+	local ubase = U.ns.Sync.Decode(U.db.sync.base["b:Player-0-Ann:p7"])
+	check("an old base: expanded as the cells were", ubase.DU.L[1] == "ring:1" and ubase.DU.L[3] == "ring:1" and ubase.FB.T == "spell:20271")
+	check("no question, nothing lost: every page has the old entry", not U.ns.Sync.Choice() and U.ns.db.chars["Player-0-Ann"].cells.p7.DU.L[2].id == "ring:1" and U.ns.db.chars["Player-0-Ann"].cells.p7.P1.R.id == "spell:9")
+	W.timers, W.tickers = {}, {}
+
+	-- Different entries per page go out and come back as they are.
+	account = {}
+	local A2 = machine(settingsA())
+	A2.login()
+	local acells = A2.ns.db.chars["Player-0-Ann"].cells["054c/0ce6"]
+	acells.DR.T[2] = { id = "face:jump", name = "Jump", kind = "face" }
+	acells.DR.T[3] = nil
+	A2.ns.Sync.Check()
+	run(40)
+	local B2 = machine({})
+	B2.login()
+	local bdr = B2.ns.db.chars["Player-0-Ann"].cells["054c/0ce6"].DR.T
+	check("per-page round trip: each page its own entry, an empty page empty", bdr[1].id == "ring:1" and bdr[2].id == "face:jump" and bdr[3] == nil)
+	W.timers, W.tickers = {}, {}
+
+	-- A format 4 export still imports: its bindings go to every page.
+	local X = machine(settingsA())
+	X.login()
+	local packed = X.ns.Sync.Pack({ v = 4, db = 5, kind = "export", at = W.server, s = { bindings = { DD = { R = "ring:1" }, FT = { T = "spell:9" } } } })
+	local payload = X.ns.Sync.ReadExport("FCT4:" .. packed)
+	check("format 4 export: read, the paged cell on every page", payload and payload.s.bindings.DD.R[2] == "ring:1" and payload.s.bindings.FT.T == "spell:9")
 	W.timers, W.tickers = {}, {}
 end
 
@@ -648,7 +711,7 @@ do
 	local m = machine({})
 	local Sync = m.ns.Sync
 	local text = Sync.Pack({ v = 1, db = 2, at = W.server - 50, by = "old", host = "Old Mac", pads = { ["054c/0ce6"] = "DualSense Wireless Controller" }, s = sections })
-	for i, body in ipairs(Sync.Bodies(text, W.server - 50)) do account[#account + 1] = { name = "FCT:Sync " .. i, icon = "x", body = (body:gsub("^#FCT4", "#FCT1")) } end
+	for i, body in ipairs(Sync.Bodies(text, W.server - 50)) do account[#account + 1] = { name = "FCT:Sync " .. i, icon = "x", body = (body:gsub("^#FCT5", "#FCT1")) } end
 	local remote = Sync.ReadRemote()
 	check("format 1: no account profile or pick made", remote and remote.s["prof:054c/0ce6"] == nil and remote.s.map == nil and remote.s["dev:054c/0ce6"])
 	check("format 1: bindings keep their key", remote.s["b:Player-0-Ann:054c/0ce6"] ~= nil)
@@ -668,19 +731,19 @@ do
 	check("an updated machine takes a 1.5.0 set without a question", not U.ns.Sync.Choice() and uann.profiles["054c/0ce6"].roles.L1 == "rightmod" and uann.cells["28de/11ff"].FT.T.id == "spell:9" and uann.profiles["28de/11ff"] and U.ns.Profile.CurrentId() == "054c/0ce6")
 	run(40)
 	local fmt = account[1] and account[1].body:match("^#FCT(%d+)")
-	check("it writes the set again in format 4", fmt == "4", fmt)
+	check("it writes the set again in format 5", fmt == "5", fmt)
 end
 
 -- A newer format (a 1.5.2 set seen by this version): paused, nothing written over it.
 do
-	account = { { name = "FCT:Sync 1", icon = "x", body = "#FCT5 1/1 abcdef XYZ" } }
+	account = { { name = "FCT:Sync 1", icon = "x", body = "#FCT6 1/1 abcdef XYZ" } }
 	local writes = creates + edits + deletes
 	local N = machine(settingsA())
 	N.login()
 	N.ns.db.tweaks.sellJunk = false
 	N.ns.Sync.Check(true)
 	run(40)
-	check("a newer format pauses and writes nothing", N.ns.Sync.Status().state == "newer" and creates + edits + deletes == writes and account[1].body == "#FCT5 1/1 abcdef XYZ" and #account == 1)
+	check("a newer format pauses and writes nothing", N.ns.Sync.Status().state == "newer" and creates + edits + deletes == writes and account[1].body == "#FCT6 1/1 abcdef XYZ" and #account == 1)
 	-- These machines' timers would keep running into the next blocks.
 	W.timers, W.tickers = {}, {}
 end
@@ -765,7 +828,7 @@ do
 	E.login()
 	run(6)
 	check("review 3: a stale newer pause clears", E.ns.Sync.Status().state == "ok" and ourMacros() >= 1, E.ns.Sync.Status().state)
-	account = { { name = "FCT:Sync 1", icon = "x", body = "#FCT5 1/1 abcdef XYZ" } }
+	account = { { name = "FCT:Sync 1", icon = "x", body = "#FCT6 1/1 abcdef XYZ" } }
 	local G = machine(settingsA())
 	G.login()
 	check("review 3: newer pauses", G.ns.Sync.Status().state == "newer")
@@ -958,7 +1021,7 @@ do
 		rings = { t = W.server + 400, d = { nextId = 6, list = { { id = 5, name = "Buffs", count = 6, slots = { [1] = "spell:20271" } } } } },
 		tweaks = { t = W.server + 400, d = { sellJunk = true } },
 	} }
-	for i, body in ipairs(Sync.Bodies(Sync.Pack(payload), payload.at)) do account[i] = { name = "FCT:Sync " .. i, icon = "x", body = (body:gsub("^#FCT4", "#FCT2")) } end
+	for i, body in ipairs(Sync.Bodies(Sync.Pack(payload), payload.at)) do account[i] = { name = "FCT:Sync " .. i, icon = "x", body = (body:gsub("^#FCT5", "#FCT2")) } end
 	local N = machine({ version = 4 })
 	N.login()
 	run(2)

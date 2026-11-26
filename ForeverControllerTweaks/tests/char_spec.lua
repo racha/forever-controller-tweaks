@@ -120,6 +120,12 @@ do
 	local synced = { ["Player-1-0002"] = { name = "House", cells = { p1 = { FB = { T = { id = "spell:1" } } } } }, ["House-"] = { cells = { p1 = { FT = { T = { id = "spell:20271" } } }, p9 = { FT = { T = { id = "spell:20271" } } } } } }
 	Face.ClaimOld(synced, "Player-1-0002", "House", known, {})
 	check(synced["Player-1-0002"].cells.p1.FB.T.id == "spell:1" and synced["Player-1-0002"].cells.p1.FT.T.id == "spell:20271" and synced["Player-1-0002"].cells.p9, "a synced record keeps its own cells, gets only the ones it lacks")
+	-- Paged cells (1.5.5): the fill goes page by page, an old record's spells on any page count for the claim.
+	local paged = { ["Player-1-0003"] = { name = "House", cells = { p1 = { DU = { L = { [1] = { id = "ring:1" } } } } } }, ["House-"] = { cells = { p1 = { DU = { L = { { id = "spell:20271" }, { id = "spellgroup:Holy Light" } } }, FB = { T = { id = "spell:19750" } } } } } }
+	check(Face.Owns(paged["House-"], known) and #Face.SpellsOf(paged["House-"]) == 3, "a page list's spells read for the claim")
+	Face.ClaimOld(paged, "Player-1-0003", "House", known, {})
+	local pl = paged["Player-1-0003"].cells.p1
+	check(pl.DU.L[1].id == "ring:1" and pl.DU.L[2].id == "spellgroup:Holy Light" and pl.DU.L[3] == nil and pl.FB.T.id == "spell:19750", "fill-only per page: its own page kept, the missing page filled")
 end
 
 -- A record the first apply already touched (empty cells and touch sides, an empty placed list, a migration flag)
@@ -274,7 +280,7 @@ do
 	fire("PLAYER_ENTERING_WORLD")
 	local P, chars = ns.Profile, ns.db.chars
 	local wl = chars["Player-6941-WARLOCK"]
-	check(ns.db.version == 5 and ns.db.profiles == nil and ns.db.deviceProfile == nil and ns.db.lastProfile == nil, "real 1.5.3: the account profiles and picks are gone")
+	check(ns.db.version == 6 and ns.db.profiles == nil and ns.db.deviceProfile == nil and ns.db.lastProfile == nil, "real 1.5.3: the account profiles and picks are gone")
 	check(ns.db.lastLayout and ns.db.lastLayout.roles.L1 == "rightmod", "real 1.5.3: the last layout is the Warlock profile's")
 	check(wl.profile == WL and wl.profiles[WL].name == "Warlock" and wl.profiles[DS] == nil and wl.profiles["045e/028e"] == nil, "real 1.5.3: the Warlock owns Warlock only")
 	for _, key in ipairs({ DS, "045e/028e", "0001/11fb", "3537/1116", "2dc8/6001" }) do

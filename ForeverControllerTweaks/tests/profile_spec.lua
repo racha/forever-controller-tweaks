@@ -41,7 +41,10 @@ for _ in pairs(ann.profiles) do count = count + 1 end
 check(count == 1 and #P.List() == 1, "no profile made per pad")
 
 -- Copy: a deep copy of the layout and of this character's bindings; New: empty; names stay unique.
+ann.cells.p1.DU = { L = { { id = "ring:1" }, nil, { id = "face:jump" } } }
 local copyId = P.Copy("p1", "Couch")
+check(ann.cells[copyId].DU.L[1].id == "ring:1" and ann.cells[copyId].DU.L[2] == nil and ann.cells[copyId].DU.L[3].id == "face:jump" and ann.cells[copyId].DU.L ~= ann.cells.p1.DU.L, "Copy: a paged cell's pages, deep")
+ann.cells.p1.DU, ann.cells[copyId].DU = nil, nil
 check(copyId and copyId:find("^p%d+$") and copyId ~= "p1" and ann.profiles[copyId].roles.L1 == "rightmod" and ann.cells[copyId].FB.T.id == "spell:133", "Copy: the layout and the bindings")
 ann.cells[copyId].FB.T.id = "spell:1"
 ann.profiles[copyId].roles.L1 = "friendly"

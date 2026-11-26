@@ -239,14 +239,13 @@ for event, group in pairs(Tweaks.RUMBLE_GROUP_OF) do check(Tweaks.RUMBLE_GROUP_D
 check(Tweaks.Repair(nil).sellJunk == false and Tweaks.Repair("x").acceptRes == false, "a missing or broken table repairs to all off")
 Tweaks.Set("repair", false)
 for _, key in ipairs(Tweaks.KEYS) do check(Tweaks.Get(key) == false, key .. " is off by default") end
--- The ring free stick starts on: nil (never set) is on, only a saved false is off; Set fires FCT_TWEAKS_CHANGED.
-for _, key in ipairs(Tweaks.ON_KEYS) do check(Tweaks.Get(key) == true and Tweaks.Repair(nil)[key] == true and Tweaks.Repair({ [key] = "x" })[key] == true and Tweaks.Repair({ [key] = false })[key] == false, key .. " is on by default, a saved false kept") end
+-- The ring free stick settings are gone (1.5.5): a saved ringMove / ringTurn is dropped by the repair, Set still fires.
+check(Tweaks.ON_KEYS == nil and Tweaks.Repair({ ringMove = false, ringTurn = true }).ringMove == nil and Tweaks.Repair({ ringTurn = false }).ringTurn == nil, "a saved ringMove / ringTurn is dropped")
 local tweakChanged
 ns.On("FCT_TWEAKS_CHANGED", function(key) tweakChanged = key end)
-Tweaks.Set("ringMove", false)
-check(Tweaks.Get("ringMove") == false and Tweaks.Repair(ns.db.tweaks).ringMove == false and tweakChanged == "ringMove", "ringMove off: saved false, kept by the repair, the change fired")
-Tweaks.Set("ringMove", true)
-check(Tweaks.Get("ringMove") == true and tweakChanged == "ringMove", "ringMove back on")
+Tweaks.Set("sellJunk", true)
+check(Tweaks.Get("sellJunk") == true and tweakChanged == "sellJunk", "Set saves and fires the change")
+Tweaks.Set("sellJunk", false)
 
 -- Off by default: every event leaves the game alone.
 local function everything()
@@ -275,7 +274,7 @@ UI.TweaksTab.Open()
 local w = UI.Current()
 local ST = UI.TweaksTab.T
 check(w and w.tabs.index == #UI.TABS - 1, "the tab opens as its own side tab")
-check(#w.nodes == 36, "thirty-six rows: " .. #w.nodes)
+check(#w.nodes == 34, "thirty-four rows: " .. #w.nodes)
 local headers = {}
 for _, f in ipairs(W.frames) do if f.parent == w and f.text and type(f.text) == "table" and f.text.text then headers[f.text.text] = true end end
 check(headers[ST.BAGS] and headers[ST.NPCS] and headers[ST.RUMBLE] and headers[ST.CONTROLLER] and headers[ST.GEAR] and headers[ST.SOCIAL] and headers[ST.CAMERA], "seven section headers")
@@ -305,7 +304,8 @@ check(walk(10) == "rumble,rumbleStrength,rumble:group,rumble:whisper,rumble:trad
 focusKey("rumble")
 press("PADDRIGHT")
 check(focused() == "battery", "right goes to the Controller column: " .. focused())
-check(walk(8) == "battery,batteryIcon,rareAlert,lightBar,lightColor,combatFlash,ringMove,ringTurn", "Controller column order (Sync between machines moved to Settings), the ring free stick last")
+local controller = walk(7)
+check(controller:find("^battery,batteryIcon,rareAlert,lightBar,lightColor,combatFlash") and not controller:find("ring"), "Controller column order (Sync between machines moved to Settings), ending at Combat flash: " .. controller)
 focusKey("battery")
 press("PADDRIGHT")
 check(focused() == "fastLoot", "right again goes to the last column: " .. focused())
@@ -1685,6 +1685,43 @@ bags = {}
 W.fire("BAG_UPDATE_DELAYED")
 W.advance(0.05)
 check(buttons.heal:GetAttribute("macrotext") == "", "none: nothing happens")
+local function lines(text) local n = 0 for _, line in ipairs(W.log) do if line:find(text, 1, true) then n = n + 1 end end return n end
+W.log = {}
+buttons.heal:Fire("PreClick", "LeftButton", true)
+buttons.heal:Fire("PreClick", "LeftButton", false)
+check(lines(Tweaks.ActionsT.NO_HEAL) == 1, "none: a press says so once (the release)")
+W.combat = true
+buttons.heal:Fire("PreClick", "LeftButton", false)
+buttons.mana:Fire("PreClick", "LeftButton", false)
+W.combat = false
+check(lines(Tweaks.ActionsT.NO_HEAL) == 1 and lines(Tweaks.ActionsT.NO_MANA) == 0, "none in combat: silent")
+
+-- A potion filed under another subclass counts by its name; a Healthstone or bandage never does. An item not loaded
+-- yet is asked for, and its arrival rescans.
+potions[3008] = { "Healing Potion", 1, 22, "Major Healing Potion" }
+potions[3009] = { "Healing Potion", 0, 21, "Superior Healing Potion" }
+potions[3010] = { "Healthstone", 0, 22, "Major Healthstone" }
+potions[3011] = { "First Aid", 7, 22, "Heavy Healing Bandage" }
+local loaded, asked = false, {}
+local potionInfo, potionSpell = C_Item.GetItemInfo, C_Item.GetItemSpell
+C_Item.GetItemInfo = function(item) if item == 3008 and not loaded then return nil end return potionInfo(item) end
+C_Item.GetItemSpell = function(item) if item == 3008 and not loaded then return nil end return potionSpell(item) end
+C_Item.RequestLoadItemDataByID = function(item) asked[#asked + 1] = item end
+bags = { [0] = { { itemID = 3008 }, { itemID = 3009 }, { itemID = 3010 }, { itemID = 3011 } } }
+W.fire("BAG_UPDATE_DELAYED")
+W.advance(0.05)
+check(buttons.heal:GetAttribute("macrotext") == "/use item:3009" and asked[1] == 3008, "not loaded yet: asked for; a Potion by name, not the Healthstone or bandage: " .. tostring(buttons.heal:GetAttribute("macrotext")))
+W.fire("GET_ITEM_INFO_RECEIVED", 4242, true)
+W.advance(0.05)
+check(buttons.heal:GetAttribute("macrotext") == "/use item:3009", "another item's arrival: no rescan")
+loaded = true
+W.fire("GET_ITEM_INFO_RECEIVED", 3008, true)
+W.advance(0.05)
+check(buttons.heal:GetAttribute("macrotext") == "/use item:3008", "its arrival rescans: " .. tostring(buttons.heal:GetAttribute("macrotext")))
+C_Item.GetItemInfo, C_Item.GetItemSpell, C_Item.RequestLoadItemDataByID = potionInfo, potionSpell, nil
+bags = {}
+W.fire("BAG_UPDATE_DELAYED")
+W.advance(0.05)
 
 
 -- Minimap zoom: the minimap's own buttons, in until fully in, then out.

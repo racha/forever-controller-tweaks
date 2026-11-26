@@ -32,7 +32,7 @@ local W = new({
 W.login()
 local db = W.ns.db
 local options, devices = db.options, db.devices
-assert(db.version == 5 and ForeverControllerTweaksDB == db)
+assert(db.version == 6 and ForeverControllerTweaksDB == db)
 assert(options.glyphs == true and options.toggleKey == "PADSOCIAL" and options.debug == false and options.glyphHide == "overlay")
 assert(#db.debugLog == 500 and db.debugLog[1] == "line 101", "debug log capped, newest kept")
 assert(db.faceEntries["054c/0ce6"].bottom.kind == "spell" and db.onboarded.playstation, "other units' keys untouched")
@@ -58,7 +58,7 @@ assert(W.ns.Device.Current().key == "054c/0ce6" and W.ns.Remap.State() == "off",
 local fresh = new(nil)
 fresh.login()
 local fdb = fresh.ns.db
-assert(fdb.version == 5 and not fresh.said("repaired") and fdb.devices["054c/0ce6"].roles == nil)
+assert(fdb.version == 6 and not fresh.said("repaired") and fdb.devices["054c/0ce6"].roles == nil)
 -- The first character: a Default profile with the game's layout.
 local me = fdb.chars[fresh.guid]
 assert(me.profile == "p1" and me.profiles.p1.name == "Default" and not next(me.profiles.p1.roles) and fdb.profiles == nil, "first character: Default")
@@ -66,7 +66,7 @@ assert(me.profile == "p1" and me.profiles.p1.name == "Default" and not next(me.p
 -- Not a table at all.
 local junk = new("garbage")
 junk.login()
-assert(type(junk.ns.db.devices) == "table" and junk.ns.db.version == 5)
+assert(type(junk.ns.db.devices) == "table" and junk.ns.db.version == 6)
 
 -- Saved by a newer the addon: kept as it is, no migration down.
 local newer = new({ version = 9, options = {}, devices = {} })
@@ -77,7 +77,7 @@ assert(newer.ns.db.version == 9 and newer.said("newer version of Controller Twea
 for _, version in ipairs({ 0, -3, 1.5, 0 / 0, math.huge }) do
 	local odd = new({ version = version, options = {}, devices = { ["2dc8/6001"] = { raw = { L1 = { button = 4 }, R1 = { button = 10 }, L2 = { axis = "LTrigger" }, R2 = { axis = "RTrigger" } }, roles = {}, face = {} } } })
 	odd.login()
-	assert(odd.ns.db and odd.ns.db.version == 5 and odd.ns.db.devices["2dc8/6001"].confirmed and odd.ns.db.lastLayout, "version " .. tostring(version))
+	assert(odd.ns.db and odd.ns.db.version == 6 and odd.ns.db.devices["2dc8/6001"].confirmed and odd.ns.db.lastLayout, "version " .. tostring(version))
 end
 
 -- The macro and character stores: wrong types and bad entries are dropped, good ones kept.
@@ -215,5 +215,28 @@ assert(found == 1, "logged once, with our last line")
 mig.slash("selftest")
 assert(mig.said("selftest: taintwatch: InputBindingManager.bindingSetStack by SomeAddon"))
 issecurevariable = nil
+
+-- 6 (1.5.5): a cell with a crossbar slot holds its entry per page. Every existing one goes to all three pages (a copy
+-- each), in every record and profile; the paddles, stick presses and reserved top-bar face slots stay as they were.
+local ring = { id = "ring:1", name = "Seals", kind = "ring", healer = true }
+local paged = new({ version = 5, options = {}, devices = {}, chars = {
+	["Player-0-Ann"] = { profile = "p1", profiles = { p1 = { name = "Default", roles = {}, face = {} } }, cells = {
+		p1 = { DU = { L = ring, T = { id = "face:jump", name = "Jump" } }, FB = { T = { id = "face:interact" }, R = { id = "game:mount" } }, P1 = { T = { id = "face:jump" } }, L3 = { B = { id = "ring:1" } } },
+		p2 = { DD = { B = { id = "face:back" } } },
+	} },
+	["Name-Realm"] = { cells = { ["054c/0ce6"] = { DR = { R = { id = "ring:2" } } } } },
+} })
+paged.login()
+local pc = paged.ns.db.chars["Player-0-Ann"].cells
+assert(paged.ns.db.version == 6, "db version 6")
+for page = 1, 3 do
+	local entry = pc.p1.DU.L[page]
+	assert(entry.id == "ring:1" and entry.healer and entry ~= ring, "page " .. page .. ": a copy of the ring cell")
+	assert(pc.p1.DU.T[page].id == "face:jump" and pc.p1.FB.R[page].id == "game:mount" and pc.p2.DD.B[page].id == "face:back", "page " .. page .. ": every paged cell, every profile")
+	assert(paged.ns.db.chars["Name-Realm"].cells["054c/0ce6"].DR.R[page].id == "ring:2", "page " .. page .. ": an unclaimed record too")
+end
+assert(pc.p1.DU.L[4] == nil and pc.p1.FB.T.id == "face:interact" and pc.p1.P1.T.id == "face:jump" and pc.p1.L3.B.id == "ring:1", "reserved face slot, paddle, stick press: one entry as before")
+-- Idempotent: expanding again changes nothing.
+assert(not paged.ns.Cells.ExpandPages(pc.p1) and pc.p1.DU.L[1].id == "ring:1" and pc.p1.FB.T.id == "face:interact", "a second run changes nothing")
 
 io.stdout:write("db_spec: all checks passed\n")

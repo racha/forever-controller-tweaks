@@ -9,13 +9,10 @@
 -- (Art/ring-sector-<centidegrees>.tga): each wedge is filled with pieces of the texture with a segment's clear middle
 -- turned onto it, and each divider is the texture's own divider turned into place. Pieces touch and never overlap, so
 -- the half-transparent fill stays one layer. The highlight and the disabled segment are pieced below 8 the same way.
--- Stick capture: the display frame has EnableGamePadStick set once out of combat. Shown with the ring, it takes the
--- sticks; it keeps the aiming stick (the ring's Stick setting, resolved by the secure frame as ps-aimside) and hands
--- the other on (OnGamePadStick returning true), as Blizzard's own radial wheel does for the left stick: aiming with the
--- right one, the left still walks; aiming with the left one, the right still turns the camera. Hidden, it takes
--- nothing. The game reports one physical stick under several names (Right / Camera / Look, Left / Movement). When a
--- held ring closes, Rings.HoldStick keeps the aiming stick from the game until it is back in the middle, so the
--- character doesn't walk off (or the camera swing) on the release.
+-- Sticks: the display takes none. While a held ring is open the stick that doesn't aim stays the game's own (the left
+-- one walks and runs, the right one moves the camera); Rings.lua keeps only the aiming stick from the game, and when a
+-- held ring closes, Rings.HoldStick keeps it until it is back in the middle, so the character doesn't walk off (or the
+-- camera swing) on the release.
 -- Compact style: the game's radial flyout, circular style (Blizzard_GamepadActionBars FlyoutRadial.lua / .xml, the
 -- paladin aura and stance picker): the circular base, a slot backdrop where a slot is empty, a filled slot the 36 icon
 -- in the slot mask on the slot-normal ring, all at atlas size, GEO.COMPACT_R out at the Full angles (native: 8 at 45
@@ -868,22 +865,16 @@ display:SetScript("OnUpdate", function(_, elapsed)
 	rangeIn = RANGE_EVERY
 	for i = 1, ring.count do if views[i] then drawStates(views[i], true) end end
 end)
--- Every stick but the aiming one goes on to the game (a touch ring aims with none).
-display:SetScript("OnGamePadStick", function(_, stick)
-	local names = frame:GetAttribute("ps-mode") == "hold" and Rings.AIM_NAMES[frame:GetAttribute("ps-aimside") or "right"]
-	return not (names and names[stick])
-end)
 
 local events = CreateFrame("Frame")
 events:SetScript("OnEvent", function() if display:IsVisible() then dirty = true end end)
 for _, event in ipairs(STATE_EVENTS) do pcall(events.RegisterEvent, events, event) end
 
--- Stick capture and the slot buttons' scripts touch protected frames' settings: once, out of combat.
+-- The slot buttons' scripts touch protected frames' settings: once, out of combat.
 local ready
 local function init()
 	if ready or InCombatLockdown() then return end
 	ready = true
-	display:EnableGamePadStick(true)
 	for i = 1, Rings.MAX_SLOTS do
 		local button = Rings.Slot(i)
 		views[i] = newSlot(button, display)

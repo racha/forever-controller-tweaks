@@ -103,13 +103,13 @@ check(indexOf(more, L.LEARN) and not indexOf(more, "Sync & backup"), "More: no S
 UI.ActionPicker.Close()
 UI.CloseAll()
 
--- Export: the text, selected, starts FCT4:.
+-- Export: the text, selected, starts FCT5:.
 UI.Sync.OpenExport()
 local export = UI.Current()
 check(export and export.NineSlice.Text.text == L.EXPORT_TITLE, "Export opens")
 local text
 for _, f in ipairs(W.frames) do
-	if f.parent and type(f.text) == "string" and f.text:find("^FCT4:") then text = f.text end
+	if f.parent and type(f.text) == "string" and f.text:find("^FCT5:") then text = f.text end
 end
 check(text and #text > 10, "the export text is in the box")
 check(not text:find("Ann"), "no character name in the export")
@@ -146,8 +146,8 @@ go.select()
 check(UI.DialogShown(), "Import asks first")
 UI.Dialog():OnPad("PAD1")
 W.advance(0.5)
-check(other.db.tweaks.sellJunk == true and other.db.chars["Player-0-Ann"].cells[other.Profile.CurrentId()].FB.R.id == "spell:133", "the import applied")
-local name = other.db.chars["Player-0-Ann"].cells[other.Profile.CurrentId()].FB.R.name
+check(other.db.tweaks.sellJunk == true and other.db.chars["Player-0-Ann"].cells[other.Profile.CurrentId()].FB.R[1].id == "spell:133", "the import applied, per page")
+local name = other.db.chars["Player-0-Ann"].cells[other.Profile.CurrentId()].FB.R[3].name
 check(name and name ~= "spell:133", "names come back from the game: " .. tostring(name))
 local after = UI.Current()
 local undoShown = false

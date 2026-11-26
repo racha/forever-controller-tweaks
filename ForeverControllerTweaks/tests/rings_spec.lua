@@ -2,7 +2,8 @@
 -- Rings.lua with the real Core, Layout, Face, Actions and Touch: the stick -> slot pick for 4 and 8 slots and the dead
 -- zone, the per-slot attributes for every entry kind, the ring's restricted snippets run in a strict stub environment
 -- (open, release pick, toggle, slot tap, catcher, guard), a ring on a routed face cell and on a touch button, in
--- combat too, Healer mode (kinds, attributes, units, pick skips, native copy and its undo, touch), deleting a ring
+-- combat too, Healer mode (kinds, attributes, units, pick skips, native copy and its undo, touch), the native sticks
+-- (pass and block keep only the aiming stick's twin from the game, open and after the close), deleting a ring
 -- clearing every binding, and the db repair.
 local here = (arg and arg[0] or ""):match("^(.*)[/\\]") or "."
 local dir = here .. "/.."
@@ -62,7 +63,7 @@ local function frame(name, template, parent)
 		_G[name] = f
 		frames[name] = f
 	end
-	f.env = (name == "ForeverControllerTweaksRing" or name == "ForeverControllerTweaksRingFree") and strictEnv() or renv(f)
+	f.env = name == "ForeverControllerTweaksRing" and strictEnv() or renv(f)
 	return f
 end
 function Frame:CreateTexture() return frame(nil, nil, self) end
@@ -88,6 +89,7 @@ function Frame:Hide() if self.shown then self.shown = false; hooked(self, "OnHid
 function Frame:IsShown() return self.shown end
 function Frame:IsVisible() return self.shown and (not self.parent or self.parent:IsVisible()) end
 function Frame:GetName() return self.name end
+function Frame:GetID() return self.id or 0 end
 function Frame:SetScript(s, fn) self.scripts[s] = fn end
 function Frame:IsProtected() return self.protected end
 function Frame:GetAttribute(k) return self.attrs[k] end
@@ -120,6 +122,13 @@ function Frame:SetBinding(priority, key, command)
 	if W.combat and not W.secure then error("ADDON_ACTION_BLOCKED SetBinding") end
 	(priority and W.prio or W.bindings)[key] = { owner = self, command = command }
 end
+-- What the stick frames are set up with, kept for the checks.
+function Frame:SetFrameStrata(strata) self.strata = strata end
+function Frame:SetAlpha(alpha) self.alpha = alpha end
+function Frame:EnableMouse(on) self.mouse = on end
+function Frame:EnableGamePadButton(on) self.padButtons = on end
+function Frame:EnableGamePadStick(on) self.stickOn = on end
+function Frame:SetPropagateKeyboardInput(on) self.propagate = on end
 function ClearOverrideBindings(f)
 	if W.combat then error("ADDON_ACTION_BLOCKED ClearOverrideBindings") end
 	f:ClearBindings()
@@ -249,6 +258,13 @@ function GetCursorInfo() end
 local top = { actionButtons = {} }
 for i = 1, 8 do top.actionButtons[i] = frame("TopButton" .. i, "SecureActionButtonTemplate") end
 GamepadMainActionBarFrame = { PageUnit = { actionBars = { topBar = top } } }
+-- Routed cells with a crossbar slot are per page: the router reads the page from the top bar button's ID (page 1).
+local PAGE_UTIL = { GetGamepadStorageSlotIndexFromPageAndPageUnitSlotID = function(page, id) return 181 + (page - 1) * 32 + id end }
+GamepadActionBarBindingUtil = PAGE_UTIL
+for i, b in ipairs(top.actionButtons) do
+	b.id = PAGE_UTIL.GetGamepadStorageSlotIndexFromPageAndPageUnitSlotID(1, i)
+	function b.GetGamepadPageUnitSlotID() return i end
+end
 
 local function loadAddonFile(file) assert(loadfile(dir .. "/" .. file))("ForeverControllerTweaks", ns) end
 loadAddonFile("Core.lua")
@@ -517,7 +533,7 @@ W.combat = false
 -- The case seen in game: a ring on D-pad right, held and released in combat.
 assert(ns.Face.SetCellEntry("DR", "T", ringEntry))
 local dpadRight = frames.ForeverControllerTweaksDpadRight
-check(dpadRight.attrs["ps-ring-top"] == heals.id and W.bindings.PADDRIGHT, "face: the ring on D-pad right")
+check(dpadRight.attrs["ps-ring-top-1"] == heals.id and W.bindings.PADDRIGHT, "face: the ring on D-pad right")
 W.combat = true
 aim(0, 0)
 press("PADDRIGHT", true)
@@ -923,162 +939,105 @@ failApply()
 check(failures() == 2, "failed: after an apply that works, the next failure is reported")
 ns.db.options.debug = false
 
--- The free stick (Tweaks ringMove / ringTurn, on by default): while a held ring aims with one stick, the other's keys
--- (GamePadStickAxisButtons covers both) move the character or turn the camera, under every modifier. Closed with that
--- stick still pushed, its bindings stay until its keys read up and it is centred, and only then is the CVar put back;
--- in combat they stay until the fight ends.
-local tweaks = { ringMove = true, ringTurn = true }
-ns.Tweaks = { Get = function(key) return tweaks[key] end }
-local free = frames.ForeverControllerTweaksRingFree
-local watch = frames.ForeverControllerTweaksRingFreeWatch
-local function command(key) local b = W.prio[key] or W.bindings[key] return b and b.command end
-local function freeCount()
-	local n = 0
-	for _, b in pairs(W.bindings) do if b.owner == free then n = n + 1 end end
-	return n
+-- Native sticks: while a held ring aims with one stick, the other stays the game's own analog stick. pass (BACKGROUND,
+-- propagates) sees every stick event; block (TOOLTIP, doesn't) goes up only just before the aiming stick's virtual
+-- twin. One frame of events as the game sends them: raw sticks in order, then their twins; each goes to block when it
+-- is shown (kept from the game), else on through pass to the game. Then pass's OnUpdate ends the frame.
+local pass, block = frames.ForeverControllerTweaksRingStickPass, frames.ForeverControllerTweaksRingStickBlock
+local ORDER = { "Left", "Right", "Gyro" }
+local function sticksFrame(raws, twins)
+	local reached, events = {}, {}
+	for _, raw in ipairs(ORDER) do if raws[raw] then events[#events + 1] = raw end end
+	for _, raw in ipairs(ORDER) do if raws[raw] and twins ~= false then events[#events + 1] = Rings.TWIN[raw] end end
+	for _, stick in ipairs(events) do
+		if block.shown then
+			block.scripts.OnGamePadStick(block, stick, 0, 1, 1)
+		else
+			if pass.shown then pass.scripts.OnGamePadStick(pass, stick, 0, 1, 1) end
+			reached[stick] = true
+		end
+	end
+	local blockUp = block.shown
+	if pass.shown then pass.scripts.OnUpdate(pass, 1 / 30) end
+	return reached, blockUp
 end
-local downKeys = {}
-IsKeyDown = function(k) return downKeys[k] or false end
-local function setTweak(key, value)
-	tweaks[key] = value
-	ns.Fire("FCT_TWEAKS_CHANGED", key)
-end
-setTweak("ringMove", true)
-check(free.protected and free.attrs["ps-on-left"] == true and free.attrs["ps-on-right"] == true, "free: both settings written for the snippets")
-W.cvars[AXIS], W.writes = "0", {}
+check(pass.parent == UIParent and block.parent == UIParent and not pass.protected and not block.protected, "sticks: pass and block are our own insecure frames under UIParent")
+check(pass.strata == "BACKGROUND" and pass.propagate == true and pass.stickOn == true and block.strata == "TOOLTIP" and block.propagate == false and block.stickOn == true, "sticks: pass propagates at BACKGROUND, block doesn't at TOOLTIP, both set up at load")
+check(pass.mouse == false and block.mouse == false and pass.alpha == 0 and block.alpha == 0 and pass.w == 1 and block.h == 1 and not pass.padButtons and not block.padButtons, "sticks: no mouse, no buttons, invisible, 1 x 1")
+check(not pass.shown and not block.shown, "sticks: both hidden with no ring")
 nextFrame()
+W.cvars[AXIS], W.writes = "0", {}
+-- A right-stick ring.
 open()
-check(command("PADLSTICKUP") == "MOVEFORWARD" and command("PADLSTICKDOWN") == "MOVEBACKWARD" and command("PADLSTICKLEFT") == "STRAFELEFT" and command("PADLSTICKRIGHT") == "STRAFERIGHT", "free: a right-stick ring, the left stick moves")
-check(command("ALT-CTRL-SHIFT-PADLSTICKUP") == "MOVEFORWARD" and command("SHIFT-PADLSTICKLEFT") == "STRAFELEFT" and freeCount() == 4 * 8, "free: under every modifier prefix, nothing else")
-check(not W.prio.PADLSTICKUP and W.bindings.PADLSTICKUP.owner == free and W.prio.PADRSTICKRIGHT.click == "ForeverControllerTweaksRingKey:PADRSTICKRIGHT" and not command("PADRSTICKLEFT"), "free: not priority, the right stick still aims the ring, no camera binding")
+check(pass.shown and not block.shown, "right aim: pass up, block down")
+local reached, blockUp = sticksFrame({ Left = true, Right = true })
+check(reached.Movement and not reached.Camera and not blockUp and not block.shown, "right aim, both raw sticks: Movement reaches the game, Camera is swallowed, block down after")
+reached = sticksFrame({ Right = true })
+check(reached.Right and not reached.Camera, "right aim, only Right fired: block up at Right, Camera swallowed")
+reached = sticksFrame({ Left = true, Right = true, Gyro = true })
+check(reached.Movement and reached.Look and not reached.Camera, "right aim with the gyro: Look is left alone")
+reached = sticksFrame({ Left = true })
+check(reached.Movement and not block.shown, "right aim, only the left stick: it walks")
+-- A twin that never came: the end of the frame takes block down and wipes the frame.
+pass.scripts.OnGamePadStick(pass, "Right")
+check(block.shown, "end of frame: block up at Right")
+pass.scripts.OnUpdate(pass, 1 / 30)
+check(not block.shown, "end of frame: block down though Camera never came")
+pass.scripts.OnGamePadStick(pass, "Left")
+pass.scripts.OnGamePadStick(pass, "Right")
+check(not block.shown, "end of frame: Left fired, block waits for Movement")
+pass.scripts.OnUpdate(pass, 1 / 30)
+reached = sticksFrame({ Left = true })
+check(reached.Movement and not block.shown, "end of frame: the wait is wiped, the next frame's Movement still walks")
+-- The aiming stick still fires through its keys.
 aim(90)
 local flicked = press("PADRSTICKRIGHT", true) == nil
 aim(90, 0.3)
-check(flicked and press("PADRSTICKRIGHT", false) == "spell 639" and not ring.shown, "free: the ring still aims and fires on the right stick")
+check(flicked and press("PADRSTICKRIGHT", false) == "spell 639" and not ring.shown, "right aim: the ring aims with the right stick and fires")
+check(not pass.shown and not block.shown, "closed with the stick near the middle: pass down")
 nextFrame()
-check(watch.shown and freeCount() == 64 and W.cvars[AXIS] == "1", "free: closed, the CVar waits for the watch")
-check(command("PADLSTICKUP") == "MOVEFORWARD" and command("PADRSTICKLEFT") == "TURNLEFT" and command("ALT-PADRSTICKUP") == "PITCHUP" and not next(W.prio), "free: after the close both sticks work: the left moves, the right that aimed turns the camera")
-aim(0, 0)
-watch.scripts.OnUpdate(watch, 1 / 30)
-check(freeCount() == 0 and not watch.shown and W.cvars[AXIS] == "0" and lastHold() == false, "free: keys up, stick centred: cleared, the CVar put back, Remap let go")
--- Closed while walking: everything waits for the stick.
-open()
-W.sticks[1], downKeys.PADLSTICKUP = { x = 0, y = 1 }, true
+-- A stick already pushed as the ring opens keeps running natively: the keys come on at once.
+W.sticks = { { x = 0, y = 0.9 }, { x = 0, y = 0 } }
+press("PADDRIGHT", true)
+check(ring.shown and W.cvars[AXIS] == "1" and pass.shown, "running as the ring opens: the keys on at once, the left stick still the game's")
+reached = sticksFrame({ Left = true, Right = true })
+check(reached.Movement and not reached.Camera, "running as the ring opens: Movement goes on")
 press("PAD2", true)
 nextFrame()
-local _, _, stillOpen = lastHold()
-check(not ring.shown and freeCount() == 64 and command("PADLSTICKUP") == "MOVEFORWARD" and W.cvars[AXIS] == "1" and watch.shown and lastHold() == true and stillOpen(), "free: closed walking: still bound, the CVar still on, Remap held")
-downKeys.PADLSTICKUP = nil
-watch.scripts.OnUpdate(watch, 0.5)
-check(freeCount() == 64 and W.cvars[AXIS] == "1", "free: key up, the stick still reads pushed, within the second: kept")
-W.sticks[1] = { x = 0.1, y = 0 }
-watch.scripts.OnUpdate(watch, 1 / 30)
-check(freeCount() == 0 and W.cvars[AXIS] == "0" and lastHold() == false and not watch.shown, "free: let go: cleared first, then the CVar")
--- Still walking past HOLD_MAX keeps it all; a stick that never reads centred with its keys up is let go after it.
-open()
-W.sticks[1], downKeys.PADLSTICKUP = { x = 0, y = 1 }, true
-press("PAD2", true)
-nextFrame()
-watch.scripts.OnUpdate(watch, 0.6)
-watch.scripts.OnUpdate(watch, 0.6)
-check(freeCount() == 64 and W.cvars[AXIS] == "1", "free: still walking past the second: kept")
-downKeys.PADLSTICKUP, W.sticks[1] = nil, { x = 0, y = 0.3 }
-watch.scripts.OnUpdate(watch, 1 / 30)
-check(freeCount() == 0 and W.cvars[AXIS] == "0", "failsafe: keys up, a stick that rests off-centre: let go")
-W.sticks[1] = { x = 0, y = 0 }
--- Failsafe: a key that still reads down with the stick centred is let go HOLD_MAX after the close.
-open()
-downKeys.PADLSTICKLEFT = true
-press("PAD2", true)
-nextFrame()
-watch.scripts.OnUpdate(watch, 0.5)
-check(freeCount() == 64 and W.cvars[AXIS] == "1", "failsafe: a key reads down, centred, within the second: kept")
-watch.scripts.OnUpdate(watch, 0.6)
-check(freeCount() == 0 and W.cvars[AXIS] == "0" and not watch.shown, "failsafe: after the second, cleared and put back")
-downKeys = {}
--- Opened again while still walking: the bindings stay, the watch restarts on the next close.
-open()
-downKeys.PADLSTICKUP = true
-press("PAD2", true)
-nextFrame()
-open()
-watch.scripts.OnUpdate(watch, 1 / 30)
-check(ring.shown and not watch.shown and command("PADLSTICKUP") == "MOVEFORWARD" and freeCount() == 64, "free: opened again: kept, the watch stops")
-check(W.prio.PADRSTICKRIGHT.click == "ForeverControllerTweaksRingKey:PADRSTICKRIGHT" and W.bindings.PADRSTICKRIGHT.command == "TURNRIGHT", "free: the ring's priority keys win over the right stick still bound to the camera")
-downKeys = {}
-press("PAD2", true)
-nextFrame()
-check(watch.shown and watch.left == 1, "free: the next close watches again, a fresh second")
-watch.scripts.OnUpdate(watch, 1 / 30)
-check(freeCount() == 0 and W.cvars[AXIS] == "0", "free: then let go")
--- In combat: kept bound to the fight's end, the CVar with them; then the same watch.
-W.combat = true
-open()
-downKeys.PADLSTICKUP = true
-press("PAD2", true)
-nextFrame()
-check(freeCount() == 64 and W.cvars[AXIS] == "1" and not watch.shown, "combat: closed walking: bound, the CVar on, no watch")
-downKeys.PADLSTICKUP = nil
-W.combat = false
-ns.Fire("PLAYER_REGEN_ENABLED")
-check(watch.shown and freeCount() == 64, "combat: the fight over, the watch starts")
-watch.scripts.OnUpdate(watch, 1 / 30)
-check(freeCount() == 0 and W.cvars[AXIS] == "0" and lastHold() == false, "combat: then cleared and put back")
--- A left-stick ring: the right stick turns and pitches the camera; the left stick aims.
+check(W.cvars[AXIS] == "0", "closed: the CVar put back")
+-- A left-stick ring: Movement is swallowed, Camera goes on; a raw Right reaching block is harmless.
 assert(Rings.SetStick(heals.id, "left"))
 open()
-check(command("PADRSTICKLEFT") == "TURNLEFT" and command("PADRSTICKRIGHT") == "TURNRIGHT" and command("PADRSTICKUP") == "PITCHUP" and command("CTRL-PADRSTICKDOWN") == "PITCHDOWN", "free: a left-stick ring, the right stick turns the camera")
-check(W.prio.PADLSTICKUP.click == "ForeverControllerTweaksRingKey:PADLSTICKUP" and not W.bindings.PADLSTICKUP and freeCount() == 32, "free: the left stick aims, nothing moves")
+reached, blockUp = sticksFrame({ Left = true, Right = true })
+check(not reached.Movement and reached.Camera and not blockUp, "left aim: Movement swallowed, Camera reaches the game, block down after")
+reached = sticksFrame({ Right = true })
+check(reached.Camera, "left aim, only the right stick: the camera moves")
 press("PAD2", true)
 nextFrame()
-watch.scripts.OnUpdate(watch, 1 / 30)
-check(freeCount() == 0 and W.cvars[AXIS] == "0", "free: closed, cleared")
 assert(Rings.SetStick(heals.id, "right"))
--- Each setting off: that stick does nothing, as before.
-setTweak("ringTurn", false)
+-- Removed: nothing binds the free stick's keys to movement or the camera, and the free frames are gone.
+local MOVES = { MOVEFORWARD = true, MOVEBACKWARD = true, STRAFELEFT = true, STRAFERIGHT = true, TURNLEFT = true, TURNRIGHT = true, PITCHUP = true, PITCHDOWN = true }
+local function movesBound()
+	for _, list in ipairs({ W.bindings, W.prio }) do
+		for _, b in pairs(list) do if b.command and MOVES[b.command] then return true end end
+	end
+end
 open()
+local rightOpen = movesBound()
 press("PAD2", true)
-nextFrame()
-check(freeCount() == 32 and command("PADLSTICKUP") == "MOVEFORWARD" and not command("PADRSTICKLEFT"), "free: Right stick turns off: after a right ring closes the right stick stays unbound")
-watch.scripts.OnUpdate(watch, 1 / 30)
-check(freeCount() == 0 and W.cvars[AXIS] == "0", "free: then let go as before")
-setTweak("ringTurn", true)
--- A left ring closes: the left stick that aimed moves you again.
 assert(Rings.SetStick(heals.id, "left"))
-W.combat = true
 open()
+local leftOpen = movesBound()
 press("PAD2", true)
 nextFrame()
-check(command("PADLSTICKUP") == "MOVEFORWARD" and command("PADRSTICKLEFT") == "TURNLEFT" and freeCount() == 64 and W.cvars[AXIS] == "1", "combat: after a left ring closes, the left stick moves you and the right still turns")
-W.combat = false
-ns.Fire("PLAYER_REGEN_ENABLED")
-watch.scripts.OnUpdate(watch, 1 / 30)
-check(freeCount() == 0 and W.cvars[AXIS] == "0", "combat: after the fight, let go and put back")
+check(not (rightOpen or leftOpen or movesBound()), "removed: no movement or camera binding, open or closed")
+check(not (frames.ForeverControllerTweaksRingFree or frames.ForeverControllerTweaksRingFreeWatch or frames.ForeverControllerTweaksRingKeyWait or frames.ForeverControllerTweaksRingStickHold), "removed: the free frames and the old hold frame don't exist")
 assert(Rings.SetStick(heals.id, "right"))
-setTweak("ringMove", false)
-open()
-check(free.attrs["ps-on-left"] == nil and freeCount() == 0 and not command("PADLSTICKUP"), "free: Left stick moves off: nothing bound")
-press("PAD2", true)
-nextFrame()
-check(freeCount() == 32 and command("PADRSTICKLEFT") == "TURNLEFT" and not command("PADLSTICKUP"), "free: Left stick moves off: after the close only the right stick that aimed turns the camera")
-watch.scripts.OnUpdate(watch, 1 / 30)
-assert(Rings.SetStick(heals.id, "left"))
-setTweak("ringTurn", false)
-open()
-check(freeCount() == 0 and not command("PADRSTICKLEFT"), "free: Right stick turns off: nothing bound")
-press("PAD2", true)
-nextFrame()
-check(W.cvars[AXIS] == "0" and lastHold() == false, "free: off, the CVar put back next frame as before")
-assert(Rings.SetStick(heals.id, "right"))
-setTweak("ringMove", true)
-setTweak("ringTurn", true)
--- A touch ring aims with no stick: nothing bound.
+-- A touch ring aims with no stick: nothing shown.
 secure(ring.RunAttribute, ring, "_open", heals.id, "touch")
-check(ring.shown and freeCount() == 0, "free: a touch ring binds nothing")
+check(ring.shown and not pass.shown and not block.shown, "touch: pass and block stay down")
 secure(ring.RunAttribute, ring, "_close")
 nextFrame()
-ns.Tweaks, IsKeyDown = nil, function() return false end
-setTweak("ringMove", true)
 aim(0, 0)
 
 -- The Stick setting: stored per ring for the snippets; Left aims with the left stick wherever the ring opens, Dynamic
@@ -1152,67 +1111,81 @@ check(W.bindings.PADPADDLE1 == nil, "paddle: given back, native")
 ns.Device.Current = realDevice
 ns.Fire("FCT_LAYOUT_CHANGED", "device")
 
--- After a held ring closes, its aiming stick is still pushed: the hold-off frame keeps that stick from the game until it
--- is back near the middle (or a second has passed), and passes the other stick on. Our own insecure frame: shown and
--- hidden in combat.
-local hold = frames.ForeverControllerTweaksRingStickHold
-local holdStick = hold.scripts.OnGamePadStick
+-- After a held ring closes, its aiming stick is still pushed: the same pass and block keep that stick's twin from the
+-- game until it is back near the middle (or a second has passed outside a cast), the other stick going on. Shown and
+-- hidden in combat; the setup calls are never made there.
+local stickCalls = 0
+local realEnable, realPropagate = Frame.EnableGamePadStick, Frame.SetPropagateKeyboardInput
+Frame.EnableGamePadStick = function(...) stickCalls = stickCalls + 1 return realEnable(...) end
+Frame.SetPropagateKeyboardInput = function(...) stickCalls = stickCalls + 1 return realPropagate(...) end
 W.combat = true
-aimLeft(90)
-Rings.HoldStick("left", 1)
-check(hold.shown and not hold.protected and hold.parent == UIParent, "hold-off: shown after a release with the left stick pushed, our own frame under UIParent")
-check(holdStick(hold, "Movement") == false and holdStick(hold, "Left") == false and holdStick(hold, "Camera") == true and holdStick(hold, "Right") == true, "hold-off: the left stick kept, the right passes on")
-hold.scripts.OnUpdate(hold, 0.5)
-check(hold.shown, "hold-off: still pushed, still held")
-W.sticks[1] = { x = 0.1, y = 0.1 }
-hold.scripts.OnUpdate(hold, 1 / 60)
-check(not hold.shown, "hold-off: back in the middle, let go")
-aimLeft(90)
-Rings.HoldStick("left", 1)
-hold.scripts.OnUpdate(hold, 0.6)
-check(hold.shown, "hold-off: within the second")
-hold.scripts.OnUpdate(hold, 0.5)
-check(not hold.shown, "hold-off: a reading that never settles is let go after a second")
-aim(0, 0)
-Rings.HoldStick("right", 2)
-check(not hold.shown, "hold-off: nothing while the stick is already in the middle")
+local function openHeld() secure(ring.RunAttribute, ring, "_open", heals.id, "hold") end
+openHeld()
+check(pass.shown, "combat: a held ring raises pass")
 aim(90)
+secure(ring.RunAttribute, ring, "_close")
+check(not pass.shown, "combat: closed, pass down until the hold-off")
 Rings.HoldStick("right", 2)
-check(hold.shown and holdStick(hold, "Camera") == false and holdStick(hold, "Look") == false and holdStick(hold, "Movement") == true, "hold-off: aiming right, the camera stick kept, the left walks")
+check(pass.shown and not block.shown, "hold-off: shown after a close with the right stick pushed")
+reached = sticksFrame({ Left = true, Right = true })
+check(reached.Movement and not reached.Camera, "hold-off: Camera kept, the left stick walks")
+pass.scripts.OnUpdate(pass, 0.5)
+check(pass.shown, "hold-off: still pushed, still held")
 aim(0, 0)
-hold.scripts.OnUpdate(hold, 1 / 60)
-check(not hold.shown, "hold-off: right stick centred, let go")
+pass.scripts.OnUpdate(pass, 1 / 60)
+check(not pass.shown and not block.shown, "hold-off: back in the middle, both down")
+Rings.HoldStick("right", 2)
+check(not pass.shown, "hold-off: nothing while the stick is already in the middle")
+aimLeft(90)
+Rings.HoldStick("left", 1)
+reached = sticksFrame({ Left = true, Right = true })
+check(not reached.Movement and reached.Camera, "hold-off: aiming left, Movement kept, the camera moves")
+pass.scripts.OnUpdate(pass, 0.6)
+check(pass.shown, "hold-off: within the second")
+pass.scripts.OnUpdate(pass, 0.5)
+check(not pass.shown and not block.shown, "hold-off: a reading that never settles is let go after a second")
+-- A ring opened again during a hold-off takes pass over: no timer while it is open.
+aimLeft(90)
+Rings.HoldStick("left", 1)
+openHeld()
+pass.scripts.OnUpdate(pass, 2)
+check(pass.shown and pass.side == "right" and not pass.left, "hold-off: a ring opened again takes it over, no timer")
+secure(ring.RunAttribute, ring, "_close")
+nextFrame()
 -- Through a cast (a heal aimed with the left stick): the second doesn't run while the player casts or channels; the
--- stick back in the middle still lets go; after the cast the cap runs on. Other units' casts are filtered by the event.
-local castEvent = function(event) hold.scripts.OnEvent(hold, event, "player") end
+-- stick back in the middle still lets go; after the cast the cap runs on.
+local castEvent = function(event) pass.scripts.OnEvent(pass, event, "player") end
 aimLeft(90)
 Rings.HoldStick("left", 1)
 castEvent("UNIT_SPELLCAST_START")
-hold.scripts.OnUpdate(hold, 2.5)
-check(hold.shown, "hold-off cast: a 2.5 s cast keeps the left stick held")
+pass.scripts.OnUpdate(pass, 2.5)
+check(pass.shown, "hold-off cast: a 2.5 s cast keeps the left stick held")
 castEvent("UNIT_SPELLCAST_SUCCEEDED")
 castEvent("UNIT_SPELLCAST_STOP")
-hold.scripts.OnUpdate(hold, 0.5)
-check(hold.shown, "hold-off cast: after the cast the second starts running")
-hold.scripts.OnUpdate(hold, 0.6)
-check(not hold.shown, "hold-off cast: and the cap lets go a second after the cast ended")
+pass.scripts.OnUpdate(pass, 0.5)
+check(pass.shown, "hold-off cast: after the cast the second starts running")
+pass.scripts.OnUpdate(pass, 0.6)
+check(not pass.shown, "hold-off cast: and the cap lets go a second after the cast ended")
 Rings.HoldStick("left", 1)
 castEvent("UNIT_SPELLCAST_CHANNEL_START")
 castEvent("UNIT_SPELLCAST_SUCCEEDED")
-hold.scripts.OnUpdate(hold, 5)
-check(hold.shown, "hold-off cast: a channel keeps it too, its SUCCEEDED at the start ends nothing")
+pass.scripts.OnUpdate(pass, 5)
+check(pass.shown, "hold-off cast: a channel keeps it too, its SUCCEEDED at the start ends nothing")
 W.sticks[1] = { x = 0.1, y = 0 }
-hold.scripts.OnUpdate(hold, 1 / 60)
-check(not hold.shown, "hold-off cast: mid-channel, the stick back in the middle lets go")
+pass.scripts.OnUpdate(pass, 1 / 60)
+check(not pass.shown, "hold-off cast: mid-channel, the stick back in the middle lets go")
 castEvent("UNIT_SPELLCAST_CHANNEL_STOP")
 aimLeft(90)
 Rings.HoldStick("left", 1)
 castEvent("UNIT_SPELLCAST_START")
 ns.Fire("PLAYER_ENTERING_WORLD")
-hold.scripts.OnUpdate(hold, 1.1)
-check(not hold.shown, "hold-off cast: entering the world drops a cast whose stop never came")
+pass.scripts.OnUpdate(pass, 1.1)
+check(not pass.shown, "hold-off cast: entering the world drops a cast whose stop never came")
 aim(0, 0)
+check(stickCalls == 0, "combat: opening, closing and the hold-off never call EnableGamePadStick or SetPropagateKeyboardInput")
+Frame.EnableGamePadStick, Frame.SetPropagateKeyboardInput = realEnable, realPropagate
 W.combat = false
+nextFrame()
 
 -- The snippet picks as Rings.SlotAt does, all round.
 local target = frame("Target", "SecureActionButtonTemplate")
@@ -1277,7 +1250,6 @@ W.combat = false
 local shadow, releaseShadow = Actions.Shadow, Actions.ReleaseShadow
 Actions.Shadow, Actions.ReleaseShadow = function() return 150 end, function() return true end
 local storage = {}
-GamepadActionBarBindingUtil = { GetGamepadStorageSlotIndexFromPageAndPageUnitSlotID = function(page, id) return 181 + (page - 1) * 32 + id end }
 C_ActionBar.HasAction = function(slot) return storage[slot] ~= nil end
 function GetActionInfo(slot) local a = storage[slot]; if a then return a[1], a[2] end end
 storage[183] = { "spell", 133 }
@@ -1286,7 +1258,7 @@ assert(ns.Face.SetHealer("DU", "T", true, 1))
 local copy = ns.Face.CellEntry("DU", "T")
 check(copy and copy.id == "spell:133" and copy.healer and copy.native and storage[183], "healer: a native cell copies its slot's spell, the slot kept")
 local hid = "hspell133"
-check(dpad.attrs["ps-ring-top"] == hid and W.bindings.PADDUP, "healer: the D-pad cell opens its healer ring")
+check(dpad.attrs["ps-ring-top-1"] == hid and W.bindings.PADDUP, "healer: the D-pad cell opens its healer ring")
 local hp, units = "r" .. hid, true
 for i, unit in ipairs(Rings.HealerUnits) do units = units and ring.attrs[hp .. "u" .. i] == unit and ring.attrs[hp .. "t" .. i] == "spell" and ring.attrs[hp .. "v" .. i] == 133 end
 check(ring.attrs[hp .. "n"] == 7 and ring.attrs[hp .. "s"] == "dynamic" and ring.attrs[hp .. "h"] == "hold" and ring.attrs[hp .. "y"] == "compact" and units and ring.attrs[hp .. "u8"] == nil, "healer: 7 places on You, Party 1-4, Target, Focus, all the spell, Hold, Dynamic, Compact")
@@ -1333,7 +1305,7 @@ check(select(2, ns.Face.SetHealerLast("DU", "T", true)) == "out of combat only",
 W.combat = false
 assert(ns.Face.SetHealerLast("DU", "T", true))
 local lid = hid .. "_last"
-check(ns.Face.CellEntry("DU", "T").healerLast and dpad.attrs["ps-ring-top"] == lid and ring.attrs["r" .. lid .. "m"] == "last" and Rings.Healer(lid).middle == "last", "healer last: the binding's own ring, its middle written")
+check(ns.Face.CellEntry("DU", "T").healerLast and dpad.attrs["ps-ring-top-1"] == lid and ring.attrs["r" .. lid .. "m"] == "last" and Rings.Healer(lid).middle == "last", "healer last: the binding's own ring, its middle written")
 W.combat = true
 check(heal(STEP) == "spell 133" and dpad.attrs.unit == "party1" and ns.Face.CharDB().ringLast[lid][1] == 2, "healer last: a cast remembers the place")
 check(heal() == "spell 133" and dpad.attrs.unit == "party1" and not ring.shown, "healer last: let go in the middle, cast on Party 1 again")
@@ -1348,14 +1320,14 @@ W.combat = false
 ns.Fire("PLAYER_ENTERING_WORLD")
 check(ring.attrs["r" .. lid .. "l"] == 1, "healer last: the place restored after a reload")
 assert(ns.Face.SetHealerLast("DU", "T", false))
-check(not ns.Face.CellEntry("DU", "T").healerLast and dpad.attrs["ps-ring-top"] == hid, "healer last: off again, the plain healer ring")
+check(not ns.Face.CellEntry("DU", "T").healerLast and dpad.attrs["ps-ring-top-1"] == hid, "healer last: off again, the plain healer ring")
 W.combat = true
 check(heal() == nil, "healer last: off, the middle casts nothing")
 W.combat = false
 
 -- Off: the copy goes, the cell is native again; a routed entry keeps its action.
 assert(ns.Face.SetHealer("DU", "T", false))
-check(ns.Face.CellEntry("DU", "T") == nil and dpad.attrs["ps-ring-top"] == nil and storage[183], "healer off: the copy is dropped, the slot fires natively again")
+check(ns.Face.CellEntry("DU", "T") == nil and dpad.attrs["ps-ring-top-1"] == nil and storage[183], "healer off: the copy is dropped, the slot fires natively again")
 assert(ns.Face.SetCellEntry("FB", "T", Actions.Find("spell:133")))
 assert(ns.Face.SetHealer("FB", "T", true))
 check(ns.Face.CellEntry("FB", "T").healer and router.attrs["ps-ring-top"] == hid, "healer: a routed spell cell opens the ring")
@@ -1477,7 +1449,14 @@ local other = assert(Rings.New())
 ns.db.chars["Player-0-Bob"] = { cells = { ["054c/0ce6"] = { DD = { R = { id = "ring:" .. heals.id, name = "x" }, B = { id = "spell:133", name = "Fireball" } } } }, touch = { bars = { right = { [2] = { L = { id = "ring:" .. heals.id } } } } } }
 ns.db.chars["Player-0-Cy"] = { cells = { ["054c/0ce6"] = { DU = { T = { id = "ring:" .. other.id } } } } }
 check(Rings.BindingCount(heals.id) == 2, "delete: this character's bindings counted")
+-- A paged cell's pages (ns.Cells): each page a binding of its own.
+local annRows = ns.Face.CharDB().cells["054c/0ce6"]
+annRows.DR = { L = { { id = "ring:" .. heals.id, name = "x" }, { id = "ring:" .. other.id, name = "y" } } }
+annRows.DL = { B = { [3] = { id = "ring:" .. heals.id, name = "x" } } }
+check(Rings.BindingCount(heals.id) == 4, "delete: a paged cell counted per page")
 assert(Rings.Delete(heals.id))
+check(annRows.DR.L[1] == nil and annRows.DR.L[2].id == "ring:" .. other.id and annRows.DL == nil, "delete: a page cleared, the other ring's page kept, an emptied page list and row dropped")
+annRows.DR = nil
 check(ns.Face.CellEntry("FB", "T") == nil and ns.Touch.Entry("left", 1) == nil, "delete: this character's bindings cleared")
 local bob = ns.db.chars["Player-0-Bob"]
 check(bob.cells["054c/0ce6"].DD.R.id == "ring:" .. heals.id and bob.touch.bars.right[2].L.id == "ring:" .. heals.id, "delete: another character's bindings (its own ring) untouched")

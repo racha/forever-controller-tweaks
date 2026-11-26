@@ -451,7 +451,7 @@ end
 
 -- Settings and their defaults (ForeverControllerTweaksDB.keyboard).
 K.BUTTONS = {
-	space = "PAD1", send = "PAD2", erase = "PAD3", close = "PAD4", shift = "PADLSHOULDER", symbols = "PADLTRIGGER",
+	space = "PAD1", send = "PAD2", erase = "PAD3", close = "PAD4", shift = "PADLTRIGGER", symbols = "PADRTRIGGER",
 	insert = "PADRSHOULDER", prev = "PADDUP", next = "PADDDOWN", left = "PADDLEFT", right = "PADDRIGHT",
 }
 K.DEFAULTS = { enabled = true, open = "controller", layout = "ring", scale = 1, suggestions = true }

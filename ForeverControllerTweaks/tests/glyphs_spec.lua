@@ -252,8 +252,9 @@ local Layout = ns.Layout
 local swap, state = false, "ours"
 local entry = { roles = Layout.Copy(Layout.PRESETS.split), face = { bottom = "interact", left = "jump", right = "back", top = "inspect" } }
 local raw = { L1 = { button = 9 }, R1 = { button = 10 }, L2 = { axis = "LTrigger" }, R2 = { axis = "RTrigger" }, P1 = { button = 16 } }
--- Face.CellEntry's storage: cells["FT/T"] = entry (codes FB/FR/FL/FT/DU/DL/DR/DD, layers T/L/R/B).
-local cells = {}
+-- Face.CellEntry's storage: cells["FT/T"] = entry (codes FB/FR/FL/FT/DU/DL/DR/DD, layers T/L/R/B); a paged cell's
+-- page entry as cells["DU/L@2"], read on the page shown.
+local cells, shownPage = {}, 1
 ns.db = { options = { glyphs = true, debug = true }, devices = { ["054c/0ce6"] = entry } }
 ns.Device = { Current = function() return { key = "054c/0ce6", raw = raw } end, SwapTargets = function() return swap end, Detecting = function() return detecting end }
 ns.Profile = { Current = function() return entry, "054c/0ce6" end }
@@ -261,11 +262,12 @@ ns.Remap = { State = function() return state end, Outputs = function() return st
 -- Face.lua's shadow-slot contract: Slot, Catcher (click catcher frame), Pressed (key held).
 local slotOf, catchers, held = {}, {}, {}
 ns.Face = {
-	CellEntry = function(code, layer) return cells[code .. "/" .. layer] end,
+	CellEntry = function(code, layer) return cells[code .. "/" .. layer .. "@" .. shownPage] or cells[code .. "/" .. layer] end,
 	Slot = function(code, layer) return slotOf[code .. "/" .. layer] end,
 	Catcher = function(code, layer) return catchers[code .. "/" .. layer] end,
 	Pressed = function(code, layer) return held[code .. "/" .. layer] end,
 	CharDB = function() return { macros = { ["FCT:Target"] = { id = "game:target" } } } end,
+	planKeys = {},
 }
 
 assert(loadfile(dir .. "/SlotView.lua"))("ForeverControllerTweaks", ns)
@@ -774,12 +776,51 @@ ns.Face.CharDB = charDB
 fire("UPDATE_MACROS")
 check(names() == "0 0", "the character's macro too")
 
--- Standing down: panel open, detection running, Gamepad UI off.
+-- Window open: the router is off (ps-enabled false, no ps-key), but the crossbar keeps the player's bindings from the
+-- keys it would route (Face.planKeys). Prompt overlays and markers go native (Remap applies native then).
+local function mirrorsOf(out)
+	local found = {}
+	for target, what in pairs(out) do if what:find("^mirror ") then found[target] = what end end
+	return found
+end
+local closed = mirrorsOf(run())
+check(closed["topBar.Right.ActionButton1"] and closed["topBar.Right.ActionButton4"], "window closed: the moved face actions are mirrored")
 ns.SetPanelOpen(true)
+header.attrs["ps-enabled"], header.attrs["ps-key1"], header.attrs["ps-key3"] = false, nil, nil
+ns.Face.planKeys = { "PAD1", nil, "PAD3" }
 out = run()
-check(next(out) == nil and glyphAlpha(U.RightIcon) == 3 and ns.Glyphs.Mode() == "off", "panel open: nothing drawn, Mode() off")
-check(slotNative(right.ActionButton1) and slotNative(right.ActionButton4), "panel open: slot art restored")
+expect(out, closed, "window open")
+check(glyphAlpha(U.RightIcon) == 3 and ns.Glyphs.Mode() == "off", "window open: prompt overlays native, Mode() off")
+check(slotHidden(right.ActionButton1) and slotHidden(right.ActionButton4) and driver.shown, "window open: mirrored slots keep their art hidden, poll awake")
+-- The window takes the presses: no dent on the pressed cell nor on the face action's own button under another cell.
+held["FL/T"] = true
+run()
+local _, squareY, squareArt = press(mirrorOn(right.ActionButton1))
+local _, crossY, crossArt = press(mirrorOn(right.ActionButton4))
+check(squareY == 0 and crossY == 0 and squareArt == "circleslot-normal" and crossArt == "circleslot-normal", "window open: a pad press dents no mirror")
+held["FL/T"] = nil
+-- An edit in the window shows on the next poll, on the page shown; clearing it takes the mirror away.
+ns.Face.planKeys[5] = "PADDUP"
+cells["DU/L@1"], cells["DU/L@2"] = { id = "game:mount", name = "Mount", icon = 132261, kind = "game" }, { id = "item:6948", name = "Hearthstone", icon = 134414, kind = "item" }
+out = run()
+check(out["leftBar.Left.ActionButton1"] == "mirror 132261", "window open: a set cell is mirrored (got " .. tostring(out["leftBar.Left.ActionButton1"]) .. ")")
+shownPage = 2
+out = run()
+check(out["leftBar.Left.ActionButton1"] == "mirror 134414", "window open: a paged cell follows the page shown (got " .. tostring(out["leftBar.Left.ActionButton1"]) .. ")")
+shownPage, cells["DU/L@1"], cells["DU/L@2"], ns.Face.planKeys[5] = 1, nil, nil, nil
+out = run()
+check(out["leftBar.Left.ActionButton1"] == nil, "window open: a cleared cell loses its mirror")
+-- A vehicle or override bar: the state driver still says native, so no mirrors.
+header.attrs["state-face"] = "native"
+out = run()
+check(next(mirrorsOf(out)) == nil, "window open in a vehicle: no mirrors")
+header.attrs["state-face"] = "routed"
 ns.SetPanelOpen(false)
+header.attrs["ps-enabled"], header.attrs["ps-key1"], header.attrs["ps-key3"] = true, "PAD1", "PAD3"
+ns.Face.planKeys = {}
+expect(mirrorsOf(run()), closed, "window closed again")
+
+-- Standing down: detection running, Gamepad UI off.
 detecting = true
 out = run()
 check(next(out) == nil and glyphAlpha(U.RightIcon) == 3, "detection running: nothing drawn")

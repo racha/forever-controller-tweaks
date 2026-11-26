@@ -833,14 +833,23 @@ local function charsetNow() return K.Charset(shiftHeld, symbolsHeld, box and box
 
 local REPEATS = { erase = erase, left = function() moveCursor(-1) end, right = function() moveCursor(1) end }
 
+local function up(key)
+	local ok, down = pcall(IsKeyDown, key)
+	return ok and not down
+end
+
+-- While our controller config is applied a shoulder or trigger sends its role's key; the keyboard goes by the
+-- physical button, so L2 and R2 are Shift and Symbols with any layout. A held modifier keeps the key it went down
+-- with (shiftHeld = key): that key's up lets it go even if the remap changed in between.
 function V.Press(key)
 	if not box then return end
-	local code = UI.CODE[key]
+	local pad = ns.Layout.PhysicalFor(key)
+	local code = UI.CODE[pad]
 	if set and FACE_OF[code] then
 		typeKey(FACE_OF[code])
 		return V.Draw()
 	end
-	local action = K.ActionOf(K.BUTTONS, key)
+	local action = K.ActionOf(K.BUTTONS, pad)
 	if action == "space" then
 		insert(" ")
 		flash(frame.hubKeys[3])
@@ -850,7 +859,7 @@ function V.Press(key)
 		flash(frame.hubKeys[1])
 		return V.Close(key)
 	elseif action == "shift" or action == "symbols" then
-		if action == "shift" then shiftHeld = true else symbolsHeld = true end
+		if action == "shift" then shiftHeld = key else symbolsHeld = key end
 		charset = charsetNow()
 	elseif action == "insert" then
 		insertRow()
@@ -865,13 +874,13 @@ function V.Press(key)
 end
 
 function V.Release(key)
-	local action = K.ActionOf(K.BUTTONS, key)
+	local action = K.ActionOf(K.BUTTONS, ns.Layout.PhysicalFor(key))
 	if action == repeatAction then repeatAction = nil end
-	if action == "shift" then shiftHeld = false elseif action == "symbols" then symbolsHeld = false end
-	if action == "shift" or action == "symbols" then
-		charset = charsetNow()
-		V.Draw()
-	end
+	if shiftHeld ~= key and symbolsHeld ~= key then return end
+	if shiftHeld == key then shiftHeld = false end
+	if symbolsHeld == key then symbolsHeld = false end
+	charset = charsetNow()
+	V.Draw()
 end
 
 -- Left stick: the set; right stick: highlight past 0.15, type once past 0.5, re-arm at or below it.
@@ -979,6 +988,9 @@ function V.Tick()
 			if t >= 1 then key.flashAt = nil end
 		end
 	end
+	-- A lost up never leaves a modifier held.
+	if shiftHeld and up(shiftHeld) then V.Release(shiftHeld) end
+	if symbolsHeld and up(symbolsHeld) then V.Release(symbolsHeld) end
 	if repeatAction and box and now >= repeatAt then
 		REPEATS[repeatAction]()
 		repeatAt = now + REPEAT_EVERY

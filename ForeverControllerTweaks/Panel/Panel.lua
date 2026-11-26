@@ -1,7 +1,8 @@
 -- Forever Controller Tweaks panel entry points: /fct, the pad shortcut (hold L2 + R2, press Create), the Key Bindings
--- entry, the minimap button and the compartment open the Bindings window; /fct setup the guide. No page in Options:
--- Options' search reads every category, and one registered by addon code taints it (the search's protected
--- IsUserOAuthed() was blocked and blamed on us). Blocked-action reports are Core's (ns.OnBlocked).
+-- entry, the minimap button, the compartment and Options > AddOns open the Bindings window; /fct setup the guide. The
+-- Options page is a canvas of our own frames, never a vertical-layout category: Options' search reads every setting
+-- initializer, and ours there tainted it (the search's protected IsUserOAuthed() was blocked and blamed on us).
+-- Blocked-action reports are Core's (ns.OnBlocked).
 local _, ns = ...
 local UI = ns.UI
 
@@ -141,11 +142,26 @@ local function restoreLeftovers()
 	hidden = {}
 end
 
+-- Options can't be closed from addon code: every close path (Close, CloseButton, Escape, ExitWithCommit) ends in
+-- HideUIPanel (Blizzard_SettingsPanel.lua 40-45, 64-69, 256-302), which taints the gamepad binding stack. Opened from
+-- our Options page, Options goes transparent under the addon instead (SetAlpha only, no Lua fields written), a shield
+-- takes its mouse, and it comes back when the addon closes, like a native sub-window's parent.
+local shield = CreateFrame("Frame", nil, UIParent)
+shield:SetAllPoints()
+shield:SetFrameStrata("DIALOG")
+shield:EnableMouse(true)
+shield:EnableMouseWheel(true)
+shield:Hide()
+
 -- Closing gives everything back before the panel state changes, so nothing stays hidden if a listener errors.
 local setPanelOpen = ns.SetPanelOpen
 function ns.SetPanelOpen(open)
 	local was = ns.panelOpen
 	if not open and was then restoreLeftovers() end
+	if not open and shield:IsShown() then
+		shield:Hide()
+		SettingsPanel:SetAlpha(1)
+	end
 	setPanelOpen(open)
 	if open and not was then
 		hideLeftovers()
@@ -217,6 +233,52 @@ function UI.ToggleMinimapButton()
 end
 
 ns.On("PLAYER_LOGIN", UI.UpdateMinimapButton)
+
+-- Options > AddOns > Forever Controller Tweaks: a canvas page (title, one line, the shortcut and one button).
+-- UIPanelButtonTemplate is Options' own button; its code touches only its own textures. The button opens Bindings on
+-- the next frame, outside its click, above Options (FULLSCREEN_DIALOG over HIGH).
+-- The pad can't reach a canvas page's controls: Options' gamepad navigation walks its setting rows only, and we add no SmartNavigation of our own.
+local optionsDone = false
+
+local function openFromOptions()
+	C_Timer.After(0, function()
+		UI.Bindings.Open()
+		if not (ns.panelOpen and SettingsPanel and SettingsPanel:IsShown()) then return end
+
+		SettingsPanel:SetAlpha(0)
+		shield:Show()
+	end)
+end
+
+local function buildOptionsPage()
+	local L = UI.L
+	local page = CreateFrame("Frame")
+	page.name = L.NOTICE_TITLE
+	UI.Text(page, "GameFontNormalHuge", 24, 24, L.NOTICE_TITLE)
+	UI.Text(page, "GameFontHighlight", 24, 64, L.OPTIONS_TEXT, 560)
+	local shortcut = UI.Text(page, "GameFontHighlight", 24, 88, nil, 560)
+	local button = CreateFrame("Button", "ForeverControllerTweaksOptionsOpen", page, "UIPanelButtonTemplate")
+	button:SetSize(220, 26)
+	UI.At(button, page, 24, 122)
+	button:SetText(L.OPTIONS_OPEN)
+	button:SetScript("OnClick", openFromOptions)
+	-- The pad and its glyphs are known only once a device is seen, so the shortcut is written as the page shows.
+	page:SetScript("OnShow", function() shortcut:SetText(string.format(L.MINIMAP_SHORTCUT, UI.ToggleKeyText())) end)
+	return page
+end
+
+local function addOptionsPage()
+	if optionsDone or InCombatLockdown() then return end
+
+	optionsDone = true
+	if not (Settings and Settings.RegisterCanvasLayoutCategory and Settings.RegisterAddOnCategory) then return ns.debug("Options page skipped: no canvas Settings API") end
+
+	local page = buildOptionsPage()
+	Settings.RegisterAddOnCategory(Settings.RegisterCanvasLayoutCategory(page, page.name))
+end
+
+ns.On("PLAYER_LOGIN", addOptionsPage)
+ns.On("PLAYER_REGEN_ENABLED", addOptionsPage)
 
 -- A small native message window: text and one or two buttons (A presses the focused one, B the last).
 -- buttons = { { label, fn }, ... }; it is "notice"-class, so it opens while the Gamepad UI is off too.

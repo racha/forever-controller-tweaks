@@ -2,7 +2,7 @@
 -- then each module's TOC files under its own addon name and private table (they read the core's namespace global).
 -- On the full panel stub (real TOC files, Glyphs aside), an Xbox Elite pad: lua tests/modules_spec.lua. Every set
 -- runs in its own Lua process; each checks no errors, and only the loaded modules' tabs, footer prompts, More entries,
--- no Options page, picker categories and slash commands, plus a ring entry left on a button while Rings is off.
+-- one canvas Options page, picker categories and slash commands, plus a ring entry left on a button while Rings is off.
 local here = (arg and arg[0] or ""):match("^(.*)[/\\]") or "."
 local dir = here .. "/.."
 local SETS = { "none", "Touch", "Keyboard", "Rings", "Touch,Keyboard,Rings" }
@@ -27,10 +27,13 @@ local raw = { name = "Test Pad", vendorID = 0x045e, productID = 0x0b00, rawButto
 for i = 0, 20 do raw.rawButtons[i] = false end
 for i = 0, 9 do raw.rawAxes[i] = 0 end
 W.raw = raw
--- Options: any Settings call or button the addon makes (there must be none: a category of ours taints Options' search).
-local registered = {}
-local function register(kind) return function() registered[#registered + 1] = kind return {}, { AddInitializer = function() registered[#registered + 1] = "button" end } end end
+-- Options: every Settings call or initializer the addon makes. Exactly one canvas page is allowed: a vertical-layout
+-- category's initializers are what Options' search reads, and one of ours there tainted it.
+local registered, canvas = {}, nil
+local function register(kind) return function(frame) registered[#registered + 1] = kind if kind == "RegisterCanvasLayoutCategory" then canvas = frame end return {}, { AddInitializer = function() registered[#registered + 1] = "button" end } end end
 Settings = setmetatable({}, { __index = function(_, name) return register(name) end })
+local optionsAlpha = 1
+SettingsPanel = { IsShown = function() return true end, SetAlpha = function(_, alpha) optionsAlpha = alpha end }
 function CreateSettingsButtonInitializer() registered[#registered + 1] = "initializer" return {} end
 function SecureHandlerSetFrameRef(frame, label, ref) frame:SetAttribute("frameref-" .. label, ref) end
 
@@ -274,7 +277,16 @@ if has.Keyboard then
 	UI.Bindings.Open()
 end
 
-check(#registered == 0, "no page in Options: " .. table.concat(registered, ", "))
+check(table.concat(registered, ", ") == "RegisterCanvasLayoutCategory, RegisterAddOnCategory", "one canvas page in Options: " .. table.concat(registered, ", "))
+UI.CloseAll()
+_G.ForeverControllerTweaksOptionsOpen:Click()
+check(not UI.Current(), "the Options button opens nothing inside its click")
+W.advance(0.1)
+check(UI.Current() and ns.panelOpen and optionsAlpha == 0, "next frame: Bindings over a transparent Options")
+UI.CloseAll()
+check(optionsAlpha == 1, "Options comes back when the addon closes")
+check(canvas.name == L.NOTICE_TITLE, "the page is named for the addon")
+UI.Bindings.Open()
 
 -- Every module tab opens; L1 names the tab before it, and R1 from the one before steps into it.
 for i = 2, #UI.TABS do
@@ -485,7 +497,7 @@ if has.Rings then
 	local Rings = ns.Rings
 	local ringFrame = Rings.Frame()
 	local display
-	for _, f in ipairs(W.frames) do if f.parent == ringFrame and f.scripts.OnGamePadStick then display = f end end
+	for _, f in ipairs(W.frames) do if f.parent == ringFrame and f.scripts.OnUpdate then display = f end end
 	local function shown(atlas)
 		local n = 0
 		for _, t in ipairs(display.textures or {}) do if t.atlas == atlas and t.shown then n = n + 1 end end

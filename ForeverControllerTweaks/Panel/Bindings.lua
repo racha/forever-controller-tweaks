@@ -439,7 +439,7 @@ end
 -- More's middle row for a cell in Healer mode, under the Healer mode row: Cancel or Last target.
 local function healerLastMore(cell)
 	local on = cell.entry.healerLast
-	return { id = "healerlast", name = on and L.HEALER_LAST_ON or L.HEALER_LAST_OFF, detail = on and L.HEALER_LAST_ON_TIP or L.HEALER_LAST_OFF_TIP, run = function() report(ns.Face.SetHealerLast(cell.code, cell.layer, not on)) end }
+	return { id = "healerlast", name = on and L.HEALER_LAST_ON or L.HEALER_LAST_OFF, detail = on and L.HEALER_LAST_ON_TIP or L.HEALER_LAST_OFF_TIP, run = function() report(ns.Face.SetHealerLast(cell.code, cell.layer, not on, page)) end }
 end
 
 -- More's middle row for a cell or touch button that opens a ring (not Healer mode), under the Healer mode row: the

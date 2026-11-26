@@ -17,7 +17,7 @@ assert(K.KeyAt(0, 0.15) == nil and K.KeyAt(0, 0.2) == 1 and K.KeyAt(0.2, 0) == 2
 assert(K.KeyAt(0.3, 0.3) == 2 and K.KeyAt(-0.3, 0.31) == 1, "45° borders")
 assert(K.KeyAt(0, 0.4, K.KEY_TYPE) == nil and K.KeyAt(0, 0.6, K.KEY_TYPE) == 1, "typing needs past 0.5")
 
--- Charsets: L1 upper, L2 numbers, both symbols; numeric boxes start on numbers. Exact characters per the spec.
+-- Charsets: L2 upper, R2 numbers, both symbols; numeric boxes start on numbers. Exact characters per the spec.
 assert(K.Charset() == "lower" and K.Charset(true) == "upper" and K.Charset(false, true) == "numbers" and K.Charset(true, true) == "symbols")
 assert(K.Charset(false, false, true) == "numbers")
 local function flat(name)
@@ -201,6 +201,7 @@ function Obj:GetHeight() return 768 end
 function Obj:GetEffectiveScale() return 1 end
 function Obj:SetAlpha(a) self.alpha = a end
 function Obj:GetAlpha() return self.alpha or 1 end
+function Obj:SetCode(code) self.code = code end
 for _, name in ipairs({ "EnableGamePadButton", "EnableGamePadStick", "SetPropagateKeyboardInput", "EnableKeyboard" }) do
 	Obj[name] = function(self, on) inputCalls[#inputCalls + 1] = { self, name, on, combat } end
 end
@@ -248,6 +249,11 @@ ns.On = function(event, fn) handlers[event] = handlers[event] or {} table.insert
 local function fire(event) for _, fn in ipairs(handlers[event] or {}) do fn() end end
 ns.Active = function() return true end
 ns.db = { keyboard = { open = "always" } }
+-- The pad as Remap and the game see it: outputs is Remap.Outputs() (nil = native), held what IsKeyDown reads.
+local outputs, held = nil, {}
+assert(loadfile(here .. "/../Layout.lua"))("ForeverControllerTweaks", ns)
+ns.Remap = { Outputs = function() return outputs end }
+function IsKeyDown(key) return held[key] or false end
 ns.UI = { ART = "", L = {}, CODE = { PAD1 = "FB", PAD2 = "FR", PAD3 = "FL", PAD4 = "FT" }, Glyph = function(parent) return new("Frame", parent) end }
 for _, file in ipairs({ "Phrases", "Context", "Suggest", "View" }) do loadModule(file) end
 local V = K.View
@@ -310,16 +316,24 @@ V.Stick("Right", 0.2, 0)
 V.Stick("Right", 0.6, 0)
 assert(edit.text == " abb", "re-armed")
 V.Stick("Left", 0, 0)
+assert(frame.mods.shift.glyph.code == "PADLTRIGGER" and frame.mods.symbols.glyph.code == "PADRTRIGGER", "the modifier row draws L2 Shift and R2 Symbols")
 V.Press("PADLSHOULDER")
-assert(V.State().charset == "upper", "L1 held: upper")
+assert(V.State().charset == "lower", "native: L1 does nothing")
+held.PADLTRIGGER = true
 V.Press("PADLTRIGGER")
-assert(V.State().charset == "symbols", "L1 + L2: symbols")
-V.Release("PADLSHOULDER")
-assert(V.State().charset == "numbers", "L2 alone: numbers")
+assert(V.State().charset == "upper", "native: L2 held: upper")
+held.PADRTRIGGER = true
+V.Press("PADRTRIGGER")
+assert(V.State().charset == "symbols", "native: L2 + R2: symbols")
+held.PADLTRIGGER = nil
+V.Release("PADLTRIGGER")
+assert(V.State().charset == "numbers", "native: R2 alone: numbers")
 V.Stick("Left", -1, 0)
 V.Press("PAD4")
 assert(edit.text == " abb{rt1}", "set 7 of numbers: a marker")
-V.Release("PADLTRIGGER")
+held.PADRTRIGGER = nil
+V.Release("PADRTRIGGER")
+assert(V.State().charset == "lower", "native: all up")
 V.Stick("Left", 0, 0)
 V.Press("PAD3")
 assert(edit.text == " abb", "Erase takes the marker as one")
@@ -330,6 +344,53 @@ assert(edit.cursor == 3, "cursor left")
 V.Press("PADDRIGHT")
 V.Release("PADDRIGHT")
 assert(edit.cursor == 4, "cursor right")
+
+-- Our config applied, moving all four: the physical button counts, not the key it sends.
+outputs = { L1 = "PADLTRIGGER", L2 = "PADLSHOULDER", R2 = "PADRSHOULDER", R1 = "PADRTRIGGER" }
+held.PADLSHOULDER = true
+V.Press("PADLSHOULDER")
+assert(V.State().charset == "upper", "ours: physical L2 (sent as PADLSHOULDER) is Shift")
+held.PADRSHOULDER = true
+V.Press("PADRSHOULDER")
+assert(V.State().charset == "symbols", "ours: physical R2 (sent as PADRSHOULDER) is Symbols")
+held.PADLSHOULDER, held.PADRSHOULDER = nil, nil
+V.Release("PADLSHOULDER")
+V.Release("PADRSHOULDER")
+assert(V.State().charset == "lower", "ours: both up")
+V.Press("PADLTRIGGER")
+assert(V.State().charset == "lower", "ours: physical L1 (sent as PADLTRIGGER) does nothing")
+V.Release("PADLTRIGGER")
+edit.text, edit.cursor = " abb th", 7
+V.Tick()
+local rows = 0
+local suggestApply = K.Suggest.Apply
+K.Suggest.Apply = function(...) rows = rows + 1 return suggestApply(...) end
+V.Press("PADRTRIGGER")
+K.Suggest.Apply = suggestApply
+V.Release("PADRTRIGGER")
+assert(rows == 1 and V.State().charset == "lower", "ours: physical R1 (sent as PADRTRIGGER) inserts, no modifier")
+edit.text, edit.cursor = " abb", 4
+
+-- The remap changes between the down and the up: the down key's up still lets go.
+held.PADLSHOULDER = true
+V.Press("PADLSHOULDER")
+assert(V.State().charset == "upper", "ours: Shift down")
+outputs = nil
+held.PADLSHOULDER = nil
+V.Release("PADLSHOULDER")
+assert(V.State().charset == "lower", "native now: the up of the down key releases Shift")
+
+-- A lost up: IsKeyDown reads the down key up, so the next tick lets go.
+outputs = { L1 = "PADLTRIGGER", L2 = "PADLSHOULDER", R2 = "PADRSHOULDER", R1 = "PADRTRIGGER" }
+held.PADRSHOULDER = true
+V.Press("PADRSHOULDER")
+assert(V.State().charset == "numbers", "ours: Symbols down")
+V.Tick()
+assert(V.State().charset == "numbers", "still held: the tick keeps it")
+held.PADRSHOULDER = nil
+V.Tick()
+assert(V.State().charset == "lower", "a lost up: released on the next tick")
+outputs = nil
 
 -- Send: a secure command stays; a box that is not chat keeps its text, and nothing of it runs or is learned.
 edit.text, edit.cursor = "/cast Fireball", 14

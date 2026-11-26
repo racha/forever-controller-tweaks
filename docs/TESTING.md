@@ -43,7 +43,11 @@ Use only the controller for this part, except where a step names Options.
 
 1. **Shortcut:** hold L2 + R2 and press Create (PlayStation) or View (Xbox). The settings open on **Bindings**. The same press closes them. Create or View alone, without the triggers, still does what the game does.
 2. **Minimap button** and the minimap **AddOns** menu open the settings. Hide the minimap button from More, and show it again.
-3. **Options:** open Options and type in its search box. No "blocked" message or popup names this addon, and the AddOns list in Options has no Forever Controller Tweaks page. From the Game Menu, Log Out (then cancel) and Return to Game still work.
+3. **Options → AddOns → Forever Controller Tweaks** (with the mouse: the pad can't reach this page's button):
+   - **Open Controller Tweaks** opens the settings, and Options goes invisible underneath. Close the settings: Options is visible and usable again;
+   - type in Options' search box: no "blocked" message or popup names this addon;
+   - from the Game Menu, Log Out (then cancel) and Return to Game still work;
+   - `/reload`, then check `Logs/taint.log`: no line names this addon.
 4. **Navigation:** the D-pad moves the focus everywhere, and holding it repeats. The sticks don't move it. L1/R1 switch Bindings → Touch → Keyboard → Rings → Tweaks and back. Every footer lists working buttons.
 5. **Look:** every window, dialog, tooltip and footer matches the game's own windows. At UI scale 1.15 and at 1280×800, nothing is cut off.
 
@@ -137,8 +141,9 @@ Repeat part A, steps 1–3, and part C, step 3, on every controller you have: Xb
    - a **whisper** (`/w Name`);
    - a **reply** (`/r`) to a whisper you got.
    Each line arrives once, on the right channel. Try both Chat Styles (Options → Social): Classic and IM both send.
-4. **In combat:** party, guild and a whisper send. A say line stays in the box with a note; send it after the fight.
-5. After all of the above, `/reload`. `Logs/taint.log` with `/console taintLog 2` has no line naming ForeverControllerTweaks.
+4. **Shift and Symbols:** in a chat box, hold L2: upper case; R2: numbers; both: symbols. L1 changes nothing and R1 inserts a suggestion. Then set up a modifier layout that moves the shoulders and triggers (Bindings → More → a preset that puts a modifier on L1 or R1) and try again, with the window closed and in a fight: L2 and R2 still do Shift and Symbols. Let go of each one: it never stays on.
+5. **In combat:** party, guild and a whisper send. A say line stays in the box with a note; send it after the fight.
+6. After all of the above, `/reload`. `Logs/taint.log` with `/console taintLog 2` has no line naming ForeverControllerTweaks.
 
 ## J. Tweaks
 
@@ -404,18 +409,29 @@ Back up `WTF/Account/<ACCOUNT>/SavedVariables/ForeverControllerTweaks.lua` first
 
 ## R. 1.5.5
 
-### R1. The free stick while a ring is open
+### R1. The other stick while a ring is open
 
-`/console taintLog 2`, `/fct debug` on. Tweaks → Controller: **Ring open: left stick moves** and **Ring open: right stick turns** are both ticked on a fresh update. Use the Paladin with a Hold ring on a D-pad cell (Stick: Right) and a ring with Stick: Left.
+`/console taintLog 2`, `/fct debug` on. Tweaks → Controller has no **Ring open** rows any more. Use the Paladin with a Hold ring on a D-pad cell (Stick: Right) and a ring with Stick: Left.
 
-1. **Left stick moves.** Run at something with the left stick, then hold the right-stick ring's button. You keep running. While it's open: forward, back, strafe left and right, and the four diagonals (two directions at once) all move you, at full speed. The right stick still aims; flick and let go fires the slot.
-2. **Let go while running.** Close the ring (fire a slot, or B) with the left stick still pushed: you keep running, and stop the moment you let the stick go. Do it 10 times, each way (forward, back, strafe, diagonal): you never keep running or strafing after letting go. Then the left stick walks at analog speed again (half-push walks slowly).
-3. **Right stick turns.** Hold the left-stick ring's button: the right stick turns the camera left and right and tilts it up and down, at a fixed speed. The left stick aims. Close it with the right stick pushed: the camera stops turning when you let go.
-4. **In combat.** Repeat 1 to 3 in a fight. After either ring closes, **both** sticks keep working until the fight ends: the left stick moves you (8 directions, full speed) and the right stick turns and tilts the camera (fixed speed), including the stick that just aimed. After the fight both are analog again. Never stuck running or turning.
-5. **Settings off.** Untick **Ring open: left stick moves**: with the right-stick ring open the left stick does nothing (the old behaviour), and after a left-stick ring closes in combat the left stick doesn't move you until the fight ends; the right-stick setting still works. Untick **Ring open: right stick turns**: with the left-stick ring open the right stick does nothing. Tick both again.
-6. **Both rings in a row.** Open the right-stick ring, close it, keep running with the left stick, then open the left-stick ring. Note whether the character keeps running forward on its own while that ring is open, and whether it stops after closing it and letting the left stick go. 📸 `/fct ringlog` if it doesn't.
-7. **Healer ring and touch ring.** A healer ring on a D-pad cell: the left stick moves you while it's open. A touch ring: the sticks work as with no ring.
-8. Throughout: `taint.log` has no ForeverControllerTweaks line, no "blocked" chat line, and after `/reload` with the stick pushed nothing stays held.
+1. **Right-stick ring.** Run forward with the left stick, then hold the right-stick ring's button, and keep running and turning with the left stick. The run doesn't stop, and the camera follows the character as with no ring. The ring aims with the right stick and fires.
+2. **Left-stick ring.** Hold the left-stick ring's button. The right stick moves the camera as usual, and the left stick doesn't walk.
+3. **Let go pushed.** Let go of the button with the aiming stick still pushed. The character doesn't walk off and the camera doesn't swing, and both are back as soon as the stick is centred.
+4. **In combat.** Steps 1 to 3 in a fight.
+5. **Healer ring and touch ring.** A healer ring on a D-pad cell: as step 1. A touch ring: both sticks work as with no ring.
+6. **`/reload` mid-ring.** `/reload` with a ring open, then use both sticks: both work.
+7. Throughout: `taint.log` has no ForeverControllerTweaks line, and there is no "blocked" chat line.
+
+### R2. The crossbar while a window is open
+
+`/fct debug` on. A character with a spell on **Triangle** and another on **Circle** (top bar), a moved face action (Jump on Square), a game action on L2 + D-pad Up on page 1 and a different one there on page 2, and a cell with a cooldown.
+
+1. **Open Bindings.** The crossbar still shows your bindings, not the game's face actions: the spells on Triangle and Circle (no grey orb, no red X), Jump on Square, with their cooldowns, charges, range and usable tint. 📸 it.
+2. **Buttons drive the window.** Press Cross, Circle and the D-pad: the window moves and selects, nothing casts, and no crossbar button looks pressed.
+3. **Live edits.** Set a spell on an empty face or D-pad cell: it shows on the crossbar within a moment. Clear it: the slot goes back to the game's. Switch profile: the crossbar follows.
+4. **Pages.** Close the window, flip to page 2, open Bindings again: L2 + Up shows page 2's action.
+5. **Vehicle.** Get on a vehicle (or a mind-control / possess bar) and open the window: no mirrors, the game's own bar shows.
+6. **Close.** Close the window: everything is as before, and the buttons cast your bindings again.
+7. Throughout: no Lua error and no "blocked" chat line.
 
 ## Reporting results
 

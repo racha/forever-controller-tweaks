@@ -56,6 +56,8 @@ In every window:
 
 The footer always lists the buttons you can use, and tooltips explain the focused item.
 
+While a window is open, its buttons only drive the window, but your crossbar still shows your own bindings, on the page shown. A change you make shows there right away.
+
 **Settings controls.** The settings rows use the game's own controls, one value per row. **D-pad up / down** move between rows. On a **slider** or **dropdown**, **D-pad left / right** change the value; on a **checkbox**, **Cross** turns it on or off. On the Tweaks tab, left / right at the end of a dropdown or slider move on to the next column.
 
 ## Modules
@@ -77,6 +79,7 @@ With **Rings** off, a button that holds **Open ring** does nothing. Its cell is 
 The controller is drawn in the middle, with one row per button at the window's edges, placed where that button sits on the pad. Each face and D-pad row shows the button's glyph and four cells, one per bar: top, left, right and bottom. At the top of each side are the bumper and trigger rows (and paddle rows, if your pad has paddles), where their roles are set. The focused row draws a gold line to its button on the drawing.
 
 - **Pages:** the header shows **Page 1 of 3**. **L2 / R2** switch pages. If a stance or pet bar replaces a bar on that page, a note says so.
+- **Each page has its own cells.** A ring, a game action or Jump on a crossbar cell belongs to the page you set it on, so the same button can open a different ring on each page. A page where that cell is empty keeps its own slot. The four first-page face slots (where Jump, Interact, Back and Inspect sit), back paddles and stick presses have no page: their cells are the same on every page.
 - **Cross on a face or D-pad cell** opens the action picker.
 - **Square** clears a cell. **More → Undo** puts back the last clear.
 - **Cross on a bumper or trigger row** opens its role list. See [Modifiers](#modifiers).
@@ -171,7 +174,7 @@ Touch buttons look and behave like native crossbar slots, and they work in comba
 
 An on-screen keyboard for chat and text boxes, while the Gamepad UI is on. It opens when a text box gets the focus: with **Open → With the controller** only when you're using the controller, or **Always**.
 
-- **Typing:** the letters sit in clusters of four around the disc. Point a stick at a cluster and press the face button for the letter. **L1** is Shift, **L2** Symbols. The hub has Space, Send, Erase and Close, each on a face button.
+- **Typing:** the letters sit in clusters of four around the disc. Point a stick at a cluster and press the face button for the letter. Hold **L2** for Shift, **R2** for Symbols, both for more symbols. They stay on L2 and R2 whatever modifier layout you set up. The hub has Space, Send, Erase and Close, each on a face button.
 - **Suggestions** show in the tab beside the disc. **D-pad up / down** choose, **R1** inserts. A word goes in with a space, so pressing R1 again takes the next word.
   - An empty chat box shows quick phrases for where you are and what's happening: 137 built-in lines for 31 situations plus **Always**, such as a ready check, a resurrect, a dungeon, a city or your guild.
   - Lines aimed at you in chat get replies (76 of them), on the right channel. 31 rules recognise 165 phrases and words, such as "inv?", "LF healer" and "ready?".
@@ -202,7 +205,7 @@ Radial menus of actions you build yourself. Open the **Rings** tab, or `/fct rin
   - **Toggle:** **Cross** uses the lit slot. Letting go of the button while aiming uses the slot; with nothing aimed the ring stays open, so you can still aim. **Circle**, a stick press or the ring's button again closes it without using anything.
   - **Hold:** let go of the button to use the slot you aim at. With nothing aimed, the ring just closes.
   - If the stick was already pushed when the ring opened, that slot isn't used until you centre the stick or move it off that slot.
-- While a ring is open the addon turns on the game's stick-as-buttons setting (`GamePadStickAxisButtons`) and puts your own value back when it closes. That setting covers both sticks, so the addon binds the other one: aiming with the right stick, the left stick moves you (full speed, 8 directions); aiming with the left stick, the right stick turns and tilts the camera (a fixed speed). Turn either off in Tweaks → Controller. If you close the ring still moving, you keep moving until you let that stick go; the setting is put back after that. In combat it stays on until the fight ends, and both sticks keep moving and turning this way (each with its setting) until then. The aiming stick is held back after release until it's centred, while you cast or channel what it fired, or for a second at most. Works in combat.
+- While a ring is open the addon turns on the game's stick-as-buttons setting (`GamePadStickAxisButtons`) and puts your own value back when it closes. The other stick works as usual meanwhile: the left stick walks and runs, the right stick moves the camera. The aiming stick is held back after release until it's centred, while you cast or channel what it fired, or for a second at most. Works in combat.
 - **Arrow on ring buttons:** every button that opens a ring wears the game's small flyout arrow at its top edge (on the crossbar, in Bindings and on touch buttons); it hides while that ring is open. On by default; untick **Arrow on ring buttons** at the foot of the ring list to turn it off for all your characters.
 - **On a touch button:** a tap opens the ring, a tap on a slot uses it, a tap outside closes it.
 - Slots show cooldowns, charges, range and whether they're usable. Rings are shared by all your characters and use no hidden action slots.
@@ -214,7 +217,7 @@ Any button that holds a heal can open a ring of your group instead: aim at someo
 
 - **Turning it on:** in **Bindings** focus the cell and press **Triangle**: **Healer mode: Off** is the first row in More. Pick it to turn it on, and again to turn it off. In the **Touch** tab it works the same on a touch button. A green cross marks the button in Bindings, in Touch and on your crossbar.
 - **What can use it:** spells, spell groups (Highest Rank) and items. Anything else shows the row in grey, with what the button holds.
-- **A crossbar slot:** turning it on keeps the spell where it is. While Healer mode is on, the button opens the ring on every crossbar page. Turn it off and the slot casts on your target again.
+- **A crossbar slot:** turning it on keeps the spell where it is. Healer mode belongs to the page you turned it on, like any cell: the other pages keep their own. Turn it off and the slot casts on your target again.
 - **Using it:** hold the button. A small round ring opens on it, with the spell in the middle and 7 places: **You** at the top, then **Party 1** to **Party 4**, **Target** and **Focus**, clockwise. In a raid the party places are your own subgroup. Aim with the right stick on a D-pad button or a paddle, the left stick on a face button. The person you aim at gets the gold border and the game's own tooltip. Let go to cast on them; let go in the middle and nothing is cast.
 - **Who can be picked:** anyone there who can be helped, dead allies too (for a resurrection). An empty place, a hostile target or a missing focus can't be picked, and nothing is cast there.
 - **Each place shows** the portrait, a health ring in the class colour, the role icon, and:
@@ -271,8 +274,6 @@ Small conveniences, on the **Tweaks** tab (the one before Settings). **Each one 
 - **Battery on the minimap:** a round button on the minimap's ring, next to the others, with the controller's charge. Hidden for pads that don't report one.
 - **Rare nearby alert:** a line on screen and a rumble when a rare is near. Once per rare, never in a fight, on a flight or while dead.
 - **Light bar:** **Game default**, **Class colour** or **Custom**, with **Colour** picking one of 10 colours. **Combat flash** turns the light red while you're in combat. For pads with a light bar, such as the DualSense; Steam may take the light over.
-- **Ring open: left stick moves:** while a ring aims with the right stick, the left stick keeps moving you (full speed, 8 directions). On by default.
-- **Ring open: right stick turns:** while a ring aims with the left stick, the right stick turns and tilts the camera at a fixed speed. On by default.
 
 ### Camera
 
