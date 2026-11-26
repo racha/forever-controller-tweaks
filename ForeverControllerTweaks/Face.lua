@@ -694,19 +694,28 @@ local ONSTATE_SNIPPET = ([[
 	end
 ]]):format(#CODES) .. APPLY_SNIPPET
 
--- A paged cell's catcher, before each click: the route of the page its native slot shows (ps-<field>-<page>).
-local CATCHER_FIELDS = { "type", "typerelease", "action", "macrotext", "checkselfcast", "checkfocuscast", "checkmouseovercast" }
+-- A catcher, before each click: a paged cell's takes the route of the page its native slot shows (ps-<field>-<page>).
+-- A ring route (ring: its id) opens it as a touch tap does, drawn at this button. On the release: opened on the press,
+-- the release would land on the open ring's own catcher and close it again. Any other button does nothing here; with a
+-- ring open, the ring's catcher takes the click and closes it.
+local CATCHER_FIELDS = { "type", "typerelease", "action", "macrotext", "checkselfcast", "checkfocuscast", "checkmouseovercast", "ring" }
 local CATCHER_SNIPPET = [[
-	if not self:GetAttribute("ps-paged") then return end
-	local native, page = self:GetFrameRef("native"), 0
-	local shown = native and native:GetID()
-	for p = 1, shown and PAGES or 0 do
-		if shown == self:GetAttribute("ps-page" .. p) then
-			page = p
-			break
+	if self:GetAttribute("ps-paged") then
+		local native, page = self:GetFrameRef("native"), 0
+		local shown = native and native:GetID()
+		for p = 1, shown and PAGES or 0 do
+			if shown == self:GetAttribute("ps-page" .. p) then
+				page = p
+				break
+			end
 		end
+		for _, field in ipairs(CATCHER_FIELDS) do self:SetAttribute(field, self:GetAttribute("ps-" .. field .. "-" .. page)) end
 	end
-	for _, field in ipairs(CATCHER_FIELDS) do self:SetAttribute(field, self:GetAttribute("ps-" .. field .. "-" .. page)) end
+	local ring = self:GetAttribute("ring")
+	if not ring then return end
+	local rings = self:GetFrameRef("rings")
+	if rings and button == "LeftButton" and not down then rings:RunAttribute("_toggle", ring, self:GetName(), self:GetAttribute("ps-kind"), self:GetAttribute("ps-layer")) end
+	return false
 ]]
 
 local header = CreateFrame("Frame", "ForeverControllerTweaksFaceHeader", UIParent, "SecureHandlerStateTemplate")
@@ -800,6 +809,7 @@ Face.planKeys = {}
 -- only while routed, over a paged cell while any page has an entry (a page change in combat can't show or hide it).
 -- Keyed "code/layer".
 local catchers, catcherCount, shadowOf = {}, 0, {}
+local L = { HEALER_TIP = "Opens Healer mode: pick who in your group to cast it on." }
 
 -- The page a native slot button shows: the page of ids ({ [page] = storage slot }) its ID is, else 0.
 local function pageOf(native, ids)
@@ -808,14 +818,31 @@ local function pageOf(native, ids)
 	return 0
 end
 
+-- A ring cell's tooltip (only Rings makes a ring route): its entry's name ("Open ring: <name>"); a Healer mode
+-- binding, its spell or item and a line for Healer mode.
+local function ringTip(entry)
+	local actionType, _, value = ns.Rings.Attributes(entry.healer and ns.Actions.Find(entry.id))
+	if actionType == "spell" then GameTooltip:SetSpellByID(value)
+	elseif actionType == "item" then GameTooltip:SetItemByID(tonumber(tostring(value):match("%d+")))
+	else GameTooltip:SetText(entry.name) end
+	if entry.healer then GameTooltip:AddLine(L.HEALER_TIP, nil, nil, nil, true) end
+	GameTooltip:Show()
+end
+
 -- Blizzard's tooltip for an action button (ActionBarActionButtonMixin:SetTooltip), on the shadow slot; over a paged
--- cell's page without an entry, the native slot's own action.
+-- cell's page without an entry, the native slot's own action; a ring route, ringTip.
 local function catcherTooltip(self)
 	local parent = self:GetParent()
 	local page = self.ids and pageOf(parent, self.ids)
-	local slot = self.shadow or page and not (self.routes or NONE)[page] and parent and parent:GetID()
-	if not slot or slot == 0 then return end
+	local route = (self.routes or NONE)[page or 0]
+	local ring = route and route[1] == "ring" and route[4]
+	local slot = self.shadow or page and not route and parent and parent:GetID()
+	if not ring and (not slot or slot == 0) then return end
 	if GetCVar("UberTooltips") == "1" then GameTooltip_SetDefaultAnchor(GameTooltip, self) else GameTooltip:SetOwner(self, "ANCHOR_RIGHT") end
+	if ring then
+		self.UpdateTooltip = nil
+		return ringTip(ring)
+	end
 	self.UpdateTooltip = GameTooltip:SetAction(slot) and catcherTooltip or nil
 end
 
@@ -824,12 +851,22 @@ local function catcherLeave(self)
 	if GameTooltip:IsOwned(self) then GameTooltip:Hide() end
 end
 
+-- A ring route's click opens the ring from the catcher's snippet, and the open is drawn at the catcher: both frames
+-- know the other (the ring frame by the catcher's name, as RunAttribute can't carry a handle). Out of combat.
+local function linkCatcher(catcher)
+	if catcher.ringsLinked or not ns.Rings then return end
+	catcher.ringsLinked = true
+	SecureHandlerSetFrameRef(catcher, "rings", ns.Rings.Frame())
+	SecureHandlerSetFrameRef(ns.Rings.Frame(), catcher:GetName(), catcher)
+end
+
 local function catcherFor(actionBars, code, layer, slot)
 	local key = code .. "/" .. layer
 	local catcher = catchers[key]
 	if InCombatLockdown() then return catcher end
 	local target = button(actionBars, CELL_BAR[layer], slot)
 	if not target then return catcher end
+	if catcher then linkCatcher(catcher) end
 	-- The key's native slot moved (a rebind, or the assumed slot before the bindings could be read).
 	if catcher then
 		if catcher:GetParent() ~= target then
@@ -844,13 +881,17 @@ local function catcherFor(actionBars, code, layer, slot)
 	catcher = CreateFrame("Button", "ForeverControllerTweaksCatcher" .. code .. layer, target, "SecureActionButtonTemplate")
 	catcher:SetAllPoints(target)
 	SecureHandlerSetFrameRef(catcher, "native", target)
+	-- What the ring's open reads from the router on a pad press: the cell's kind and layer.
+	catcher:SetAttribute("ps-kind", CODE_POS[code] and "face" or "dpad")
+	catcher:SetAttribute("ps-layer", CELL_LAYER[layer])
+	linkCatcher(catcher)
 	header:WrapScript(catcher, "OnClick", CATCHER_SNIPPET)
 	catcher:RegisterForClicks("AnyUp", "LeftButtonDown", "RightButtonDown")
 	catcher:SetScript("OnEnter", catcherTooltip)
 	-- A post-hook on our own frame: one debug line per mouse click, to tell a catcher click from a pad press.
 	catcher:HookScript("OnClick", function(self, mouseButton, down)
 		if not ns.db.options.debug then return end
-		ns.debug("face catcher %s/%s %s %s: %s", code, layer, mouseButton, down and "down" or "up", tostring(self:GetAttribute("type") == "action" and "action " .. tostring(self:GetAttribute("action")) or self:GetAttribute("macrotext")))
+		ns.debug("face catcher %s/%s %s %s: %s", code, layer, mouseButton, down and "down" or "up", tostring(self:GetAttribute("type") == "action" and "action " .. tostring(self:GetAttribute("action")) or self:GetAttribute("ring") and "ring " .. tostring(self:GetAttribute("ring")) or self:GetAttribute("macrotext")))
 	end)
 	catcher:SetScript("OnLeave", catcherLeave)
 	catcher:Hide()
@@ -872,15 +913,15 @@ local function catcherFields(route, actionBars)
 	local name = click and click:GetName()
 	-- A hold action's button, clicked once from a catcher: its toggle (RightButton).
 	local text = name and Face.ClickBoth(name) or how == "text" and value or how == "hold" and "/click " .. value .. " RightButton" or nil
-	local out = { type = how == "action" and "action" or text and "macro" or nil, macrotext = text }
+	local out = { type = how == "action" and "action" or text and "macro" or nil, macrotext = text, ring = how == "ring" and value or nil }
 	if how == "action" then out.typerelease, out.action = "actionrelease", value end
 	for _, check in ipairs(Face.CHECK_CASTS) do out[check] = how == "action" or nil end
 	return out
 end
 
--- routes = { [page] = route } (page 0: a cell without a crossbar slot), or nil to stand the catcher down. ids =
--- { [page] = storage slot } of a paged cell: its OnClick wrap takes the page its native slot shows at each click; the
--- attributes set here are the page shown now.
+-- routes = { [page] = { how, value, name, entry } } (page 0: a cell without a crossbar slot), or nil to stand the
+-- catcher down. ids = { [page] = storage slot } of a paged cell: its OnClick wrap takes the page its native slot shows
+-- at each click; the attributes set here are the page shown now.
 local function aimCatcher(catcher, routes, actionBars, ids)
 	local paged = routes and routes[0] == nil
 	for page = 0, pageCount() do
@@ -1136,7 +1177,7 @@ local function applyNow(ignorePanel)
 				end
 				keep = keep or slotKind and not paged
 				local where = label .. (cellLayer == "T" and "" or "/" .. cellLayer) .. (page > 0 and " page " .. page or "")
-				if how then byPage[page] = { how, value, entry.name } end
+				if how then byPage[page] = { how, value, entry.name, entry } end
 				if entry and not how then parts[#parts + 1] = string.format("%s entry %s unavailable", where, tostring(entry.id)) end
 			end
 			-- A cell that no longer holds a slot kind gives its shadow slot back.

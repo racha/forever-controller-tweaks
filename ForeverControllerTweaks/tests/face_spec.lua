@@ -238,6 +238,8 @@ GameTooltip = {
 	SetAction = function(_, slot) W.tooltip = slot; return true end,
 	IsOwned = function(_, owner) return W.tooltipOwner == owner end,
 	Hide = function() W.tooltip = nil end,
+	SetText = function(_, text) W.tooltip = text end,
+	Show = function() end,
 }
 function GameTooltip_SetDefaultAnchor(_, owner) W.tooltipOwner = owner end
 
@@ -472,7 +474,7 @@ local paged = ns.Cells.Paged
 check(paged("DU", "T") and paged("DU", "R") and paged("FB", "L") and paged("FT", "B"), "cells with a crossbar slot are paged")
 check(not paged("FB", "T") and not paged("FT", "T") and not paged("L3", "R") and not paged("R3", "T") and not paged("P1", "L") and not paged("P4", "B") and not paged("XX", "T"), "reserved face slots, stick presses, paddles: page-less")
 opened = {}
-ns.Rings = { Get = function(id) return (id == 1 or id == 2) and {} end, Frame = function() return ringFrame end, HealerRing = function() end }
+ns.Rings = { Get = function(id) return (id == 1 or id == 2) and {} end, Frame = function() return ringFrame end, HealerRing = function() end, Attributes = function() end }
 GamepadActionBarBindingUtil = PAGE_UTIL
 onPage("rightBar", 1)
 assert(ns.Face.SetCellEntry("DU", "R", { id = "ring:2", name = "Pots", kind = "ring" }, 2))
@@ -510,8 +512,39 @@ check(clickCatcher(upCatcherR).type == "click", "page 1 click: the native slot")
 onPage("rightBar", 3)
 check(clickCatcher(upCatcherR).type == "macro" and upCatcherR.attrs.macrotext == both(name(TOP, 8)), "page 3 click: Jump")
 onPage("rightBar", 2)
-check(clickCatcher(upCatcherR).type == nil and upCatcherR.attrs.macrotext == nil, "page 2 click: a ring opens from the pad only, as before")
+check(clickCatcher(upCatcherR).type == nil and upCatcherR.attrs.macrotext == nil and upCatcherR.attrs.ring == 2, "page 2: the ring route, no click type")
+-- A mouse click opens the page's ring through the ring frame (_toggle: id, the catcher's name, kind, layer), on the
+-- release only; the press and other buttons do nothing. The pad is untouched.
+local toggled = {}
+local runWas = ringFrame.RunAttribute
+function ringFrame:RunAttribute(what, ...) toggled[#toggled + 1] = table.concat({ what, tostring(select(1, ...)), tostring(select(2, ...)), tostring(select(3, ...)), tostring(select(4, ...)) }, " ") end
+local function mouse(c, button, down)
+	W.secure = true
+	local out = run(c.wrap.header.env, "self,button,down", c.wrap.pre, c, button, down)
+	W.secure = false
+	return out
+end
+check(upCatcherR.attrs["frameref-rings"] == ringFrame and ringFrame.attrs["frameref-" .. upCatcherR:GetName()] == upCatcherR, "catcher and ring frame linked both ways")
+check(mouse(upCatcherR, "LeftButton", true) == false and mouse(upCatcherR, "RightButton", false) == false and #toggled == 0, "press, right click: swallowed, nothing opens")
+check(mouse(upCatcherR, "LeftButton", false) == false and toggled[1] == "_toggle 2 " .. upCatcherR:GetName() .. " dpad right", "page 2 click in combat: ring 2, at this button, as the D-pad's right layer")
+onPage("rightBar", 3)
+toggled = {}
+check(mouse(upCatcherR, "LeftButton", false) == nil and #toggled == 0 and upCatcherR.attrs.type == "macro" and upCatcherR.attrs.ring == nil, "page 3: Jump, no ring")
 W.combat = false
+assert(ns.Face.SetCellEntry("DU", "R", { id = "ring:1", name = "Open ring: Seals", kind = "ring" }, 1))
+W.combat = true
+onPage("rightBar", 1)
+mouse(upCatcherR, "LeftButton", false)
+onPage("rightBar", 2)
+mouse(upCatcherR, "LeftButton", false)
+check(toggled[1]:find("^_toggle 1 ") and toggled[2]:find("^_toggle 2 "), "ring 1 on page 1, ring 2 on page 2: each page opens its own")
+onPage("rightBar", 1)
+upCatcherR.scripts.OnEnter(upCatcherR)
+check(W.tooltip == "Open ring: Seals" and W.tooltipOwner == upCatcherR, "hover: the ring's name")
+upCatcherR.scripts.OnLeave(upCatcherR)
+W.combat = false
+assert(ns.Face.SetCellEntry("DU", "R", nil, 1))
+ringFrame.RunAttribute = runWas
 -- Markers and the panel read the page shown; a page given back leaves the others.
 GamepadMainActionBarFrame.PageUnit.GetCurrentPage = function() return 2 end
 check(ns.Face.CellEntry("DU", "R").id == "ring:2" and ns.Face.CellEntry("DU", "R", 3).id == "face:jump" and ns.Face.CellEntry("DU", "R", 1) == nil and ns.Face.AnyEntry("DU", "R"), "CellEntry: the page shown, or the one asked")

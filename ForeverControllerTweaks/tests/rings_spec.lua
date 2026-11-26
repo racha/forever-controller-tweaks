@@ -470,6 +470,21 @@ SecureHandlerSetFrameRef(ring, "ForeverControllerTweaksDpadUp", dpad)
 click(dpad, true)
 check(opened(ring.point) == "CENTER $screen BOTTOMLEFT 240 140", "compact: the ref back, on the button again")
 letGo()
+-- A mouse click on the cell's crossbar button, its catcher (Face.lua): the release opens the ring as a touch tap does,
+-- Compact on that button with the cell's kind and layer, as the pad's open draws it, in combat too. The press and any
+-- other mouse button do nothing; a click again closes it.
+local upCatcher = assert(ns.Face.Catcher("DU", "T"), "the cell's catcher")
+check(upCatcher.attrs.ring == heals.id and upCatcher.attrs.type == nil and upCatcher.attrs["frameref-rings"] == ring and ring.attrs["frameref-" .. upCatcher.name] == upCatcher, "catcher: the ring route, linked both ways")
+function upCatcher:GetRect() return 100, 50, 40, 40 end
+upCatcher.scale = 2
+W.combat = true
+check(click(upCatcher, true) == false and not ring.shown, "mouse press: nothing yet")
+check(click(upCatcher, false, nil, "RightButton") == false and not ring.shown, "right click: nothing")
+check(click(upCatcher, false) == false and opened(ring.point) == "CENTER $screen BOTTOMLEFT 240 140" and ring.attrs["ps-ring"] == heals.id and ring.attrs["ps-mode"] == "touch", "mouse click in combat: the ring opens as a touch ring, on the button")
+check(ring.attrs["ps-layer"] == "top" and ring.attrs["ps-kind"] == "dpad" and ring.attrs["ps-trace"]:find(" at=top", 1, true), "drawn as the pad's open of that cell; no keys bound")
+click(upCatcher, false)
+check(not ring.shown, "a click again closes it")
+W.combat = false
 assert(Rings.SetStyle(heals.id, "full"))
 click(dpad, true)
 check(ring.point[1] == "CENTER" and ring.point[2] == nil and ring.w == 2 * Rings.GEO.WHEEL, "full: the middle of the screen, the wheel's size")
@@ -1268,6 +1283,19 @@ local hp, units = "r" .. hid, true
 for i, unit in ipairs(Rings.HealerUnits) do units = units and ring.attrs[hp .. "u" .. i] == unit and ring.attrs[hp .. "t" .. i] == "spell" and ring.attrs[hp .. "v" .. i] == 133 end
 check(ring.attrs[hp .. "n"] == 7 and ring.attrs[hp .. "s"] == "dynamic" and ring.attrs[hp .. "h"] == "hold" and ring.attrs[hp .. "y"] == "compact" and units and ring.attrs[hp .. "u8"] == nil, "healer: 7 places on You, Party 1-4, Target, Focus, all the spell, Hold, Dynamic, Compact")
 check(Rings.Healer(hid).healer and Rings.Healer(hid).icon == copy.icon, "healer: the ring the display draws")
+-- The mouse on a Healer mode cell's crossbar button: a click opens its healer ring (as a touch ring, in combat too);
+-- the hover shows the spell with a line for Healer mode.
+local healCatcher = assert(ns.Face.Catcher("DU", "T"))
+W.combat = true
+click(healCatcher, false)
+check(ring.shown and ring.attrs["ps-ring"] == hid and ring.attrs["ps-mode"] == "touch", "healer: a mouse click opens its healer ring")
+secure(ring.RunAttribute, ring, "_close")
+W.combat = false
+local tipWas, lines = GameTooltip, {}
+GameTooltip = { SetOwner = function() end, Show = function() end, SetSpellByID = function(_, id) lines[1] = "spell " .. id end, AddLine = function(_, text) lines[2] = text end }
+healCatcher.scripts.OnEnter(healCatcher)
+check(lines[1] == "spell 133" and lines[2] and lines[2]:find("Healer mode", 1, true) and not rawget(healCatcher, "UpdateTooltip"), "healer: the hover shows the spell and Healer mode")
+GameTooltip = tipWas
 
 -- In combat: a release on a unit casts there; missing, hostile, centred: nothing. Dead allies stay pickable.
 W.units = { player = "friend", party1 = "friend", party3 = "dead", target = "hostile" }

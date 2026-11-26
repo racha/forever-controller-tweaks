@@ -23,9 +23,11 @@
 -- touch button that owns the press. RunAttribute scrubs its arguments to nil, booleans, numbers and strings (a frame
 -- handle arrives as nil), so a button is passed by the name of the ring frame's frame ref to it: "slot<i>" for its
 -- slots, the router's own name for each Face router (Face.lua sets those refs).
---   _open(id, mode, kind, own) lays out and arms the slot buttons, picks the aiming stick (kind: the opening cell,
---                         "face" or "dpad", for a dynamic ring) and shows the ring ("hold" or "touch"). A held ring
---                         binds its keys (below) but own, the key that opened it; that key pressed again closes it;
+--   _open(id, mode, kind, own, at, layer) lays out and arms the slot buttons, picks the aiming stick (kind: the
+--                         opening cell, "face" or "dpad", for a dynamic ring) and shows the ring ("hold" or "touch").
+--                         A held ring binds its keys (below) but own, the key that opened it; that key pressed again
+--                         closes it. at: the name of the ring frame's ref to the button a Compact ring opens on, and
+--                         layer its crossbar layer (a mouse click on a crossbar cell, Face.lua's catcher);
 --   _pick(key)            the slot the aiming stick points at (the largest dot product with a slot direction), nil
 --                         inside the dead zone, where a stick key's own direction stands in; nil on the slot the
 --                         stick pointed at as the ring opened, until it re-centres or moves off it;
@@ -42,7 +44,8 @@
 --   _hover()              the slot the mouse is on (ps-hover, below), as _pick answers: false on a healer place whose
 --                         unit can't be helped;
 --   _used(i)              a tapped slot of the open ring becomes its last (r<id>l, as every fire sets it);
---   _toggle(id)           a touch tap: opens the ring, or closes it when it is the one open;
+--   _toggle(id, at, kind, layer) a touch tap or a mouse click: opens the ring as "touch" (at, kind, layer as _open),
+--                         or closes it when it is the one open;
 --   _close()              hides it; _arm(ref, which, id, i) writes one slot's action on a button.
 -- No action slot is used: the actions fire through direct secure attributes (spell, item, toy, macrotext).
 -- Healer mode (design/healer-mode.md): a binding with healer = true opens a healer ring, id "h<entry id>", made from the
@@ -671,7 +674,7 @@ local ARM = [[
 ]]
 
 local OPEN = ([[
-	local id, mode, kind, own = ...
+	local id, mode, kind, own, from, fromLayer = ...
 	local n = id and self:GetAttribute("r" .. id .. "n")
 	if not n then return end
 	if mode == "hold" and self:IsShown() and self:GetAttribute("ps-ring") == id and self:GetAttribute("ps-mode") == "hold" then return self:RunAttribute("_close") end
@@ -695,8 +698,9 @@ local OPEN = ([[
 	local r, hit = compact and %d or %d, compact and %d or %d
 	-- The routed cell that opened a held ring: its router has the ring on the layer it is pressing (ps-curlayer and
 	-- ps-curring, the ring of the page shown, set just before this call) and the key own; its native slot button on
-	-- that layer is where Compact opens.
-	local layer, at
+	-- that layer is where Compact opens. A mouse click on a cell names its button (from) and layer instead.
+	local at = from and self:GetFrameRef(from)
+	local layer = at and fromLayer or nil
 	for k = 1, mode == "hold" and self:GetAttribute("ps-routern") or 0 do
 		local router = self:GetFrameRef(self:GetAttribute("ps-router" .. k))
 		local pressed = router and router:GetAttribute("ps-curlayer")
@@ -888,9 +892,9 @@ local KEY = ([[
 ]]):format(LET_GO * LET_GO, RIM * RIM)
 
 local TOGGLE = [[
-	local id = ...
+	local id, at, kind, layer = ...
 	if self:IsShown() and self:GetAttribute("ps-ring") == id then return self:RunAttribute("_close") end
-	self:RunAttribute("_open", id, "touch")
+	self:RunAttribute("_open", id, "touch", kind, nil, at, layer)
 ]]
 
 -- The slots' and the catcher's taps: a slot fires its action (its own click), then the ring closes.

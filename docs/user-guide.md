@@ -209,6 +209,7 @@ Radial menus of actions you build yourself. Open the **Rings** tab, or `/fct rin
 - **Arrow on ring buttons:** every button that opens a ring wears the game's small flyout arrow at its top edge (on the crossbar, in Bindings and on touch buttons); it hides while that ring is open. On by default; untick **Arrow on ring buttons** at the foot of the ring list to turn it off for all your characters.
 - **On a touch button:** a tap opens the ring, a tap on a slot uses it, a tap outside closes it.
 - **With the mouse,** as with the game's own flyouts: move the pointer over a slot of any open ring and it lights up with its tooltip; click it to use it, right-click to close the ring. On a **Hold** ring, letting go of the button with the stick centred uses the slot under the pointer; a pushed stick wins. The pointer counts once you move the mouse, so a cursor resting where the ring opens doesn't aim. Works in combat.
+  - **Opening it with the mouse:** click a crossbar button that opens a ring (or one in Healer mode) to open it, as a tap on a touch button does: it stays open until you click a slot, the button again or anywhere outside it. **Compact** opens on that button, **Full** in the middle of the screen. Hover the button for a tooltip with the ring's name (in Healer mode, the spell's). On every crossbar page, in combat too.
 - Slots show cooldowns, charges, range and whether they're usable. Rings are shared by all your characters and use no hidden action slots.
 - `/fct ringlog` prints the last ring events. Add those lines to a ring bug report.
 

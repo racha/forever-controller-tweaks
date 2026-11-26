@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.5.5-beta.4 — 2026-11-26
+
+### Fixed: a ring's crossbar button ignored the mouse
+- Clicking a crossbar button that opens a ring (or Healer mode) did nothing. Now a left click opens that ring right there, as a touch tap does: click a slot to use it, click outside to close. It follows the crossbar page you're on and works in combat.
+- Hovering the button shows the ring's name; a Healer mode button shows its spell and a line saying it opens Healer mode.
+
 ## 1.5.5-beta.3 — 2026-11-26
 
 ### Changed: the settings window is easy to drive with the D-pad

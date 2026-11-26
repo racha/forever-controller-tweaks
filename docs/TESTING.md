@@ -477,6 +477,19 @@ Controller only, except where a step names the mouse. A wireless pad (for the ru
 11. **Dialogs.** The More menu and the confirm boxes keep their own left / right.
 12. Throughout: no Lua error, no "blocked" chat line, and `taint.log` has no ForeverControllerTweaks line.
 
+### R6. Opening a ring with the mouse
+
+Put a Toggle ring (Compact) on a D-pad cell's base layer, a Hold ring (Full) on a face button's left bar, and Healer mode on another D-pad cell. On a paged cell put one ring on page 1 and another on page 2.
+
+1. **Click.** Left-click each crossbar button: its ring opens and stays open, as a tap opens a touch ring. Compact opens on the button you clicked, with that bar's modifier glyphs in the middle, as the pad's press of the same cell draws it; Full in the middle of the screen. Note where a Compact ring on a face button's base layer (Cross, Circle, Square, Triangle with no modifier) opens from the pad, and where from the mouse.
+2. **Use and close.** Click a slot: it fires and the ring closes. Open it again and click the button again, then elsewhere on the screen: each closes it, nothing fires. Right-click the button with the ring closed: nothing happens.
+3. **Healer mode.** Click its button: the healer ring opens; click a party member's place: the heal lands on them.
+4. **Pages.** On the paged cell, page 1 then page 2 (L2 / R2): each click opens that page's ring.
+5. **Hover.** Over each button: the tooltip says "Open ring: <name>"; on the Healer mode button, the spell's tooltip with a Healer mode line. Moving off hides it.
+6. **In combat.** Steps 1 to 4 in a fight.
+7. **Pad unchanged.** The pad's press of every one of these buttons opens and aims as before (Hold and Toggle, the stick, Cross, Circle); touch buttons with rings tap as before.
+8. Throughout: no Lua error, no "blocked" chat line, and `taint.log` has no ForeverControllerTweaks line (above all near GameTooltip). With `/fct debug` on, a click logs `face catcher <cell> LeftButton up: ring <id>`.
+
 ## Reporting results
 
 In a pull request or issue, list the parts you ran and the controllers you used, and say whether `taint.log` was clean. Attach screenshots of anything that looks wrong, with character names and chat cropped out.
